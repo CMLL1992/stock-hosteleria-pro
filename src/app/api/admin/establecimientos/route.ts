@@ -16,8 +16,22 @@ export async function POST(req: Request) {
 
     const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
     const anonKey = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
-    if (!supabaseUrl || !anonKey || !serviceKey) return NextResponse.json({ error: "Missing Supabase env" }, { status: 500 });
+    const serviceKey =
+      process.env.SUPABASE_SERVICE_ROLE_KEY ??
+      process.env.SUPABASE_SERVICE_KEY ??
+      process.env.SUPABASE_SERVICE_ROLE ??
+      "";
+
+    const missing: string[] = [];
+    if (!supabaseUrl) missing.push("SUPABASE_URL (o NEXT_PUBLIC_SUPABASE_URL)");
+    if (!anonKey) missing.push("SUPABASE_ANON_KEY (o NEXT_PUBLIC_SUPABASE_ANON_KEY)");
+    if (!serviceKey) missing.push("SUPABASE_SERVICE_ROLE_KEY");
+    if (missing.length) {
+      return NextResponse.json(
+        { error: `Missing Supabase env: ${missing.join(", ")}` },
+        { status: 500 }
+      );
+    }
 
     const authClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: `Bearer ${token}` } },
