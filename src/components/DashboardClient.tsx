@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Search } from "lucide-react";
 import { IconWhatsApp } from "@/components/IconWhatsApp";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
-import { fetchDashboardProductos, fetchMovimientosCountHoy } from "@/lib/adminDashboardData";
+import { fetchDashboardProductos } from "@/lib/adminDashboardData";
 import { deficitPedido, waUrlPedidoGlobal, waUrlProductoPedido } from "@/lib/whatsappPedido";
 
 export function DashboardClient() {
@@ -21,28 +21,11 @@ export function DashboardClient() {
     retry: 1
   });
 
-  const movHoyQuery = useQuery({
-    queryKey: ["dashboard", "movimientos-hoy", establecimientoId],
-    enabled: !!establecimientoId,
-    queryFn: () => fetchMovimientosCountHoy(establecimientoId as string),
-    staleTime: 30_000,
-    retry: 1
-  });
-
   const rows = useMemo(() => productosQuery.data ?? [], [productosQuery.data]);
 
   const bajoMinimos = useMemo(() => rows.filter((p) => p.stock_actual <= p.stock_minimo), [rows]);
 
   const pedidoGlobalUrl = useMemo(() => waUrlPedidoGlobal(bajoMinimos), [bajoMinimos]);
-
-  const kpis = useMemo(() => {
-    const totalUnidades = rows.reduce((acc, p) => acc + p.stock_actual, 0);
-    return {
-      bajoMinimos: bajoMinimos.length,
-      totalUnidades,
-      pedidosHoy: movHoyQuery.data ?? 0
-    };
-  }, [rows, bajoMinimos.length, movHoyQuery.data]);
 
   const urgentes = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -85,23 +68,20 @@ export function DashboardClient() {
         <p className="text-base text-slate-500">Selecciona un establecimiento para ver el inventario.</p>
       ) : (
         <>
-          <div className="grid w-full grid-cols-1 gap-6 sm:grid-cols-3">
-            <div className="rounded-3xl border border-red-100 bg-white p-6 shadow-sm ring-1 ring-red-50">
-              <p className="text-sm font-semibold uppercase tracking-wide text-red-700">Bajo mínimos</p>
-              <p className="mt-2 text-xs text-red-600/90">Actual ≤ mínimo</p>
-              <p className="mt-4 text-5xl font-bold tabular-nums tracking-tight text-red-600">{kpis.bajoMinimos}</p>
-            </div>
-            <div className="rounded-3xl border border-blue-100 bg-white p-6 shadow-sm ring-1 ring-blue-50">
-              <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">Total stock</p>
-              <p className="mt-2 text-xs text-blue-600/90">Unidades en almacén</p>
-              <p className="mt-4 text-5xl font-bold tabular-nums tracking-tight text-blue-600">{kpis.totalUnidades}</p>
-            </div>
-            <div className="rounded-3xl border border-emerald-100 bg-white p-6 shadow-sm ring-1 ring-emerald-50">
-              <p className="text-sm font-semibold uppercase tracking-wide text-emerald-700">Pedidos hoy</p>
-              <p className="mt-2 text-xs text-emerald-600/90">Registros tipo pedido hoy</p>
-              <p className="mt-4 text-5xl font-bold tabular-nums tracking-tight text-emerald-600">{kpis.pedidosHoy}</p>
-            </div>
+          <div className="rounded-3xl border-2 border-red-200 bg-white p-8 shadow-md ring-2 ring-red-100">
+            <p className="text-center text-sm font-bold uppercase tracking-wide text-red-700">Productos bajo mínimos</p>
+            <p className="mt-2 text-center text-xs text-red-600/90">Stock actual ≤ stock mínimo</p>
+            <p className="mt-6 text-center text-6xl font-black tabular-nums tracking-tight text-red-600">
+              {bajoMinimos.length}
+            </p>
           </div>
+
+          <Link
+            href="/stock?compra=1"
+            className="flex min-h-14 w-full items-center justify-center rounded-3xl border-2 border-slate-900 bg-slate-900 px-4 py-4 text-lg font-bold text-white shadow-lg active:scale-[0.99]"
+          >
+            Lista de compra
+          </Link>
 
           <div className="space-y-3">
             <button
@@ -123,20 +103,12 @@ export function DashboardClient() {
           </div>
 
           <section className="space-y-4">
-            <div className="flex items-end justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-bold text-slate-900">Acción urgente</h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  {urgentes.length} producto{urgentes.length === 1 ? "" : "s"} requieren atención
-                  {search.trim() ? " (filtrado)" : ""}
-                </p>
-              </div>
-              <Link
-                href="/stock"
-                className="inline-flex min-h-12 shrink-0 items-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 shadow-sm"
-              >
-                Ver inventario
-              </Link>
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">Acción urgente</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                {urgentes.length} producto{urgentes.length === 1 ? "" : "s"}
+                {search.trim() ? " (filtrado)" : ""}
+              </p>
             </div>
 
             {urgentes.length === 0 ? (

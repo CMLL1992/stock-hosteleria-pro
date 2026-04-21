@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { useMyRole } from "@/lib/useMyRole";
 
-type ProdEmbed = { articulo?: string | null; nombre?: string | null };
+type ProdEmbed = { articulo?: string | null };
 
 type MovRow = {
   id: string;
@@ -59,19 +59,8 @@ export default function AdminMovimientosPage() {
         .order("timestamp", { ascending: false })
         .limit(150);
 
-      const resNombre =
-        resArticulo.error && supabaseErrToString(resArticulo.error).toLowerCase().includes("articulo")
-          ? await supabase()
-              .from("movimientos")
-              .select("id,tipo,cantidad,timestamp,productos(nombre)")
-              .eq("establecimiento_id", activeEstablishmentId)
-              .order("timestamp", { ascending: false })
-              .limit(150)
-          : null;
-
-      const data = resNombre?.data ?? resArticulo.data;
-      const error = resNombre?.error ?? resArticulo.error;
-      if (error) throw error;
+      if (resArticulo.error) throw resArticulo.error;
+      const data = resArticulo.data;
       setRows((data as unknown as MovRow[]) ?? []);
     } catch (e) {
       setErr(supabaseErrToString(e));
@@ -131,17 +120,14 @@ export default function AdminMovimientosPage() {
                 {rows.map((r) => {
                   const raw = r.productos;
                   const prod = Array.isArray(raw) ? raw[0] ?? null : raw;
-                  const nombre =
-                    (prod?.articulo && String(prod.articulo)) ||
-                    (prod?.nombre && String(prod.nombre)) ||
-                    "—";
+                  const articuloEtiqueta = (prod?.articulo && String(prod.articulo).trim()) || "—";
                   const ts = new Date(r.timestamp);
                   return (
                     <tr key={r.id} className="border-b border-slate-100 last:border-b-0">
                       <td className="whitespace-nowrap px-3 py-2 text-slate-700">
                         {ts.toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" })}
                       </td>
-                      <td className="max-w-[140px] truncate px-3 py-2 font-medium text-slate-900">{nombre}</td>
+                      <td className="max-w-[140px] truncate px-3 py-2 font-medium text-slate-900">{articuloEtiqueta}</td>
                       <td className="px-3 py-2 text-slate-700">{labelTipo(r.tipo)}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-slate-900">{r.cantidad}</td>
                     </tr>

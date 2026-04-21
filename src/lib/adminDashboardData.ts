@@ -82,16 +82,3 @@ export function estadoStock(p: Pick<DashboardProducto, "stock_actual" | "stock_m
   return stockSemaforo(p.stock_actual, p.stock_minimo);
 }
 
-/** Movimientos tipo `pedido` desde medianoche local (zona horaria del dispositivo). */
-export async function fetchMovimientosCountHoy(establecimientoId: string): Promise<number> {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  const { count, error } = await supabase()
-    .from("movimientos")
-    .select("id", { count: "exact", head: true })
-    .eq("establecimiento_id", establecimientoId)
-    .eq("tipo", "pedido")
-    .gte("timestamp", start.toISOString());
-  if (error) return 0;
-  return count ?? 0;
-}

@@ -12,7 +12,7 @@ import { MobileHeader } from "@/components/MobileHeader";
 
 type ProductoRow = {
   id: string;
-  nombre: string;
+  articulo: string;
   proveedor_id: string | null;
 };
 
@@ -20,9 +20,9 @@ async function loadProductos(establecimientoId: string | null): Promise<Producto
   if (!establecimientoId) return [];
   const { data, error } = await supabase()
     .from("productos")
-    .select("id,nombre,proveedor_id")
+    .select("id,articulo,proveedor_id")
     .eq("establecimiento_id", establecimientoId)
-    .order("nombre", { ascending: true });
+    .order("articulo", { ascending: true });
   if (error) throw error;
   return (data as unknown as ProductoRow[]) ?? [];
 }
@@ -122,7 +122,7 @@ export default function AdminEtiquetasPage() {
               <div className="flex items-center justify-center">
                     <QRCodeSVG value={url} width={160} height={160} includeMargin />
               </div>
-              <p className="mt-2 line-clamp-2 text-sm font-semibold text-slate-900">{p.nombre}</p>
+              <p className="mt-2 line-clamp-2 text-sm font-semibold text-slate-900">{p.articulo}</p>
               <p className="mt-1 break-all text-[10px] text-slate-500">{p.id}</p>
             </div>
           );

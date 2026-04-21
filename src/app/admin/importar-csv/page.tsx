@@ -302,32 +302,22 @@ export default function ImportarCsvPage() {
   }
 
   /**
-   * Mapeo blindado CSV → fila `productos` (solo `articulo`, nunca columna DB `nombre`).
-   * Acepta alias de columnas vía objeto fila unificado.
+   * Mapeo blindado CSV → fila `productos` (solo columnas reales; nunca `nombre` en BD).
    */
   function buildPayloadFromCsvRow(
     r: CsvRow,
     ex: ProductoExistente | undefined,
     activeId: string
   ): Record<string, unknown> {
-    const fila: Record<string, unknown> = {
-      nombre: r.articulo,
-      articulo: r.articulo,
-      tipo: r.tipo,
-      categoria: r.tipo,
-      unidad: r.unidad,
-      stock_actual: r.stock_actual,
-      stock_minimo: r.stock_minimo
-    };
-    const articulo = String(fila.nombre ?? fila.articulo ?? "").trim();
-    const categoria = String(fila.tipo ?? fila.categoria ?? "General").trim();
-    const unidadRaw = String(fila.unidad ?? "uds").trim();
+    const articulo = (r.articulo || "").trim();
+    const categoria = (r.tipo || "General").trim() || "General";
+    const unidad = coerceUnidad((r.unidad || "uds").trim());
     return {
       articulo,
       categoria,
-      unidad: coerceUnidad(unidadRaw),
-      stock_actual: parseFloat(String(fila.stock_actual)) || 0,
-      stock_minimo: parseFloat(String(fila.stock_minimo)) || 0,
+      unidad,
+      stock_actual: parseFloat(String(r.stock_actual)) || 0,
+      stock_minimo: parseFloat(String(r.stock_minimo)) || 0,
       establecimiento_id: activeId,
       proveedor_id: null,
       qr_code_uid: ex?.qr_code_uid ?? crypto.randomUUID().replaceAll("-", "")
@@ -356,7 +346,9 @@ export default function ImportarCsvPage() {
           return buildPayloadFromCsvRow(r, ex, activeEstablishmentId);
         });
 
-        const { error } = await supabase().from("productos").upsert(payload, { onConflict: "articulo" });
+        const { error } = await supabase().from("productos").upsert(payload, {
+          onConflict: "establecimiento_id,articulo"
+        });
 
         if (error) throw new Error(supabaseErrToString(error));
 
@@ -484,9 +476,9 @@ export default function ImportarCsvPage() {
               <Button
                 onClick={importar}
                 disabled={busy || !filasVista.length || !!analisisErr || !analizado}
-                className="min-h-12 w-full bg-slate-900 text-base text-white hover:bg-slate-800"
+                className="min-h-14 w-full bg-slate-900 text-lg font-bold text-white hover:bg-slate-800"
               >
-                {busy ? "Importando…" : "Confirmar importación"}
+                {busy ? "Importando…" : "Subir e importar"}
               </Button>
               <Button onClick={downloadTemplate} disabled={busy} className="min-h-12 w-full bg-slate-800 text-base hover:bg-slate-900">
                 Descargar plantilla
@@ -599,7 +591,7 @@ export default function ImportarCsvPage() {
             </ul>
           </div>
         ) : analizado && !analisisErr ? (
-          <p className="mt-4 text-sm text-slate-600">El archivo no contiene filas válidas con nombre.</p>
+          <p className="mt-4 text-sm text-slate-600">El archivo no contiene filas válidas con artículo.</p>
         ) : !analisisErr ? (
           <p className="mt-4 text-sm text-slate-600">Sube un CSV y pulsa &quot;Analizar archivo&quot; para la previsualización.</p>
         ) : null}

@@ -103,7 +103,7 @@ export default function NuevoProductoPage() {
       return;
     }
     if (!articulo.trim()) {
-      setErr("El artículo (nombre) no puede estar vacío.");
+      setErr("El artículo no puede estar vacío.");
       return;
     }
     const uid = newUid();
