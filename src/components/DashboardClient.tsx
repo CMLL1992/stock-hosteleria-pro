@@ -13,21 +13,17 @@ import {
 } from "recharts";
 import { Button } from "@/components/ui/Button";
 import { supabase } from "@/lib/supabase";
-import type { ProductoFinanzas } from "@/lib/finance";
-import { costeNeto, margenBrutoEUR } from "@/lib/finance";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 
 type RangeKey = "week" | "month" | "year";
-type MetricKey = "units" | "cost";
-
-type ProductoFinanceFields = ProductoFinanzas & { articulo?: string | null; nombre?: string | null };
+type MetricKey = "units";
 
 type Movimiento = {
   producto_id: string;
   tipo: "entrada" | "salida" | "pedido";
   cantidad: number;
   timestamp: string;
-  producto?: ProductoFinanceFields | null;
+  producto?: { articulo: string } | null;
 };
 
 type ProductoStock = {
@@ -53,51 +49,23 @@ function sinceForRange(range: RangeKey): string {
 async function fetchTopProductosSalida(range: RangeKey, establecimientoId: string | null) {
   if (!establecimientoId) return { rows: [], totals: { units: 0, cost: 0, profit: 0 } };
   const since = sinceForRange(range);
-  const selectFull =
-    "producto_id,tipo,cantidad,timestamp,producto:productos(articulo,precio_tarifa,descuento_valor,descuento_tipo,iva_compra,pvp,iva_venta)";
-  const selectLite = "producto_id,tipo,cantidad,timestamp,producto:productos(articulo)";
-
-  let data: unknown = null;
-  let financeAvailable = true;
-  // Nota: en algunos tipos de Supabase, encadenar filtros antes de select() puede romper typings; aplicamos select() al final.
-  const full = await supabase()
+  const { data, error } = await supabase()
     .from("movimientos")
-    .select(selectFull)
+    .select("producto_id,tipo,cantidad,timestamp,producto:productos(articulo)")
     .eq("tipo", "salida")
     .eq("establecimiento_id", establecimientoId)
     .gte("timestamp", since)
     .order("timestamp", { ascending: false })
     .limit(5000);
-  if (full.error) {
-    const msg = (full.error as { message?: string }).message?.toLowerCase?.() ?? "";
-    const looksLikeMissingFinance = msg.includes("could not find") || msg.includes("does not exist");
-    if (!looksLikeMissingFinance) throw full.error;
-    financeAvailable = false;
-    const lite = await supabase()
-      .from("movimientos")
-      .select(selectLite)
-      .eq("tipo", "salida")
-      .eq("establecimiento_id", establecimientoId)
-      .gte("timestamp", since)
-      .order("timestamp", { ascending: false })
-      .limit(5000);
-    if (lite.error) throw lite.error;
-    data = lite.data;
-  } else {
-    data = full.data;
-  }
+  if (error) throw error;
 
   const rows = (data as unknown as Movimiento[]) ?? [];
-  const byProduct = new Map<string, { name: string; units: number; cost: number; profit: number }>();
+  const byProduct = new Map<string, { name: string; units: number }>();
   for (const r of rows) {
     const name = r.producto?.articulo ?? "Producto";
     const units = Math.abs(Number(r.cantidad) || 0);
-    const cn = financeAvailable && r.producto ? costeNeto(r.producto) : 0;
-    const mb = financeAvailable && r.producto ? margenBrutoEUR(r.producto) : 0; // margen por unidad (neto)
-    const prev = byProduct.get(r.producto_id) ?? { name, units: 0, cost: 0, profit: 0 };
+    const prev = byProduct.get(r.producto_id) ?? { name, units: 0 };
     prev.units += units;
-    prev.cost += units * cn;
-    prev.profit += units * mb;
     prev.name = name;
     byProduct.set(r.producto_id, prev);
   }
@@ -107,11 +75,7 @@ async function fetchTopProductosSalida(range: RangeKey, establecimientoId: strin
     totals: rows.reduce(
       (acc, r) => {
         const units = Math.abs(Number(r.cantidad) || 0);
-        const cn = financeAvailable && r.producto ? costeNeto(r.producto) : 0;
-        const mb = financeAvailable && r.producto ? margenBrutoEUR(r.producto) : 0;
         acc.units += units;
-        acc.cost += units * cn;
-        acc.profit += units * mb;
         return acc;
       },
       { units: 0, cost: 0, profit: 0 }
@@ -126,54 +90,13 @@ async function fetchResumen(range: RangeKey, establecimientoId: string | null) {
   const since = sinceForRange(range);
   const sinceToday = startOfTodayISO();
 
-  const movSelectFull = "cantidad,producto:productos(precio_tarifa,descuento_valor,descuento_tipo,iva_compra,pvp,iva_venta)";
-  const movSelectLite = "cantidad";
-  const salidasHoyFull = supabase()
-    .from("movimientos")
-    .select(movSelectFull)
-    .eq("tipo", "salida")
-    .eq("establecimiento_id", establecimientoId)
-    .gte("timestamp", sinceToday);
-
-  const salidasRangoFull = supabase()
-    .from("movimientos")
-    .select(movSelectFull)
-    .eq("tipo", "salida")
-    .eq("establecimiento_id", establecimientoId)
-    .gte("timestamp", since);
-
-  let financeAvailable = true;
-  const [salidasHoyRes, salidasRangoRes] = await Promise.all([salidasHoyFull, salidasRangoFull]);
-  let salidasHoy: unknown = salidasHoyRes.data;
-  let salidasRango: unknown = salidasRangoRes.data;
-
-  if (salidasHoyRes.error || salidasRangoRes.error) {
-    const err = (salidasHoyRes.error ?? salidasRangoRes.error)!;
-    const msg = (err as { message?: string }).message?.toLowerCase?.() ?? "";
-    const looksLikeMissingFinance = msg.includes("could not find") || msg.includes("does not exist");
-    if (!looksLikeMissingFinance) throw err;
-    financeAvailable = false;
-    const [hLite, rLite] = await Promise.all([
-      supabase()
-        .from("movimientos")
-        .select(movSelectLite)
-        .eq("tipo", "salida")
-        .eq("establecimiento_id", establecimientoId)
-        .gte("timestamp", sinceToday),
-      supabase()
-        .from("movimientos")
-        .select(movSelectLite)
-        .eq("tipo", "salida")
-        .eq("establecimiento_id", establecimientoId)
-        .gte("timestamp", since)
-    ]);
-    if (hLite.error) throw hLite.error;
-    if (rLite.error) throw rLite.error;
-    salidasHoy = hLite.data;
-    salidasRango = rLite.data;
-  }
-
-  const [{ data: prods }, { count: pedidosCount }] = await Promise.all([
+  const [{ data: salidasHoy }, { data: prods }, { count: pedidosCount }] = await Promise.all([
+    supabase()
+      .from("movimientos")
+      .select("cantidad")
+      .eq("tipo", "salida")
+      .eq("establecimiento_id", establecimientoId)
+      .gte("timestamp", sinceToday),
     supabase().from("productos").select("id,stock_actual,stock_minimo").eq("establecimiento_id", establecimientoId),
     supabase()
       .from("movimientos")
@@ -183,14 +106,9 @@ async function fetchResumen(range: RangeKey, establecimientoId: string | null) {
       .gte("timestamp", since)
   ]);
 
-  const salidasHoyRows =
-    (salidasHoy as unknown as Array<{ cantidad: number; producto?: ProductoFinanzas | null }>) ?? [];
+  const salidasHoyRows = (salidasHoy as unknown as Array<{ cantidad: number }>) ?? [];
   const totalGastadoHoy = salidasHoyRows.reduce((acc, r) => acc + (Number(r.cantidad) || 0), 0);
-  const costeHoy = salidasHoyRows.reduce((acc, r) => {
-    const units = Math.abs(Number(r.cantidad) || 0);
-    const cn = financeAvailable && r.producto ? costeNeto(r.producto) : 0;
-    return acc + units * cn;
-  }, 0);
+  const costeHoy = 0;
 
   const productos = (prods as unknown as ProductoStock[]) ?? [];
   const alertasStockBajo = productos.filter((p) => {
@@ -202,20 +120,14 @@ async function fetchResumen(range: RangeKey, establecimientoId: string | null) {
   // No existe estado “pendiente” en esquema; contamos pedidos registrados en el rango como proxy.
   const pedidosPendientes = pedidosCount ?? 0;
 
-  const salidasRangoRows =
-    (salidasRango as unknown as Array<{ cantidad: number; producto?: ProductoFinanzas | null }>) ?? [];
-  const beneficioEstimado = salidasRangoRows.reduce((acc, r) => {
-    const units = Math.abs(Number(r.cantidad) || 0);
-    const mb = financeAvailable && r.producto ? margenBrutoEUR(r.producto) : 0;
-    return acc + units * mb;
-  }, 0);
+  const beneficioEstimado = 0;
 
   return { totalGastadoHoy, costeHoy, alertasStockBajo, pedidosPendientes, beneficioEstimado };
 }
 
 export function DashboardClient() {
   const [range, setRange] = useState<RangeKey>("week");
-  const [metric, setMetric] = useState<MetricKey>("units");
+  const [metric] = useState<MetricKey>("units");
   const { me, activeEstablishmentId: establecimientoId, activeEstablishmentName } = useActiveEstablishment();
 
   const topQuery = useQuery({
@@ -237,12 +149,12 @@ export function DashboardClient() {
 
   const data = useMemo(() => {
     const topRows = raw?.rows ?? [];
-    const sorted = [...topRows].sort((a, b) => (metric === "units" ? b.units - a.units : b.cost - a.cost));
+    const sorted = [...topRows].sort((a, b) => b.units - a.units);
     return sorted.slice(0, 5).map((x) => ({
       nombre: x.name,
-      cantidad: metric === "units" ? x.units : Math.round((x.cost + Number.EPSILON) * 100) / 100
+      cantidad: x.units
     }));
-  }, [metric, raw?.rows]);
+  }, [raw?.rows]);
   const resumen = resumenQuery.data;
 
   const pills = useMemo(
@@ -290,31 +202,14 @@ export function DashboardClient() {
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-3xl border border-slate-200 bg-white p-3 shadow-sm">
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold text-slate-600">Gráfico</span>
-          <button
-            className={[
-              "min-h-10 rounded-full px-4 text-sm font-semibold",
-              metric === "units" ? "bg-black text-white" : "border border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
-            ].join(" ")}
-            onClick={() => setMetric("units")}
-          >
+          <span className="min-h-10 rounded-full bg-black px-4 grid place-items-center text-sm font-semibold text-white">
             Unidades gastadas
-          </button>
-          <button
-            className={[
-              "min-h-10 rounded-full px-4 text-sm font-semibold",
-              metric === "cost" ? "bg-black text-white" : "border border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
-            ].join(" ")}
-            onClick={() => setMetric("cost")}
-          >
-            Valor € (coste)
-          </button>
+          </span>
         </div>
         <p className="text-xs text-slate-500">
           Total rango:{" "}
           <span className="font-mono">
-            {metric === "units"
-              ? `${Math.round(totals.units)} uds`
-              : `${Math.round((totals.cost + Number.EPSILON) * 100) / 100} €`}
+            {`${Math.round(totals.units)} uds`}
           </span>
         </p>
       </div>

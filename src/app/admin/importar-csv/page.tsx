@@ -299,8 +299,9 @@ export default function ImportarCsvPage() {
       articulo: r.nombre.trim(),
       categoria: r.tipo.trim() ? r.tipo.trim() : null,
       unidad: r.unidad.trim() ? r.unidad.trim() : null,
-      stock_actual: Number(r.stock_actual) || 0,
-      stock_minimo: Number(r.stock_minimo) || 0
+      // Estúpidamente estricto para evitar: invalid input syntax for type numeric: ""
+      stock_actual: r.stock_actual ? Number(r.stock_actual) : 0,
+      stock_minimo: r.stock_minimo ? Number(r.stock_minimo) : 0
     };
   }
 
