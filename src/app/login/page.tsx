@@ -16,16 +16,13 @@ export default function LoginPage() {
     setErr(null);
     setLoading(true);
     try {
-      const { error } = await supabase().auth.signInWithPassword({ email, password });
+      const { data, error } = await supabase().auth.signInWithPassword({ email, password });
       if (error) throw error;
-      // Asegura sesión + fila de usuario antes de navegar (móvil/PWA).
-      await supabase().auth.refreshSession().catch(() => undefined);
-      const s = await supabase().auth.getSession();
-      const user = s.data.session?.user ?? null;
+      // Best-effort: crea fila de usuario (no bloquea el redirect si falla por RLS).
+      const user = data.user ?? null;
       if (user) await ensureUserRow(user);
-      // Forzamos reload para que permisos/rol se reflejen inmediatamente.
-      window.location.replace("/");
-      window.location.reload();
+      // Login infalible: refresco total (sin reload extra para evitar bucles).
+      window.location.href = "/";
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -39,12 +36,10 @@ export default function LoginPage() {
     try {
       const { error } = await supabase().auth.signUp({ email, password });
       if (error) throw error;
-      await supabase().auth.refreshSession().catch(() => undefined);
       const s = await supabase().auth.getSession();
       const user = s.data.session?.user ?? null;
       if (user) await ensureUserRow(user);
-      window.location.replace("/");
-      window.location.reload();
+      window.location.href = "/";
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
