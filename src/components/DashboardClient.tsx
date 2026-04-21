@@ -1,227 +1,191 @@
 "use client";
 
-import { useMemo } from "react";
+import Link from "next/link";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/lib/supabase";
+import { Search } from "lucide-react";
+import { IconWhatsApp } from "@/components/IconWhatsApp";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
-
-type ProductoStock = {
-  id: string;
-  articulo: string;
-  categoria: string | null;
-  stock_actual: number;
-  stock_minimo: number | null;
-};
-
-function toInt(v: unknown, fallback = 0): number {
-  const n = typeof v === "number" ? v : Number(v);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.trunc(n);
-}
+import { fetchDashboardProductos, fetchMovimientosCountHoy } from "@/lib/adminDashboardData";
+import { deficitPedido, waUrlPedidoGlobal, waUrlProductoPedido } from "@/lib/whatsappPedido";
 
 export function DashboardClient() {
   const { activeEstablishmentId: establecimientoId, activeEstablishmentName, me } = useActiveEstablishment();
+  const [search, setSearch] = useState("");
 
   const productosQuery = useQuery({
     queryKey: ["dashboard", "productos", establecimientoId],
     enabled: !!establecimientoId,
-    queryFn: async () => {
-      // Compatibilidad multi-entorno: algunas BDs usan `nombre` en vez de `articulo`.
-      const withArticulo = await supabase()
-        .from("productos")
-        .select("id,articulo,categoria,stock_actual,stock_minimo")
-        .eq("establecimiento_id", establecimientoId as string)
-        .order("articulo", { ascending: true });
-
-      if (!withArticulo.error) {
-        return (withArticulo.data as unknown as ProductoStock[]) ?? [];
-      }
-
-      const msg = (withArticulo.error as { message?: string }).message?.toLowerCase?.() ?? "";
-      const looksLikeMissingArticulo =
-        msg.includes("articulo") && (msg.includes("does not exist") || msg.includes("could not find") || msg.includes("column"));
-      if (!looksLikeMissingArticulo) throw withArticulo.error;
-
-      const withNombre = await supabase()
-        .from("productos")
-        .select("id,nombre,categoria,stock_actual,stock_minimo")
-        .eq("establecimiento_id", establecimientoId as string)
-        .order("nombre", { ascending: true });
-      if (withNombre.error) throw withNombre.error;
-
-      return ((withNombre.data ?? []) as unknown as Array<{
-        id: string;
-        nombre: string;
-        categoria: string | null;
-        stock_actual: number;
-        stock_minimo: number | null;
-      }>).map((p) => ({
-        id: p.id,
-        articulo: p.nombre,
-        categoria: p.categoria,
-        stock_actual: p.stock_actual,
-        stock_minimo: p.stock_minimo
-      })) as ProductoStock[];
-    },
+    queryFn: () => fetchDashboardProductos(establecimientoId as string),
     staleTime: 15_000,
     retry: 1
   });
 
-  const productosData = productosQuery.data;
+  const movHoyQuery = useQuery({
+    queryKey: ["dashboard", "movimientos-hoy", establecimientoId],
+    enabled: !!establecimientoId,
+    queryFn: () => fetchMovimientosCountHoy(establecimientoId as string),
+    staleTime: 30_000,
+    retry: 1
+  });
+
+  const rows = useMemo(() => productosQuery.data ?? [], [productosQuery.data]);
+
+  const bajoMinimos = useMemo(() => rows.filter((p) => p.stock_actual <= p.stock_minimo), [rows]);
+
+  const pedidoGlobalUrl = useMemo(() => waUrlPedidoGlobal(bajoMinimos), [bajoMinimos]);
 
   const kpis = useMemo(() => {
-    const productos = productosData ?? [];
-    const totalReferencias = productos.length;
-    const unidadesEnAlmacen = productos.reduce((acc, p) => acc + toInt(p.stock_actual, 0), 0);
-    const criticos = productos
-      .map((p) => {
-        const min = p.stock_minimo;
-        if (typeof min !== "number" || !Number.isFinite(min)) return null;
-        const actual = toInt(p.stock_actual, 0);
-        const minimo = toInt(min, 0);
-        const deficit = minimo - actual;
-        if (actual > minimo) return null;
-        return { ...p, actual, minimo, deficit };
-      })
-      .filter(Boolean) as Array<
-      ProductoStock & {
-        actual: number;
-        minimo: number;
-        deficit: number;
-      }
-    >;
-
-    criticos.sort((a, b) => b.deficit - a.deficit || a.articulo.localeCompare(b.articulo));
+    const totalUnidades = rows.reduce((acc, p) => acc + p.stock_actual, 0);
     return {
-      totalReferencias,
-      unidadesEnAlmacen,
-      atencionRequerida: criticos.length,
-      criticos
+      bajoMinimos: bajoMinimos.length,
+      totalUnidades,
+      pedidosHoy: movHoyQuery.data ?? 0
     };
-  }, [productosData]);
+  }, [rows, bajoMinimos.length, movHoyQuery.data]);
+
+  const urgentes = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const base = bajoMinimos;
+    if (!q) return base;
+    return base.filter((p) => {
+      const a = p.articulo.toLowerCase();
+      const c = (p.categoria ?? "").toLowerCase();
+      return a.includes(q) || c.includes(q);
+    });
+  }, [bajoMinimos, search]);
 
   return (
-    <div className="space-y-6 bg-slate-50">
+    <div className="w-full max-w-full space-y-6">
       {me?.isSuperadmin && activeEstablishmentName ? (
-        <div className="rounded-2xl border border-slate-100 bg-white p-4 text-sm text-slate-700 shadow-sm">
-          Establecimiento activo: <span className="font-semibold">{activeEstablishmentName}</span>
+        <div className="w-full rounded-3xl border border-slate-100 bg-white p-4 text-base text-slate-600 shadow-sm">
+          Establecimiento activo: <span className="font-semibold text-slate-900">{activeEstablishmentName}</span>
         </div>
       ) : null}
 
+      <div className="relative w-full">
+        <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Buscar en alertas…"
+          className="min-h-12 w-full rounded-3xl border border-slate-200 bg-white py-3 pl-12 pr-4 text-base text-slate-900 shadow-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+          aria-label="Buscar en alertas"
+        />
+      </div>
+
       {productosQuery.isLoading ? (
-        <p className="text-sm text-slate-600">Cargando stock…</p>
+        <p className="text-base text-slate-500">Cargando stock…</p>
       ) : productosQuery.error ? (
-        <p className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        <p className="rounded-3xl border border-red-200 bg-red-50 p-4 text-base text-red-800">
           {(productosQuery.error as Error).message}
         </p>
+      ) : !establecimientoId ? (
+        <p className="text-base text-slate-500">Selecciona un establecimiento para ver el inventario.</p>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-            <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-800">Atención Requerida</p>
-                  <p className="mt-1 text-sm text-slate-500">Bajo mínimos o igual al mínimo</p>
-                </div>
-                <span className="text-xl" aria-hidden>
-                  ⚠️
-                </span>
-              </div>
-              <p className="mt-4 text-3xl font-semibold tabular-nums text-red-600">{kpis.atencionRequerida}</p>
+          <div className="grid w-full grid-cols-1 gap-6 sm:grid-cols-3">
+            <div className="rounded-3xl border border-red-100 bg-white p-6 shadow-sm ring-1 ring-red-50">
+              <p className="text-sm font-semibold uppercase tracking-wide text-red-700">Bajo mínimos</p>
+              <p className="mt-2 text-xs text-red-600/90">Actual ≤ mínimo</p>
+              <p className="mt-4 text-5xl font-bold tabular-nums tracking-tight text-red-600">{kpis.bajoMinimos}</p>
             </div>
-
-            <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-800">Total Referencias</p>
-                  <p className="mt-1 text-sm text-slate-500">Productos únicos</p>
-                </div>
-                <span className="text-xl" aria-hidden>
-                  📦
-                </span>
-              </div>
-              <p className="mt-4 text-3xl font-semibold tabular-nums text-slate-900">{kpis.totalReferencias}</p>
+            <div className="rounded-3xl border border-blue-100 bg-white p-6 shadow-sm ring-1 ring-blue-50">
+              <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">Total stock</p>
+              <p className="mt-2 text-xs text-blue-600/90">Unidades en almacén</p>
+              <p className="mt-4 text-5xl font-bold tabular-nums tracking-tight text-blue-600">{kpis.totalUnidades}</p>
             </div>
-
-            <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-800">Unidades en Almacén</p>
-                  <p className="mt-1 text-sm text-slate-500">Suma total de stock actual</p>
-                </div>
-                <span className="text-xl" aria-hidden>
-                  📊
-                </span>
-              </div>
-              <p className="mt-4 text-3xl font-semibold tabular-nums text-slate-900">{kpis.unidadesEnAlmacen}</p>
+            <div className="rounded-3xl border border-emerald-100 bg-white p-6 shadow-sm ring-1 ring-emerald-50">
+              <p className="text-sm font-semibold uppercase tracking-wide text-emerald-700">Pedidos hoy</p>
+              <p className="mt-2 text-xs text-emerald-600/90">Registros tipo pedido hoy</p>
+              <p className="mt-4 text-5xl font-bold tabular-nums tracking-tight text-emerald-600">{kpis.pedidosHoy}</p>
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
-            <div className="mb-4 flex flex-col gap-1">
-              <p className="text-base font-semibold text-slate-800">Artículos a Reponer</p>
-              <p className="text-sm text-slate-500">Lista crítica (stock actual ≤ stock mínimo), ordenada por déficit.</p>
+          <div className="space-y-3">
+            <button
+              type="button"
+              disabled={!pedidoGlobalUrl}
+              onClick={() => pedidoGlobalUrl && window.open(pedidoGlobalUrl, "_blank", "noopener,noreferrer")}
+              className="inline-flex min-h-12 w-full items-center justify-center gap-3 rounded-3xl border border-emerald-200 bg-emerald-500 px-4 py-3 text-base font-semibold text-white shadow-sm hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-200 disabled:text-emerald-800/70"
+            >
+              <IconWhatsApp className="h-7 w-7 shrink-0 text-white" />
+              Pedido global (WhatsApp)
+            </button>
+            {!bajoMinimos.length ? (
+              <p className="text-sm text-slate-500">No hay artículos en alerta de stock.</p>
+            ) : !pedidoGlobalUrl ? (
+              <p className="text-sm text-slate-500">
+                Hay artículos bajo mínimos; añade teléfono WhatsApp a un proveedor para el pedido global con varias líneas.
+              </p>
+            ) : null}
+          </div>
+
+          <section className="space-y-4">
+            <div className="flex items-end justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">Acción urgente</h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  {urgentes.length} producto{urgentes.length === 1 ? "" : "s"} requieren atención
+                  {search.trim() ? " (filtrado)" : ""}
+                </p>
+              </div>
+              <Link
+                href="/stock"
+                className="inline-flex min-h-12 shrink-0 items-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 shadow-sm"
+              >
+                Ver inventario
+              </Link>
             </div>
 
-            {!kpis.criticos.length ? (
-              <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
-                <div className="flex items-start gap-3">
-                  <span className="text-xl" aria-hidden>
-                    ✅
-                  </span>
-                  <div>
-                    <p className="text-sm font-semibold text-emerald-900">El stock está saneado.</p>
-                    <p className="mt-0.5 text-sm text-emerald-800">No hay alertas urgentes.</p>
-                  </div>
-                </div>
+            {urgentes.length === 0 ? (
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 text-center text-base text-slate-600 shadow-sm">
+                {bajoMinimos.length === 0
+                  ? "Todo en orden: no hay productos por debajo del mínimo."
+                  : "Ninguna alerta coincide con la búsqueda."}
               </div>
             ) : (
-              <div className="overflow-x-auto rounded-2xl border border-slate-100">
-                <table className="w-full min-w-[860px] border-collapse text-left text-[13px]">
-                  <thead>
-                    <tr className="border-b border-slate-100 bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                      <th className="px-4 py-3">Artículo</th>
-                      <th className="px-4 py-3">Categoría</th>
-                      <th className="px-4 py-3 text-right">Stock actual</th>
-                      <th className="px-4 py-3 text-right">Stock mínimo</th>
-                      <th className="px-4 py-3 text-right">Acción</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {kpis.criticos.map((p) => {
-                      const badge =
-                        p.actual <= 0
-                          ? "bg-red-50 text-red-700 ring-1 ring-red-100"
-                          : "bg-amber-50 text-amber-800 ring-1 ring-amber-100";
-                      return (
-                        <tr key={p.id} className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50/50">
-                          <td className="px-4 py-3 font-semibold text-slate-900">{p.articulo}</td>
-                          <td className="px-4 py-3 text-slate-700">{p.categoria ?? "—"}</td>
-                          <td className="px-4 py-3 text-right">
-                            <span className={["inline-flex items-center rounded-full px-2.5 py-1 font-mono text-xs tabular-nums", badge].join(" ")}>
-                              {p.actual}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-right font-mono text-xs tabular-nums text-slate-700">{p.minimo}</td>
-                          <td className="px-4 py-3 text-right">
-                            <a
-                              href="/admin/pedido-rapido"
-                              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
-                            >
-                              Pedir →
-                            </a>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <ul className="flex flex-col gap-4">
+                {urgentes.map((p) => {
+                  const hrefWa = waUrlProductoPedido(p);
+                  const cant = Math.max(1, deficitPedido(p.stock_actual, p.stock_minimo));
+                  return (
+                    <li
+                      key={p.id}
+                      className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm ring-1 ring-slate-100"
+                    >
+                      <p className="text-lg font-bold leading-snug text-slate-900">{p.articulo}</p>
+                      <p className="mt-2 text-base text-slate-600">
+                        Stock <span className="font-mono font-semibold tabular-nums text-slate-900">{p.stock_actual}</span>
+                        {" · "}
+                        Mín. <span className="font-mono font-semibold tabular-nums text-slate-900">{p.stock_minimo}</span>
+                        {p.unidad ? <span className="text-slate-500"> ({p.unidad})</span> : null}
+                      </p>
+                      {p.proveedor?.nombre ? (
+                        <p className="mt-1 text-sm text-slate-500">Proveedor: {p.proveedor.nombre}</p>
+                      ) : null}
+                      {hrefWa ? (
+                        <a
+                          href={hrefWa}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-3xl bg-emerald-500 px-4 py-3 text-base font-bold text-white shadow-sm hover:bg-emerald-600"
+                        >
+                          <IconWhatsApp className="h-7 w-7 text-white" />
+                          Pedir por WhatsApp ({cant})
+                        </a>
+                      ) : (
+                        <p className="mt-3 text-sm text-amber-800">No se pudo preparar el enlace de WhatsApp.</p>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
             )}
-          </div>
+          </section>
         </>
       )}
     </div>
   );
 }
-

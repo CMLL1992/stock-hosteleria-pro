@@ -102,7 +102,7 @@ export default function ProveedoresPage() {
               <p className="mt-1 text-xs text-slate-600">{p.telefono_whatsapp ?? "—"}</p>
             </div>
             <a
-              className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 hover:bg-slate-50"
+              className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50"
               href={`/admin/proveedores/${encodeURIComponent(p.id)}/editar`}
               aria-label="Editar proveedor"
               title="Editar"

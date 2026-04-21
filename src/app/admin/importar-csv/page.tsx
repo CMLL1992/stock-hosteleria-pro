@@ -2,6 +2,7 @@
 
 import type { DragEvent, ChangeEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Papa from "papaparse";
 import { Button } from "@/components/ui/Button";
 import type { AppRole } from "@/lib/session";
 import { fetchMyRole } from "@/lib/session";
@@ -10,22 +11,29 @@ import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { MobileHeader } from "@/components/MobileHeader";
 import { normalizeNombreClave } from "@/lib/csvProductImport";
 
+const UNIDADES_PERMITIDAS = new Set(["caja", "barril", "botella", "lata", "unidad"]);
+
 type CsvRow = {
-  nombre: string;
+  /** Clave de producto (CSV puede traer columna "nombre" o "articulo"; aquí siempre unificado). */
+  articulo: string;
   tipo: string;
   unidad: string;
   stock_actual: number;
   stock_minimo: number;
+  /** Valor de celda no numérico: se importa como 0 */
+  stockActualInvalido?: boolean;
+  stockMinimoInvalido?: boolean;
 };
 
 type FilaVista = CsvRow & {
   accion: "nuevo" | "actualizar";
   idExistente?: string;
-  /** Misma clave en más de una fila: solo cuenta la última al importar */
   duplicadaEnCsv?: boolean;
 };
 
 type ProductoExistente = { id: string; qr_code_uid: string | null };
+
+const BATCH_SIZE = 50;
 
 function supabaseErrToString(e: unknown): string {
   if (e instanceof Error) return e.message;
@@ -40,95 +48,80 @@ function supabaseErrToString(e: unknown): string {
   return String(e);
 }
 
-function splitSemiCsvLine(line: string): string[] {
-  // CSV simple con ; (el archivo adjunto trae muchas columnas vacías al final: ;;;;)
-  // Respetamos comillas por si las hubiera.
-  const out: string[] = [];
-  let cur = "";
-  let inQ = false;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (c === '"') {
-      inQ = !inQ;
-      continue;
-    }
-    if (!inQ && c === ";") {
-      out.push(cur);
-      cur = "";
-      continue;
-    }
-    cur += c;
-  }
-  out.push(cur);
-  return out.map((x) => x.trim());
-}
-
-function parseStockNumber(raw: string): number {
-  const s = raw.trim();
-  if (!s) return 0;
+function parseStockCell(raw: unknown): { n: number; invalido: boolean } {
+  const s = String(raw ?? "").trim();
+  if (!s) return { n: 0, invalido: false };
   const cleaned = s.replace(/\s/g, "").replace(/[^\d,.-]/g, "").replace(",", ".");
-  const n = Number(cleaned);
-  return Number.isFinite(n) ? n : 0;
+  const n = parseFloat(cleaned);
+  if (!Number.isFinite(n)) return { n: 0, invalido: true };
+  return { n, invalido: false };
 }
 
-function parseProductosCsvStock(text: string): CsvRow[] {
-  const lines = text
-    .split(/\r?\n/)
-    .map((l) => l.trimEnd())
-    .filter((l) => l.trim().length > 0);
-  if (!lines.length) return [];
+function coerceUnidad(raw: string): string {
+  const t = raw.trim().toLowerCase();
+  if (!t) return "unidad";
+  if (UNIDADES_PERMITIDAS.has(t)) return t;
+  return "unidad";
+}
 
-  // Cabecera real: nombre;tipo;unidad;stock_actual;stock_minimo (delimitador ;)
-  const headerLine = lines[0]!;
-  const headers = splitSemiCsvLine(headerLine)
-    .map((h) => h.trim())
-    .filter((h) => h.length > 0)
-    .map((h) => h.toLowerCase());
+function analyzeCsvWithPapa(text: string): CsvRow[] {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
 
-  const idx = (name: string) => headers.findIndex((h) => h === name);
-  const iNombre = idx("nombre");
-  const iTipo = idx("tipo");
-  const iUnidad = idx("unidad");
-  const iStockActual = idx("stock_actual");
-  const iStockMin = idx("stock_minimo");
+  const parsed = Papa.parse<Record<string, string>>(trimmed, {
+    header: true,
+    delimiter: ";",
+    skipEmptyLines: "greedy",
+    transformHeader: (h) => String(h).trim().toLowerCase(),
+    dynamicTyping: false
+  });
 
-  if (iNombre === -1) throw new Error('CSV inválido: falta la columna "nombre".');
-  if (iTipo === -1) throw new Error('CSV inválido: falta la columna "tipo".');
-  if (iUnidad === -1) throw new Error('CSV inválido: falta la columna "unidad".');
-  if (iStockActual === -1) throw new Error('CSV inválido: falta la columna "stock_actual".');
-  if (iStockMin === -1) throw new Error('CSV inválido: falta la columna "stock_minimo".');
+  const papaFatal = parsed.errors?.find((e) => e.type === "Quotes" || e.type === "Delimiter");
+  if (papaFatal?.message) throw new Error(`CSV inválido: ${papaFatal.message}`);
 
-  const rows: CsvRow[] = [];
-  for (const line of lines.slice(1)) {
-    const cells = splitSemiCsvLine(line);
-    const get = (i: number) => (cells[i] ?? "").trim();
+  const fields = (parsed.meta.fields ?? []).map((f) => String(f).trim().toLowerCase());
+  const has = (n: string) => fields.includes(n);
+  if (!has("nombre") && !has("articulo")) {
+    throw new Error('CSV inválido: falta columna de artículo ("nombre" o "articulo").');
+  }
+  if (!has("tipo") && !has("categoria")) {
+    throw new Error('CSV inválido: falta columna de categoría ("tipo" o "categoria").');
+  }
+  if (!has("unidad")) throw new Error('CSV inválido: falta la columna "unidad".');
+  if (!has("stock_actual")) throw new Error('CSV inválido: falta la columna "stock_actual".');
+  if (!has("stock_minimo")) throw new Error('CSV inválido: falta la columna "stock_minimo".');
 
-    const nombre = get(iNombre).trim();
-    if (!nombre) continue;
+  const out: CsvRow[] = [];
+  for (const rec of parsed.data) {
+    if (!rec || typeof rec !== "object") continue;
+    const articulo = String(rec["articulo"] ?? rec["nombre"] ?? "").trim();
+    if (!articulo) continue;
 
-    const tipo = get(iTipo);
-    const unidad = get(iUnidad);
-    const stock_actual = parseStockNumber(get(iStockActual));
-    const stock_minimo = parseStockNumber(get(iStockMin));
+    const tipoRaw = String(rec["tipo"] ?? rec["categoria"] ?? "").trim();
+    const unidadRaw = String(rec["unidad"] ?? "").trim();
 
-    rows.push({
-      nombre,
-      tipo: tipo.trim(),
-      unidad: unidad.trim(),
-      stock_actual: Number.isFinite(stock_actual) ? stock_actual : 0,
-      stock_minimo: Number.isFinite(stock_minimo) ? stock_minimo : 0
+    const sa = parseStockCell(rec["stock_actual"]);
+    const sm = parseStockCell(rec["stock_minimo"]);
+
+    out.push({
+      articulo,
+      tipo: tipoRaw,
+      unidad: coerceUnidad(unidadRaw),
+      stock_actual: Math.trunc(sa.n) || 0,
+      stock_minimo: Math.trunc(sm.n) || 0,
+      stockActualInvalido: sa.invalido,
+      stockMinimoInvalido: sm.invalido
     });
   }
-  return rows;
+  return out;
 }
 
-/** Si el mismo nombre aparece varias veces, prevalece la última fila del archivo. */
 function dedupeRowsLastWins(rows: CsvRow[]): CsvRow[] {
   const out: CsvRow[] = [];
   const seen = new Set<string>();
   for (let i = rows.length - 1; i >= 0; i--) {
     const r = rows[i]!;
-    const k = normalizeNombreClave(r.nombre);
+    const k = normalizeNombreClave(r.articulo);
     if (seen.has(k)) continue;
     seen.add(k);
     out.push(r);
@@ -156,12 +149,17 @@ export default function ImportarCsvPage() {
   const [err, setErr] = useState<string | null>(null);
   const { activeEstablishmentId } = useActiveEstablishment();
 
-  const [csvText, setCsvText] = useState("nombre;tipo;unidad;stock_actual;stock_minimo\n");
-  const [parseErr, setParseErr] = useState<string | null>(null);
-  const [rowsParsed, setRowsParsed] = useState<CsvRow[]>([]);
+  /** Texto crudo del CSV (área avanzada o tras cargar archivo) */
+  const [csvText, setCsvText] = useState("");
+  /** Filas ya analizadas (paso 2 / validación visual) */
+  const [rowsAnalizadas, setRowsAnalizadas] = useState<CsvRow[]>([]);
+  const [analisisErr, setAnalisisErr] = useState<string | null>(null);
+  const [analizado, setAnalizado] = useState(false);
+
   const [productosPorClave, setProductosPorClave] = useState<Map<string, ProductoExistente>>(new Map());
   const [cargandoMapa, setCargandoMapa] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
   const [result, setResult] = useState<string | null>(null);
   const [drag, setDrag] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -188,26 +186,10 @@ export default function ImportarCsvPage() {
     };
   }, []);
 
-  useEffect(() => {
-    try {
-      if (!csvText.trim()) {
-        setRowsParsed([]);
-        setParseErr(null);
-        return;
-      }
-      setRowsParsed(parseProductosCsvStock(csvText));
-      setParseErr(null);
-    } catch (e) {
-      setParseErr(e instanceof Error ? e.message : String(e));
-      setRowsParsed([]);
-    }
-  }, [csvText]);
-
   const cargarMapaNombres = useCallback(async () => {
     if (!activeEstablishmentId) return;
     setCargandoMapa(true);
     try {
-      // Regla estricta: en tu BD la columna clave es ARTICULO (no existe NOMBRE).
       const { data, error } = await supabase()
         .from("productos")
         .select("id,articulo,qr_code_uid")
@@ -236,25 +218,25 @@ export default function ImportarCsvPage() {
 
   const { filasVista, nNuevos, nActualizacion, filasUnicasImport } = useMemo(() => {
     const vist: FilaVista[] = [];
-    for (const r of rowsParsed) {
-      const k = normalizeNombreClave(r.nombre);
+    for (const r of rowsAnalizadas) {
+      const k = normalizeNombreClave(r.articulo);
       const ex = productosPorClave.get(k);
       const duplicadaEnCsv =
-        rowsParsed.filter((x) => normalizeNombreClave(x.nombre) === k).length > 1;
+        rowsAnalizadas.filter((x) => normalizeNombreClave(x.articulo) === k).length > 1;
       vist.push({ ...r, accion: ex ? "actualizar" : "nuevo", idExistente: ex?.id, duplicadaEnCsv });
     }
-    const unicas = dedupeRowsLastWins(rowsParsed);
+    const unicas = dedupeRowsLastWins(rowsAnalizadas);
     let nN = 0;
     let nA = 0;
     for (const r of unicas) {
-      const k = normalizeNombreClave(r.nombre);
+      const k = normalizeNombreClave(r.articulo);
       if (productosPorClave.get(k)) nA++;
       else nN++;
     }
     return { filasVista: vist, nNuevos: nN, nActualizacion: nA, filasUnicasImport: unicas };
-  }, [rowsParsed, productosPorClave]);
+  }, [rowsAnalizadas, productosPorClave]);
 
-  const nDuplicadosOmitidos = Math.max(0, rowsParsed.length - filasUnicasImport.length);
+  const nDuplicadosOmitidos = Math.max(0, rowsAnalizadas.length - filasUnicasImport.length);
 
   function Badge({
     color,
@@ -279,6 +261,11 @@ export default function ImportarCsvPage() {
   async function loadFile(file: File) {
     const text = await file.text();
     setCsvText(text);
+    setAnalizado(false);
+    setRowsAnalizadas([]);
+    setAnalisisErr(null);
+    setResult(null);
+    setImportProgress(0);
   }
 
   function onDrop(e: DragEvent<HTMLDivElement>) {
@@ -293,15 +280,57 @@ export default function ImportarCsvPage() {
     if (f) loadFile(f).catch(() => undefined);
   }
 
-  function buildPayloadBase(r: CsvRow) {
+  function ejecutarAnalisis() {
+    setAnalisisErr(null);
+    setResult(null);
+    setErr(null);
+    setImportProgress(0);
+    try {
+      if (!csvText.trim()) {
+        setRowsAnalizadas([]);
+        setAnalizado(false);
+        throw new Error("No hay contenido CSV. Sube un archivo o pega el texto.");
+      }
+      const rows = analyzeCsvWithPapa(csvText);
+      setRowsAnalizadas(rows);
+      setAnalizado(true);
+    } catch (e) {
+      setAnalisisErr(e instanceof Error ? e.message : String(e));
+      setRowsAnalizadas([]);
+      setAnalizado(false);
+    }
+  }
+
+  /**
+   * Mapeo blindado CSV → fila `productos` (solo `articulo`, nunca columna DB `nombre`).
+   * Acepta alias de columnas vía objeto fila unificado.
+   */
+  function buildPayloadFromCsvRow(
+    r: CsvRow,
+    ex: ProductoExistente | undefined,
+    activeId: string
+  ): Record<string, unknown> {
+    const fila: Record<string, unknown> = {
+      nombre: r.articulo,
+      articulo: r.articulo,
+      tipo: r.tipo,
+      categoria: r.tipo,
+      unidad: r.unidad,
+      stock_actual: r.stock_actual,
+      stock_minimo: r.stock_minimo
+    };
+    const articulo = String(fila.nombre ?? fila.articulo ?? "").trim();
+    const categoria = String(fila.tipo ?? fila.categoria ?? "General").trim();
+    const unidadRaw = String(fila.unidad ?? "uds").trim();
     return {
-      // IMPORTANTÍSIMO: NO enviar nunca "nombre" a la BD. La columna real es "articulo".
-      articulo: r.nombre.trim(),
-      categoria: r.tipo.trim() ? r.tipo.trim() : null,
-      unidad: r.unidad.trim() ? r.unidad.trim() : null,
-      // Estúpidamente estricto para evitar: invalid input syntax for type numeric: ""
-      stock_actual: r.stock_actual ? Number(r.stock_actual) : 0,
-      stock_minimo: r.stock_minimo ? Number(r.stock_minimo) : 0
+      articulo,
+      categoria,
+      unidad: coerceUnidad(unidadRaw),
+      stock_actual: parseFloat(String(fila.stock_actual)) || 0,
+      stock_minimo: parseFloat(String(fila.stock_minimo)) || 0,
+      establecimiento_id: activeId,
+      proveedor_id: null,
+      qr_code_uid: ex?.qr_code_uid ?? crypto.randomUUID().replaceAll("-", "")
     };
   }
 
@@ -309,41 +338,36 @@ export default function ImportarCsvPage() {
     setErr(null);
     setResult(null);
     setBusy(true);
+    setImportProgress(0);
     try {
-      if (parseErr) throw new Error(parseErr);
-      if (!rowsParsed.length) throw new Error("No hay filas para importar.");
+      if (analisisErr) throw new Error(analisisErr);
+      if (!analizado || !filasUnicasImport.length) throw new Error("Primero analiza el archivo con datos válidos.");
       if (!activeEstablishmentId) throw new Error("No hay establecimiento activo.");
 
-      const payload = filasUnicasImport.map((r) => {
-        const k = normalizeNombreClave(r.nombre);
-        const ex = productosPorClave.get(k);
-        return {
-          ...buildPayloadBase(r),
-          proveedor_id: null,
-          // Mantener QR estable en updates: si existe, reutilizamos; si no, generamos.
-          qr_code_uid: ex?.qr_code_uid ?? crypto.randomUUID().replaceAll("-", ""),
-          establecimiento_id: activeEstablishmentId
-        };
-      });
+      const total = filasUnicasImport.length;
+      let okCount = 0;
+      setImportProgress(1);
 
-      const { error } = await supabase()
-        .from("productos")
-        .upsert(payload, { onConflict: "articulo" });
-      if (error) throw error;
+      for (let i = 0; i < total; i += BATCH_SIZE) {
+        const slice = filasUnicasImport.slice(i, i + BATCH_SIZE);
+        const payload = slice.map((r) => {
+          const k = normalizeNombreClave(r.articulo);
+          const ex = productosPorClave.get(k);
+          return buildPayloadFromCsvRow(r, ex, activeEstablishmentId);
+        });
 
-      let creados = 0;
-      let actualizados = 0;
-      for (const r of filasUnicasImport) {
-        const k = normalizeNombreClave(r.nombre);
-        if (productosPorClave.get(k)) actualizados++;
-        else creados++;
+        const { error } = await supabase().from("productos").upsert(payload, { onConflict: "articulo" });
+
+        if (error) throw new Error(supabaseErrToString(error));
+
+        okCount += slice.length;
+        setImportProgress(Math.min(100, Math.round((okCount / total) * 100)));
       }
-      setResult(
-        `Importación completada: ${creados} nuevos, ${actualizados} actualizados (clave: artículo).`
-      );
+
+      setImportProgress(100);
+      setResult(`✅ ${okCount} productos importados correctamente (bloques de ${BATCH_SIZE}, upsert por artículo).`);
       await cargarMapaNombres();
     } catch (e) {
-      // Log detallado para depurar errores de Supabase en el navegador
       // eslint-disable-next-line no-console
       console.error("Error importando CSV:", e);
       if (typeof e === "object" && e && ("message" in e || "details" in e || "hint" in e)) {
@@ -376,38 +400,68 @@ export default function ImportarCsvPage() {
       <MobileHeader title="Importar CSV" showBack backHref="/admin" />
       <main className="mx-auto max-w-3xl bg-slate-50 p-4 pb-28 text-slate-900">
         <h1 className="mb-2 text-xl font-semibold">Importar CSV</h1>
-        <p className="mb-1 text-sm text-slate-600">
-          Cabecera obligatoria:{" "}
-          <span className="font-mono font-semibold">nombre;tipo;unidad;stock_actual;stock_minimo</span> (separador{" "}
-          <strong>;</strong>).
-        </p>
-        <p className="mb-4 text-xs text-slate-500">
-          Se recortan espacios (<span className="font-mono">trim()</span>) y se convierten stocks a número; si
-          vienen vacíos, se usa <strong>0</strong>. Los productos con el <strong>mismo nombre</strong> en este
-          establecimiento se <strong>actualizan</strong>; el resto se crean.
-        </p>
+        <ol className="mb-4 list-decimal space-y-1 pl-5 text-sm text-slate-600">
+          <li>
+            <strong className="text-slate-900">Paso 1 — Limpieza y mapeo:</strong> cabecera{" "}
+            <span className="font-mono font-semibold">nombre;tipo;unidad;stock_actual;stock_minimo</span> (o{" "}
+            <span className="font-mono font-semibold">articulo;…</span>) — delimitador <strong>;</strong>, PapaParse.
+          </li>
+          <li>
+            <strong className="text-slate-900">Paso 2 — Validación visual:</strong> previsualización; stocks no numéricos se
+            marcan en rojo y se envían como 0.
+          </li>
+          <li>
+            <strong className="text-slate-900">Paso 3 — Carga:</strong> lotes de {BATCH_SIZE} filas con barra de progreso;
+            upsert por <span className="font-mono">articulo</span> (incluye <span className="font-mono">establecimiento_id</span> en cada fila).
+          </li>
+        </ol>
 
         {err ? (
           <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{err}</p>
         ) : null}
-        {parseErr ? (
-          <p className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-            {parseErr}
-          </p>
+        {analisisErr ? (
+          <p className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{analisisErr}</p>
         ) : null}
         {result ? (
-          <p className="mb-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
-            {result}
-          </p>
+          <p className="mb-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{result}</p>
         ) : null}
 
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          <div className="space-y-3 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-sm font-semibold text-slate-900">1) Sube el CSV</p>
+        {busy ? (
+          <div className="mb-4">
+            <div className="mb-1 flex justify-between text-xs font-semibold text-slate-600">
+              <span>Importando…</span>
+              <span>{importProgress}%</span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+              <div
+                className="h-full rounded-full bg-slate-900 transition-[width] duration-300"
+                style={{ width: `${Math.min(100, Math.max(2, importProgress))}%` }}
+              />
+            </div>
+          </div>
+        ) : null}
+
+        <div className="grid grid-cols-1 gap-6">
+          <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-base font-bold text-slate-900">Archivo</p>
+            <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={onPick} />
+            <button
+              type="button"
+              className="flex min-h-14 w-full flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center transition hover:border-slate-400 hover:bg-white disabled:opacity-50"
+              onClick={() => fileRef.current?.click()}
+              disabled={busy}
+            >
+              <span className="text-3xl" aria-hidden>
+                📁
+              </span>
+              <span className="text-base font-bold text-slate-900">Seleccionar archivo desde el móvil</span>
+              <span className="text-sm text-slate-600">CSV con delimitador ; (nombre o artículo)</span>
+            </button>
+
             <div
               className={[
-                "rounded-3xl border-2 border-dashed p-4 text-center transition",
-                drag ? "border-black bg-slate-50" : "border-slate-200 bg-white"
+                "rounded-3xl border border-dashed p-4 text-center text-sm text-slate-500 transition",
+                drag ? "border-slate-900 bg-slate-100" : "border-slate-200 bg-white"
               ].join(" ")}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -416,142 +470,153 @@ export default function ImportarCsvPage() {
               onDragLeave={() => setDrag(false)}
               onDrop={onDrop}
             >
-              <p className="text-sm font-semibold text-slate-900">Arrastra el archivo</p>
-              <p className="mt-1 text-xs text-slate-600">o elige un archivo</p>
-              <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={onPick} />
-              <button
-                type="button"
-                className="mt-3 inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50"
-                onClick={() => fileRef.current?.click()}
-                disabled={busy}
-              >
-                Elegir archivo
-              </button>
+              También puedes soltar el archivo aquí
             </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge color="green">[{nNuevos}] Productos nuevos</Badge>
-                <Badge color="amber">[{nActualizacion}] Productos a actualizar</Badge>
-                <Badge color="gray">[{nDuplicadosOmitidos}] Duplicados omitidos en este archivo</Badge>
-              </div>
-              <Button onClick={importar} disabled={busy || !filasVista.length || !!parseErr}>
-                {busy ? "Importando…" : "Confirmar importación"}
+
+            <div className="flex flex-col gap-3">
+              <Button
+                className="min-h-12 w-full text-base"
+                onClick={ejecutarAnalisis}
+                disabled={busy || !csvText.trim()}
+              >
+                Analizar archivo
               </Button>
               <Button
-                onClick={downloadTemplate}
-                disabled={busy}
-                className="bg-slate-800 hover:bg-slate-900"
+                onClick={importar}
+                disabled={busy || !filasVista.length || !!analisisErr || !analizado}
+                className="min-h-12 w-full bg-slate-900 text-base text-white hover:bg-slate-800"
               >
+                {busy ? "Importando…" : "Confirmar importación"}
+              </Button>
+              <Button onClick={downloadTemplate} disabled={busy} className="min-h-12 w-full bg-slate-800 text-base hover:bg-slate-900">
                 Descargar plantilla
               </Button>
               <button
                 type="button"
-                className="text-xs font-semibold text-slate-600 underline"
+                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white text-base font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
                 onClick={() => cargarMapaNombres()}
                 disabled={cargandoMapa}
               >
-                {cargandoMapa ? "Actualizando productos…" : "Recargar coincidencias"}
+                {cargandoMapa ? "Actualizando coincidencias…" : "Recargar coincidencias"}
               </button>
             </div>
+
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <Badge color="green">[{nNuevos}] Productos nuevos</Badge>
+              <Badge color="amber">[{nActualizacion}] Productos a actualizar</Badge>
+              <Badge color="gray">[{nDuplicadosOmitidos}] Duplicados omitidos en este archivo</Badge>
+            </div>
             <p className="text-xs text-slate-600">
-              El separador del archivo es <strong>;</strong>. Columnas extra vacías al final (;;;;) se ignoran.
+              Categoría vacía → <span className="font-mono">General</span>. Unidad vacía o no reconocida →{" "}
+              <span className="font-mono">unidad</span>.
             </p>
           </div>
 
           <div className="space-y-3 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-sm font-semibold text-slate-900">Leyenda (previsualización)</p>
+            <p className="text-sm font-semibold text-slate-900">Leyenda</p>
             <div className="space-y-2 text-sm">
               <p className="flex items-center gap-2">
                 <span className="inline-block h-3 w-3 rounded-sm bg-amber-400" aria-hidden />
                 <span className="text-slate-800">
-                  Fila naranja: <strong>actualización</strong> (se muestra 🔄).
+                  Fila naranja: <strong>actualización</strong> (🔄).
                 </span>
               </p>
               <p className="flex items-center gap-2">
                 <span className="inline-block h-3 w-3 rounded-sm bg-emerald-400" aria-hidden />
                 <span className="text-slate-800">
-                  Fila verde: <strong>alta nueva</strong>.
+                  Fila verde: <strong>alta nueva</strong> (＋).
                 </span>
+              </p>
+              <p className="text-xs text-slate-600">
+                Celda de stock con fondo rojo: valor no numérico; se importará como <strong>0</strong>.
               </p>
             </div>
             {filasVista.length > 0 ? (
               <p className="text-xs text-slate-600">
-                Resumen: {nNuevos} nuevos, {nActualizacion} actualizaciones, {nDuplicadosOmitidos} duplicados omitidos
-                {cargandoMapa ? " (cargando productos actuales…)" : null}.
+                Tras analizar: {nNuevos} nuevos, {nActualizacion} actualizaciones, {nDuplicadosOmitidos} duplicados
+                omitidos.
+                {cargandoMapa ? " (cargando productos actuales…)" : ""}
               </p>
             ) : null}
           </div>
         </div>
 
         {filasVista.length > 0 ? (
-          <div className="mt-4 overflow-x-auto rounded-3xl border border-slate-200 bg-white shadow-sm">
-            <p className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-800">
-              Previsualización
+          <div className="mt-6 rounded-3xl border border-slate-200 bg-white shadow-sm">
+            <p className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-base font-bold text-slate-900">
+              Previsualización ({filasVista.length} líneas)
             </p>
-            <table className="w-full min-w-[720px] border-collapse text-left text-[13px]">
-              <thead>
-                <tr className="border-b border-slate-200 bg-white text-[11px] font-bold uppercase tracking-wide text-slate-700">
-                  <th className="border-r border-slate-200 px-3 py-2">NOMBRE</th>
-                  <th className="border-r border-slate-200 px-3 py-2">TIPO</th>
-                  <th className="border-r border-slate-200 px-3 py-2">UNIDAD</th>
-                  <th className="border-r border-slate-200 px-3 py-2 text-right">STOCK ACTUAL</th>
-                  <th className="px-3 py-2 text-right">STOCK MÍNIMO</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filasVista.map((f, i) => (
-                  <tr
-                    key={i}
-                    className={[
-                      "border-b border-slate-200",
-                      f.accion === "actualizar"
-                        ? "bg-amber-50/90 hover:bg-amber-50"
-                        : "bg-emerald-50/60 hover:bg-emerald-50/90"
-                    ].join(" ")}
+            <ul className="max-h-[min(70vh,520px)] divide-y divide-slate-100 overflow-y-auto">
+              {filasVista.map((f, i) => (
+                <li
+                  key={i}
+                  className={[
+                    "flex gap-4 px-4 py-4",
+                    f.accion === "actualizar" ? "bg-amber-50/80" : "bg-emerald-50/50"
+                  ].join(" ")}
+                >
+                  <span
+                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-lg font-bold text-white shadow-sm"
+                    aria-hidden
                   >
-                    <td className="border-r border-slate-200 px-3 py-2 font-semibold text-slate-900">
-                      <span className="mr-1 inline-flex items-center gap-1 text-[12px] font-bold">
-                        {f.accion === "actualizar" ? (
-                          <span className="text-amber-700" title="Se actualizará">
-                            🔄
-                          </span>
-                        ) : (
-                          <span className="text-emerald-700" title="Se creará nuevo">
-                            ＋
-                          </span>
-                        )}
-                        {f.duplicadaEnCsv ? (
-                          <span className="text-slate-500" title="Duplicado en CSV (se importará la última aparición)">
-                            ⓘ
-                          </span>
-                        ) : null}
+                    ✓
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-base font-bold text-slate-900">{f.articulo}</p>
+                      {f.accion === "actualizar" ? (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-900 ring-1 ring-amber-200">
+                          Actualización
+                        </span>
+                      ) : (
+                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-900 ring-1 ring-emerald-200">
+                          Nuevo
+                        </span>
+                      )}
+                      {f.duplicadaEnCsv ? (
+                        <span className="text-xs font-medium text-slate-500" title="Duplicado en CSV">
+                          Duplicado en archivo
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {f.tipo || "—"} · {f.unidad || "—"}
+                    </p>
+                    <p className="mt-2 font-mono text-sm tabular-nums text-slate-800">
+                      Stock{" "}
+                      <span className={f.stockActualInvalido ? "rounded bg-red-100 px-1 font-bold text-red-900" : "font-semibold"}>
+                        {Number(f.stock_actual || 0).toLocaleString("es-ES", { maximumFractionDigits: 2 })}
                       </span>
-                      {f.nombre}
-                    </td>
-                    <td className="border-r border-slate-200 px-3 py-2 text-slate-800">{f.tipo || "—"}</td>
-                    <td className="border-r border-slate-200 px-3 py-2 text-slate-800">{f.unidad || "—"}</td>
-                    <td className="border-r border-slate-200 px-3 py-2 text-right font-mono tabular-nums text-slate-900">
-                      {Number(f.stock_actual || 0).toLocaleString("es-ES", { maximumFractionDigits: 0 })}
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono tabular-nums text-slate-900">
-                      {Number(f.stock_minimo || 0).toLocaleString("es-ES", { maximumFractionDigits: 0 })}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      {" · "}
+                      Mín.{" "}
+                      <span className={f.stockMinimoInvalido ? "rounded bg-red-100 px-1 font-bold text-red-900" : "font-semibold"}>
+                        {Number(f.stock_minimo || 0).toLocaleString("es-ES", { maximumFractionDigits: 2 })}
+                      </span>
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
           </div>
-        ) : !parseErr ? (
-          <p className="mt-4 text-sm text-slate-600">Añade un CSV o pega abajo el contenido.</p>
+        ) : analizado && !analisisErr ? (
+          <p className="mt-4 text-sm text-slate-600">El archivo no contiene filas válidas con nombre.</p>
+        ) : !analisisErr ? (
+          <p className="mt-4 text-sm text-slate-600">Sube un CSV y pulsa &quot;Analizar archivo&quot; para la previsualización.</p>
         ) : null}
 
         <details className="mt-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-          <summary className="cursor-pointer text-sm font-semibold text-slate-900">Editar CSV a mano</summary>
+          <summary className="cursor-pointer text-sm font-semibold text-slate-900">Pegar o editar CSV manualmente</summary>
           <textarea
-            className="mt-3 h-56 w-full rounded-2xl border border-slate-200 bg-white p-3 font-mono text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+            className="mt-3 h-56 w-full rounded-2xl border border-slate-200 bg-white p-3 font-mono text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
             value={csvText}
-            onChange={(e) => setCsvText(e.currentTarget.value)}
+            onChange={(e) => {
+              setCsvText(e.currentTarget.value);
+              setAnalizado(false);
+              setRowsAnalizadas([]);
+              setResult(null);
+            }}
             spellCheck={false}
+            placeholder={"nombre;tipo;unidad;stock_actual;stock_minimo\n"}
           />
         </details>
       </main>

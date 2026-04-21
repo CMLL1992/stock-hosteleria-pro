@@ -17,6 +17,24 @@ function newUid() {
   return crypto.randomUUID().replaceAll("-", "");
 }
 
+function supabaseErrToString(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "object" && e) {
+    const anyErr = e as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown };
+    const msg = typeof anyErr.message === "string" ? anyErr.message : "";
+    const details = typeof anyErr.details === "string" ? anyErr.details : "";
+    const hint = typeof anyErr.hint === "string" ? anyErr.hint : "";
+    const code = typeof anyErr.code === "string" ? anyErr.code : "";
+    return [msg, details, hint, code].filter(Boolean).join(" · ") || "Error desconocido";
+  }
+  return String(e);
+}
+
+function parseStockField(raw: string): number {
+  const n = parseFloat(String(raw ?? "").trim().replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+}
+
 export default function NuevoProductoPage() {
   const [role, setRole] = useState<AppRole | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -29,7 +47,8 @@ export default function NuevoProductoPage() {
   const [tipo, setTipo] = useState<(typeof TIPOS)[number]>("otros");
   const [unidad, setUnidad] = useState<(typeof UNIDADES)[number]>("unidad");
   const [categoria, setCategoria] = useState<string>("");
-  const [stockMinimo, setStockMinimo] = useState<number>(0);
+  const [stockActual, setStockActual] = useState<string>("0");
+  const [stockMinimo, setStockMinimo] = useState<string>("0");
   const [proveedorId, setProveedorId] = useState<string>("");
 
   useEffect(() => {
@@ -83,19 +102,26 @@ export default function NuevoProductoPage() {
       setErr("No hay establecimiento activo.");
       return;
     }
+    if (!articulo.trim()) {
+      setErr("El artículo (nombre) no puede estar vacío.");
+      return;
+    }
     const uid = newUid();
-    const categoriaFinal = (categoria.trim() || tipo).trim();
+    const categoriaFinal = (categoria.trim() || tipo).trim() || "General";
+    const sa = Math.trunc(parseStockField(stockActual)) || 0;
+    const sm = Math.trunc(parseStockField(stockMinimo)) || 0;
     const { error } = await supabase().from("productos").insert({
       articulo: articulo.trim(),
       unidad,
-      categoria: categoriaFinal ? categoriaFinal : null,
-      stock_minimo: Number.isFinite(stockMinimo) ? stockMinimo : 0,
+      categoria: categoriaFinal,
+      stock_actual: sa,
+      stock_minimo: sm,
       proveedor_id: proveedorId || null,
       qr_code_uid: uid,
       establecimiento_id: activeEstablishmentId
     });
     if (error) {
-      setErr(error.message);
+      setErr(supabaseErrToString(error));
       return;
     }
     window.location.href = "/";
@@ -162,15 +188,29 @@ export default function NuevoProductoPage() {
             </select>
           </div>
         </div>
-        <div className="space-y-1">
-          <label className="text-sm font-semibold text-slate-900">Stock mínimo</label>
-          <input
-            className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-            type="number"
-            min={0}
-            value={stockMinimo}
-            onChange={(e) => setStockMinimo(Number(e.currentTarget.value))}
-          />
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <label className="text-sm font-semibold text-slate-900">Stock actual</label>
+            <input
+              className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+              type="number"
+              min={0}
+              inputMode="decimal"
+              value={stockActual}
+              onChange={(e) => setStockActual(e.currentTarget.value)}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-semibold text-slate-900">Stock mínimo</label>
+            <input
+              className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+              type="number"
+              min={0}
+              inputMode="decimal"
+              value={stockMinimo}
+              onChange={(e) => setStockMinimo(e.currentTarget.value)}
+            />
+          </div>
         </div>
         <div className="space-y-1">
           <label className="text-sm font-semibold text-slate-900">Categoría (opcional)</label>

@@ -69,7 +69,11 @@ function ToastView({ toast, onClose }: { toast: Toast; onClose: () => void }) {
       <div className={["pointer-events-auto w-full rounded-2xl border p-3 text-sm shadow-sm", cls].join(" ")}>
         <div className="flex items-start justify-between gap-3">
           <p className="min-w-0">{toast.message}</p>
-          <button className="shrink-0 text-sm font-semibold underline" onClick={onClose} type="button">
+          <button
+            className="min-h-12 shrink-0 rounded-2xl px-4 text-sm font-semibold text-slate-700 underline hover:bg-slate-50"
+            onClick={onClose}
+            type="button"
+          >
             Cerrar
           </button>
         </div>
@@ -119,7 +123,11 @@ function EditModal({
             <p className="text-sm font-semibold text-slate-900">Editar producto</p>
             <p className="mt-0.5 text-xs text-slate-600">ID: {producto.id}</p>
           </div>
-          <button type="button" className="text-sm font-semibold text-slate-600 underline" onClick={onClose}>
+          <button
+            type="button"
+            className="min-h-12 rounded-2xl px-4 text-sm font-semibold text-slate-700 underline decoration-slate-400 hover:bg-slate-50"
+            onClick={onClose}
+          >
             Cerrar
           </button>
         </div>
@@ -234,6 +242,7 @@ export default function AdminProductosPage() {
 
   const [editOpen, setEditOpen] = useState(false);
   const [editing, setEditing] = useState<ProductoRow | null>(null);
+  const [busyDeltaId, setBusyDeltaId] = useState<string | null>(null);
 
   useEffect(() => {
     if (me?.role === null && !me?.profileReady) return;
@@ -362,6 +371,28 @@ export default function AdminProductosPage() {
     }
   }
 
+  async function deltaStock(p: ProductoRow, delta: number) {
+    if (!activeEstablishmentId) return;
+    setBusyDeltaId(p.id);
+    setErr(null);
+    try {
+      const next = Math.max(0, Math.trunc(p.stock_actual + delta));
+      const { error } = await supabase()
+        .from("productos")
+        .update({ stock_actual: next })
+        .eq("id", p.id)
+        .eq("establecimiento_id", activeEstablishmentId);
+      if (error) throw error;
+      await refetch();
+      setToast({ kind: "ok", message: "Stock actualizado." });
+    } catch (e) {
+      setErr(supabaseErrToString(e));
+      setToast({ kind: "error", message: "No se pudo actualizar el stock." });
+    } finally {
+      setBusyDeltaId(null);
+    }
+  }
+
   async function onDelete(p: ProductoRow) {
     if (!activeEstablishmentId) return;
     const ok = window.confirm(`¿Eliminar "${p.articulo}"? Esta acción no se puede deshacer.`);
@@ -393,7 +424,7 @@ export default function AdminProductosPage() {
   return (
     <div className="min-h-dvh">
       <MobileHeader title="Gestionar productos" showBack backHref="/admin" />
-      <main className="mx-auto max-w-6xl bg-slate-50 p-4 pb-28 text-slate-900">
+      <main className="mx-auto max-w-3xl bg-slate-50 p-4 pb-28 text-slate-900">
         {/* Acceso protegido por isAdmin */}
         <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -468,75 +499,98 @@ export default function AdminProductosPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-3xl border border-slate-200 bg-white shadow-sm">
-          <table className="w-full min-w-[980px] border-collapse text-left text-[13px]">
-            <thead>
-              <tr className="border-b border-slate-200 bg-white text-[11px] font-bold uppercase tracking-wide text-slate-700">
-                <th className="border-r border-slate-200 px-3 py-2">Nombre</th>
-                <th className="border-r border-slate-200 px-3 py-2">Categoría/Tipo</th>
-                <th className="border-r border-slate-200 px-3 py-2">Unidad</th>
-                <th className="border-r border-slate-200 px-3 py-2 text-right">Precio</th>
-                <th className="border-r border-slate-200 px-3 py-2 text-right">Stock</th>
-                <th className="border-r border-slate-200 px-3 py-2 text-right">Mín</th>
-                <th className="px-3 py-2 text-right">Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((p) => {
-                const precio = typeof p.precio_tarifa === "number" ? p.precio_tarifa : 0;
-                const minimo = typeof p.stock_minimo === "number" && Number.isFinite(p.stock_minimo) ? p.stock_minimo : 0;
-                const low = p.stock_actual < minimo;
-                return (
-                  <tr key={p.id} className={["border-b border-slate-200", low ? "bg-red-50/40" : "hover:bg-slate-50"].join(" ")}>
-                    <td className="border-r border-slate-200 px-3 py-2 font-semibold text-slate-900">{p.articulo}</td>
-                    <td className="border-r border-slate-200 px-3 py-2 text-slate-800">{parseCategoriaTipo(p)}</td>
-                    <td className="border-r border-slate-200 px-3 py-2 text-slate-800">{p.unidad ?? "—"}</td>
-                    <td className="border-r border-slate-200 px-3 py-2 text-right font-mono tabular-nums text-slate-900">
-                      {hasPrecioTarifa
-                        ? `${precio.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
-                        : "—"}
-                    </td>
-                    <td className="border-r border-slate-200 px-3 py-2 text-right font-mono tabular-nums text-slate-900">
-                      {p.stock_actual}
-                    </td>
-                    <td className="border-r border-slate-200 px-3 py-2 text-right font-mono tabular-nums text-slate-900">
-                      {minimo}
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex justify-end gap-2">
-                        <button
-                          type="button"
-                          className="min-h-10 rounded-2xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-                          onClick={() => {
-                            setEditing(p);
-                            setEditOpen(true);
-                          }}
-                        >
-                          Editar
-                        </button>
-                        <button
-                          type="button"
-                          className="min-h-10 rounded-2xl border border-red-200 bg-white px-3 text-xs font-semibold text-red-700 shadow-sm hover:bg-red-50"
-                          onClick={() => onDelete(p)}
-                          title="Eliminar"
-                          aria-label="Eliminar"
-                        >
-                          🗑️
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-              {!filtered.length && !loading ? (
-                <tr>
-                  <td className="px-3 py-6 text-sm text-slate-600" colSpan={7}>
-                    No hay productos que coincidan con los filtros.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
+        <div className="flex flex-col gap-4">
+          {filtered.map((p) => {
+            const precio = typeof p.precio_tarifa === "number" ? p.precio_tarifa : 0;
+            const minimo = typeof p.stock_minimo === "number" && Number.isFinite(p.stock_minimo) ? p.stock_minimo : 0;
+            const low = p.stock_actual <= minimo;
+            const busy = busyDeltaId === p.id;
+            return (
+              <div
+                key={p.id}
+                className={[
+                  "rounded-3xl border border-slate-200 bg-white p-5 shadow-sm ring-1 ring-slate-100",
+                  low ? "border-red-200 bg-red-50/30 ring-red-100" : ""
+                ].join(" ")}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <button
+                    type="button"
+                    className="min-h-12 min-w-0 flex-1 rounded-2xl py-1 text-left transition active:bg-slate-50"
+                    onClick={() => {
+                      setEditing(p);
+                      setEditOpen(true);
+                    }}
+                  >
+                    <p className="text-lg font-bold leading-snug text-slate-900">{p.articulo}</p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {parseCategoriaTipo(p)} · {p.unidad ?? "—"}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Precio:{" "}
+                      <span className="font-mono font-semibold tabular-nums text-slate-900">
+                        {hasPrecioTarifa
+                          ? `${precio.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
+                          : "—"}
+                      </span>
+                      {" · "}
+                      Mín. <span className="font-mono font-semibold tabular-nums">{minimo}</span>
+                    </p>
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex min-h-12 min-w-12 shrink-0 items-center justify-center rounded-2xl border border-red-200 bg-white text-lg text-red-700 shadow-sm hover:bg-red-50"
+                    onClick={() => onDelete(p)}
+                    title="Eliminar"
+                    aria-label="Eliminar"
+                  >
+                    🗑️
+                  </button>
+                </div>
+
+                <div className="mt-5 flex items-center justify-between gap-4">
+                  <button
+                    type="button"
+                    disabled={busy || p.stock_actual <= 0}
+                    onClick={() => deltaStock(p, -1)}
+                    className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-2xl border-2 border-slate-300 bg-white text-2xl font-bold text-slate-800 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    aria-label="Reducir stock"
+                  >
+                    −
+                  </button>
+                  <div className="flex flex-col items-center">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Stock</span>
+                    <span className="text-3xl font-bold tabular-nums text-slate-900">{p.stock_actual}</span>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => deltaStock(p, 1)}
+                    className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-2xl border-2 border-slate-900 bg-slate-900 text-2xl font-bold text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+                    aria-label="Aumentar stock"
+                  >
+                    +
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  className="mt-4 min-h-12 w-full rounded-2xl border border-slate-200 bg-white text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50"
+                  onClick={() => {
+                    setEditing(p);
+                    setEditOpen(true);
+                  }}
+                >
+                  Editar detalles
+                </button>
+              </div>
+            );
+          })}
+          {!filtered.length && !loading ? (
+            <p className="rounded-3xl border border-slate-200 bg-white p-6 text-center text-base text-slate-600">
+              No hay productos que coincidan con los filtros.
+            </p>
+          ) : null}
         </div>
       </main>
 

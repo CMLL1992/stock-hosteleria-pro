@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Button } from "@/components/ui/Button";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AppRole } from "@/lib/session";
-import { fetchMyRole, requireUserId } from "@/lib/session";
+import { fetchMyRole } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { MobileHeader } from "@/components/MobileHeader";
+import { IconWhatsApp } from "@/components/IconWhatsApp";
+import { waUrlProductoPedido } from "@/lib/whatsappPedido";
+import { clasesBordeSemaforo, clasesFondoSemaforo, stockSemaforo } from "@/lib/stockSemaforo";
 
 type Row = {
   id: string;
@@ -33,22 +35,24 @@ async function fetchProductos(establecimientoId: string | null): Promise<Row[]> 
   return (data as unknown as Row[]) ?? [];
 }
 
-function waLink(p: Row, cantidad: number): string | null {
-  const tel = p.proveedor?.telefono_whatsapp;
-  if (!tel) return null;
-  const prov = p.proveedor?.nombre ?? "Proveedor";
-  const msg = `Hola ${prov}, necesito pedir ${cantidad} de ${p.articulo}.`;
-  return `https://wa.me/${encodeURIComponent(tel)}?text=${encodeURIComponent(msg)}`;
-}
-
 export default function PedidoRapidoPage() {
   const [role, setRole] = useState<AppRole | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [items, setItems] = useState<Row[]>([]);
   const [loadingItems, setLoadingItems] = useState(false);
-  const [qty, setQty] = useState<Record<string, number>>({});
+  const [recibido, setRecibido] = useState<Record<string, boolean>>({});
+  const [busyId, setBusyId] = useState<string | null>(null);
   const { activeEstablishmentId } = useActiveEstablishment();
+
+  const refresh = useCallback(async () => {
+    if (!activeEstablishmentId) {
+      setItems([]);
+      return;
+    }
+    const rows = await fetchProductos(activeEstablishmentId);
+    setItems(rows);
+  }, [activeEstablishmentId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -96,46 +100,30 @@ export default function PedidoRapidoPage() {
 
   const totals = useMemo(() => items.length, [items.length]);
 
-  async function pedir(p: Row) {
+  async function deltaStock(p: Row, delta: number) {
+    if (!activeEstablishmentId) {
+      setErr("No hay establecimiento activo.");
+      return;
+    }
+    setBusyId(p.id);
+    setErr(null);
     try {
-      setErr(null);
-      if (!activeEstablishmentId) {
-        setErr("No hay establecimiento activo.");
-        return;
-      }
-      const cantidad = qty[p.id] ?? 0;
-      if (!cantidad || cantidad < 1) return;
-      const link = waLink(p, cantidad);
-      if (!link) {
-        setErr(`El proveedor de "${p.articulo}" no tiene teléfono WhatsApp.`);
-        return;
-      }
-
-      // Registrar movimiento "pedido"
-      const usuario_id = await requireUserId();
-      const { error } = await supabase().from("movimientos").insert({
-        producto_id: p.id,
-        establecimiento_id: activeEstablishmentId,
-        tipo: "pedido",
-        cantidad,
-        usuario_id,
-        timestamp: new Date().toISOString()
-      });
-      if (error) {
-        setErr(error.message);
-        return;
-      }
-
-      window.open(link, "_blank", "noreferrer");
+      const next = Math.max(0, p.stock_actual + delta);
+      const { error } = await supabase()
+        .from("productos")
+        .update({ stock_actual: next })
+        .eq("id", p.id)
+        .eq("establecimiento_id", activeEstablishmentId);
+      if (error) throw error;
+      await refresh();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyId(null);
     }
   }
 
   if (loading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
-  if (err) {
-    // sigue renderizando lista si hay items
-  }
 
   if (role !== "admin" && role !== "superadmin") {
     return (
@@ -147,97 +135,110 @@ export default function PedidoRapidoPage() {
   }
 
   return (
-    <div className="min-h-dvh">
+    <div className="min-h-dvh bg-slate-50">
       <MobileHeader title="Pedido rápido" showBack backHref="/admin" />
-      <main className="mx-auto max-w-3xl bg-slate-50 p-4 pb-28 text-slate-900">
-      <div className="mb-3 flex items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Pedido rápido</h1>
-          <p className="text-sm text-slate-600">{totals} productos</p>
+      <main className="mx-auto w-full max-w-3xl p-4 pb-28 text-slate-900">
+        <div className="mb-4">
+          <h1 className="text-xl font-semibold text-slate-900">Pedido y recepción</h1>
+          <p className="text-sm text-slate-500">Checklist de llegadas y ajuste rápido de stock ({totals} productos)</p>
         </div>
-      </div>
 
-      {err ? (
-        <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-          {err}
-        </p>
-      ) : null}
+        {err ? (
+          <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{err}</p>
+        ) : null}
 
-      {!activeEstablishmentId ? (
-        <p className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          No hay establecimiento activo. Selecciona uno para cargar productos.
-        </p>
-      ) : null}
+        {!activeEstablishmentId ? (
+          <p className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            No hay establecimiento activo. Selecciona uno para cargar productos.
+          </p>
+        ) : null}
 
-      {loadingItems ? <p className="mb-3 text-sm text-slate-600">Cargando productos…</p> : null}
+        {loadingItems ? <p className="mb-3 text-sm text-slate-600">Cargando productos…</p> : null}
 
-      <div className="space-y-2">
-        {items.map((p) => {
-          const isLow =
-            typeof p.stock_minimo === "number" &&
-            Number.isFinite(p.stock_minimo) &&
-            p.stock_actual < p.stock_minimo;
-          return (
-            <div
-              key={p.id}
-              className={[
-                "rounded-3xl border bg-white p-4 shadow-sm",
-                isLow ? "border-red-200" : "border-slate-200"
-              ].join(" ")}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="truncate text-sm font-semibold text-slate-900">{p.articulo}</p>
-                    {isLow ? (
-                      <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700 ring-1 ring-red-100">
-                        Bajo mínimo
+        <div className="space-y-3">
+          {items.map((p) => {
+            const min = typeof p.stock_minimo === "number" && Number.isFinite(p.stock_minimo) ? p.stock_minimo : 0;
+            const sem = stockSemaforo(p.stock_actual, min);
+            const wa = waUrlProductoPedido({
+              articulo: p.articulo,
+              stock_actual: p.stock_actual,
+              stock_minimo: min,
+              unidad: p.unidad,
+              proveedor: p.proveedor
+            });
+            const busy = busyId === p.id;
+
+            return (
+              <div
+                key={p.id}
+                className={[
+                  "w-full rounded-2xl border border-slate-200 bg-white p-4 shadow-sm",
+                  clasesBordeSemaforo(sem),
+                  clasesFondoSemaforo(sem)
+                ].join(" ")}
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <label className="flex min-h-[44px] cursor-pointer items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={!!recibido[p.id]}
+                      onChange={(e) => setRecibido((prev) => ({ ...prev, [p.id]: e.target.checked }))}
+                      className="mt-1 h-5 w-5 shrink-0 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-base font-semibold text-slate-900">{p.articulo}</span>
+                      <span className="mt-1 block text-xs text-slate-600">
+                        {p.categoria ?? "—"} · {p.unidad ?? "—"} · Proveedor: {p.proveedor?.nombre ?? "—"}
                       </span>
-                    ) : (
-                      <span className="inline-flex items-center rounded-full bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-700 ring-1 ring-slate-200">
-                        OK
+                      <span className="mt-1 block font-mono text-sm text-slate-800">
+                        Stock: {p.stock_actual} · Mín: {p.stock_minimo ?? "—"}
                       </span>
-                    )}
+                    </span>
+                  </label>
+
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    {wa ? (
+                      <a
+                        href={wa}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 text-sm font-semibold text-white shadow-sm hover:bg-emerald-600"
+                      >
+                        <IconWhatsApp className="h-6 w-6 text-white" />
+                        <span className="hidden sm:inline">WhatsApp</span>
+                      </a>
+                    ) : null}
                   </div>
-                  <p className="mt-1 text-xs text-slate-600">
-                    {p.categoria ?? "—"} · {p.unidad ?? "—"} · Stock:{" "}
-                    <span className="font-mono">{p.stock_actual}</span> · Mín:{" "}
-                    <span className="font-mono">{p.stock_minimo ?? "—"}</span>
-                  </p>
-                  <p className="mt-1 text-xs text-slate-600">
-                    Proveedor: {p.proveedor?.nombre ?? "—"}{" "}
-                    {p.proveedor?.telefono_whatsapp ? "" : "(sin WhatsApp)"}
-                  </p>
                 </div>
 
-                <div className="flex shrink-0 items-center gap-2">
-                  <input
-                    className="min-h-12 w-24 rounded-2xl border border-slate-200 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-                    inputMode="numeric"
-                    type="number"
-                    min={0}
-                    value={qty[p.id] ?? 0}
-                    onChange={(e) => {
-                      const raw = e.currentTarget.value;
-                      const next = raw === "" ? 0 : Number(raw);
-                      setQty((prev) => ({ ...prev, [p.id]: Number.isFinite(next) ? next : 0 }));
-                    }}
-                  />
-                  <Button
-                    onClick={() => pedir(p)}
-                    disabled={!p.proveedor?.telefono_whatsapp || (qty[p.id] ?? 0) < 1}
-                    className="bg-black hover:bg-slate-900 active:bg-slate-950"
-                  >
-                    WhatsApp
-                  </Button>
+                <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
+                  <span className="text-xs font-medium text-slate-500">Ajustar stock</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={busy || p.stock_actual <= 0}
+                      onClick={() => deltaStock(p, -1)}
+                      className="inline-flex min-h-[48px] min-w-[48px] items-center justify-center rounded-xl border-2 border-slate-200 bg-white text-2xl font-bold text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:opacity-40"
+                      aria-label="Quitar una unidad"
+                    >
+                      −1
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => deltaStock(p, 1)}
+                      className="inline-flex min-h-[48px] min-w-[48px] items-center justify-center rounded-xl border-2 border-emerald-200 bg-emerald-500 text-2xl font-bold text-white shadow-sm transition hover:bg-emerald-600 disabled:opacity-40"
+                      aria-label="Sumar una unidad"
+                    >
+                      +1
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
       </main>
     </div>
   );
 }
-

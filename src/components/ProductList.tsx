@@ -2,8 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { IconWhatsApp } from "@/components/IconWhatsApp";
 import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
+import { stockSemaforo } from "@/lib/stockSemaforo";
+import { waUrlProductoPedido } from "@/lib/whatsappPedido";
 
 type Producto = {
   id: string;
@@ -14,6 +17,7 @@ type Producto = {
   tipo: string | null;
   unidad: string | null;
   categoria: string | null;
+  proveedor: { nombre: string; telefono_whatsapp: string | null } | null;
 };
 
 async function fetchProductos(establecimientoId: string | null): Promise<Producto[]> {
@@ -21,7 +25,7 @@ async function fetchProductos(establecimientoId: string | null): Promise<Product
   // Si la BD todavía no tiene las columnas tipo/unidad (schema cache), esta query puede fallar.
   // Hacemos fallback a una selección mínima para no "vaciar" la lista de stock.
   const baseSelect = "id,articulo,stock_actual,stock_minimo,qr_code_uid";
-  const extendedSelect = `${baseSelect},tipo,unidad,categoria`;
+  const extendedSelect = `${baseSelect},tipo,unidad,categoria,proveedor:proveedores(nombre,telefono_whatsapp)`;
 
   const { data, error } = await supabase()
     .from("productos")
@@ -32,11 +36,12 @@ async function fetchProductos(establecimientoId: string | null): Promise<Product
   if (!error) return (data as unknown as Producto[]) ?? [];
 
   const msg = (error as { message?: string }).message ?? "";
+  const m = msg.toLowerCase();
   const looksLikeMissingColumn =
-    msg.toLowerCase().includes("column") &&
-    (msg.toLowerCase().includes("tipo") ||
-      msg.toLowerCase().includes("unidad") ||
-      msg.toLowerCase().includes("categoria"));
+    (m.includes("column") &&
+      (m.includes("tipo") || m.includes("unidad") || m.includes("categoria") || m.includes("proveedor"))) ||
+    m.includes("embed") ||
+    m.includes("schema cache");
 
   if (!looksLikeMissingColumn) throw error;
 
@@ -46,11 +51,12 @@ async function fetchProductos(establecimientoId: string | null): Promise<Product
     .eq("establecimiento_id", establecimientoId)
     .order("articulo", { ascending: true });
   if (fallback.error) throw fallback.error;
-  return ((fallback.data ?? []) as unknown as Array<Omit<Producto, "tipo" | "unidad">>).map((p) => ({
+  return ((fallback.data ?? []) as unknown as Array<Omit<Producto, "tipo" | "unidad" | "proveedor">>).map((p) => ({
     ...p,
     tipo: null,
     unidad: null,
-    categoria: null
+    categoria: null,
+    proveedor: null
   })) as Producto[];
 }
 
@@ -130,7 +136,7 @@ export function ProductList() {
               key={t.key}
               onClick={() => setTab(t.key)}
               className={[
-                "min-h-11 whitespace-nowrap rounded-full px-4 text-sm font-semibold",
+                "min-h-12 whitespace-nowrap rounded-full px-4 text-base font-semibold",
                 active ? "text-slate-900 shadow-sm" : "text-slate-700 border border-slate-200 bg-white"
               ].join(" ")}
               style={
@@ -150,13 +156,23 @@ export function ProductList() {
       <div className="space-y-3">
         {filtered.map((p) => {
           const minimo = typeof p.stock_minimo === "number" && Number.isFinite(p.stock_minimo) ? p.stock_minimo : 0;
-          const low = p.stock_actual < minimo;
+          const sem = stockSemaforo(p.stock_actual, minimo);
           const stockPill =
-            low
-              ? { bg: "#FEF2F2", text: "#991B1B", ring: "ring-1 ring-red-100" }
-              : p.stock_actual > 0
-                ? { bg: "#ECFDF5", text: "#065F46", ring: "ring-1 ring-emerald-100" }
-                : { bg: "#F3F4F6", text: "#374151", ring: "ring-1 ring-gray-100" };
+            sem === "sin"
+              ? { bg: "#FEF2F2", text: "#991B1B", ring: "ring-1 ring-red-100", label: "Agotado" }
+              : sem === "bajo"
+                ? { bg: "#FFF7ED", text: "#9A3412", ring: "ring-1 ring-orange-100", label: "Bajo mín." }
+                : { bg: "#ECFDF5", text: "#065F46", ring: "ring-1 ring-emerald-100", label: "OK" };
+
+          const wa =
+            me?.isAdmin &&
+            waUrlProductoPedido({
+              articulo: p.articulo,
+              stock_actual: p.stock_actual,
+              stock_minimo: minimo,
+              unidad: p.unidad,
+              proveedor: p.proveedor
+            });
 
           const key = productTabKey(p);
           const chipBg = (CATEGORY_COLORS[key] ?? CATEGORY_COLORS.otros).bg;
@@ -164,7 +180,10 @@ export function ProductList() {
           return (
             <div
               key={p.id}
-              className="cursor-pointer rounded-3xl border border-slate-200 bg-white px-4 py-4 shadow-sm transition active:scale-[0.99]"
+              className={[
+                "w-full max-w-full cursor-pointer rounded-3xl border border-slate-200 bg-white px-4 py-4 shadow-sm transition active:scale-[0.99]",
+                sem === "sin" ? "border-l-4 border-l-red-500" : sem === "bajo" ? "border-l-4 border-l-amber-400" : "border-l-4 border-l-emerald-500"
+              ].join(" ")}
               role="link"
               tabIndex={0}
               onClick={() => {
@@ -179,7 +198,7 @@ export function ProductList() {
             >
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <a
                       className="min-w-0"
                       href={`/p/${encodeURIComponent(p.id)}`}
@@ -193,19 +212,41 @@ export function ProductList() {
                     >
                       {key === "todos" ? "otros" : key}
                     </span>
+                    <span
+                      className={["inline-flex min-h-6 items-center rounded-full px-2 text-[11px] font-semibold", stockPill.ring].join(" ")}
+                      style={{ backgroundColor: stockPill.bg, color: stockPill.text }}
+                    >
+                      {stockPill.label}
+                    </span>
                   </div>
                   <p className="mt-1 text-sm text-slate-600">{p.unidad ?? "—"}</p>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex shrink-0 items-center gap-2">
                   <div
-                    className={["grid h-10 min-w-10 place-items-center rounded-full px-3 text-sm font-semibold tabular-nums", stockPill.ring].join(" ")}
+                    className={[
+                      "grid min-h-12 min-w-12 place-items-center rounded-full px-3 text-base font-semibold tabular-nums",
+                      stockPill.ring
+                    ].join(" ")}
                     style={{ backgroundColor: stockPill.bg, color: stockPill.text }}
                   >
                     {p.stock_actual}
                   </div>
+                  {wa ? (
+                    <a
+                      href={wa}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-2xl bg-emerald-500 text-white shadow-sm hover:bg-emerald-600"
+                      aria-label="Pedido WhatsApp"
+                      title="WhatsApp"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <IconWhatsApp className="h-6 w-6 text-white" />
+                    </a>
+                  ) : null}
                   <a
-                    className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+                    className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
                     href={`/qr/${encodeURIComponent(p.id)}`}
                     onClick={(e) => e.stopPropagation()}
                   >
@@ -213,7 +254,7 @@ export function ProductList() {
                   </a>
                   {me?.isAdmin ? (
                     <a
-                      className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+                      className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
                       href={`/admin/productos/${encodeURIComponent(p.id)}/editar`}
                       aria-label="Editar producto"
                       title="Editar"

@@ -17,3 +17,12 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Evita zoom automático al enfocar inputs en iOS/Android (mín. 16px). */
+@layer base {
+  input,
+  select,
+  textarea {
+    font-size: 1rem;
+  }
+}
+
