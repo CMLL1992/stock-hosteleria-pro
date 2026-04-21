@@ -86,10 +86,10 @@ const SECTIONS: AdminSection[] = [
     items: [
       {
         id: "pedidos",
-        href: "/admin/pedido-rapido",
+        href: "/admin/pedidos",
         emoji: "🛒",
         title: "Pedidos",
-        subtitle: "Gestión de compras y reposiciones."
+        subtitle: "Pedidos agrupados por proveedor y WhatsApp."
       },
       {
         id: "proveedores",

@@ -38,7 +38,7 @@ async function fetchProductos(establecimientoId: string | null): Promise<Row[]> 
   return (
     ((data ?? []) as unknown as Record<string, unknown>[]).map((r) => ({
       id: String(r.id ?? ""),
-      articulo: String(r.articulo ?? r.nombre ?? "").trim() || "—",
+      articulo: String(r[t] ?? r.articulo ?? r.nombre ?? "").trim() || "—",
       stock_actual: Number(r.stock_actual ?? 0) || 0,
       stock_minimo: r.stock_minimo != null ? Number(r.stock_minimo) : null,
       categoria: r.categoria != null ? String(r.categoria) : null,

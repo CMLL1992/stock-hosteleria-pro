@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, LogOut, User } from "lucide-react";
+import { ArrowLeft, LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { supabase } from "@/lib/supabase";
@@ -88,14 +88,6 @@ export function MobileHeader({
           ) : null}
         </div>
         <div className="flex items-center gap-2">
-          <a
-            href="/mas"
-            className="grid h-10 w-10 place-items-center rounded-full border border-slate-200 bg-white shadow-sm"
-            aria-label="Más opciones"
-            title="Más"
-          >
-            <User className="h-5 w-5 text-slate-700" />
-          </a>
           <button
             className="grid h-10 w-10 place-items-center rounded-full border border-slate-200 bg-white shadow-sm"
             aria-label="Salir"

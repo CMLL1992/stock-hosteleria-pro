@@ -29,9 +29,6 @@ function tabActive(pathname: string, href: string, isAdmin: boolean): boolean {
       pathname.startsWith("/admin/productos/nuevo")
     );
   }
-  if (href === "/mas") {
-    return pathname === "/mas" || pathname.startsWith("/mas/");
-  }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
@@ -44,8 +41,7 @@ export function BottomTabBar() {
     () => [
       { href: "/", label: "Dashboard", emoji: "🏠" },
       { href: isAdmin ? "/admin/productos" : "/stock", label: "Inventario", emoji: "📦" },
-      { href: isAdmin ? "/admin" : "/escanear", label: isAdmin ? "Añadir" : "Escanear", emoji: "➕" },
-      { href: "/mas", label: "Ajustes", emoji: "⚙️" }
+      { href: isAdmin ? "/admin" : "/escanear", label: isAdmin ? "Añadir" : "Escanear", emoji: "➕" }
     ],
     [isAdmin]
   );

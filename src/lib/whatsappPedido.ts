@@ -117,6 +117,37 @@ export function mensajePedidoCestaPorProveedor(opts: {
   return [`Hola ${prov}, pedido de ${est}:`, "", ...body].join("\n");
 }
 
+/**
+ * Pedido agrupado (pantalla Pedidos): solo líneas con cantidad > 0.
+ * "Hola [Proveedor], pedido de [Local]:\n- [cant] [artículo]"
+ */
+export function mensajePedidoAgrupadoLineasSimple(opts: {
+  nombreEstablecimiento: string;
+  nombreProveedor: string;
+  lineas: Array<{ articulo: string; cantidad: number }>;
+}): string {
+  const est = opts.nombreEstablecimiento.trim() || "mi local";
+  const prov = opts.nombreProveedor.trim() || "Proveedor";
+  const lineas = opts.lineas
+    .filter((l) => l.cantidad > 0 && l.articulo.trim())
+    .map((l) => `- ${l.cantidad} ${l.articulo.trim()}`);
+  return [`Hola ${prov}, pedido de ${est}:`, "", ...lineas].join("\n");
+}
+
+export function waUrlPedidoAgrupadoProveedor(opts: {
+  nombreProveedor: string;
+  telefonoWhatsapp: string | null;
+  nombreEstablecimiento: string;
+  lineas: Array<{ articulo: string; cantidad: number }>;
+}): string {
+  const msg = mensajePedidoAgrupadoLineasSimple({
+    nombreEstablecimiento: opts.nombreEstablecimiento,
+    nombreProveedor: opts.nombreProveedor,
+    lineas: opts.lineas
+  });
+  return waUrlSendText(msg, digitsWaPhone(opts.telefonoWhatsapp));
+}
+
 export function waUrlPedidoCestaProveedor(opts: {
   nombreProveedor: string;
   telefonoWhatsapp: string | null;

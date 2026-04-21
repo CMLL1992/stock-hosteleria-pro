@@ -49,7 +49,7 @@ export function NavBar() {
             <LinkItem href="/admin/importar-csv" label="Importar CSV" activeHref={activeHref} />
           ) : null}
           {data?.isAdmin ? (
-            <LinkItem href="/admin/pedido-rapido" label="Pedido rápido" activeHref={activeHref} />
+            <LinkItem href="/admin/pedidos" label="Pedidos" activeHref={activeHref} />
           ) : null}
         </div>
         <button

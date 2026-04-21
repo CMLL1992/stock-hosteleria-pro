@@ -31,10 +31,14 @@ function normalizeProveedor(raw: unknown): DashboardProveedor | null {
   };
 }
 
-export function normalizeProductoRow(raw: Record<string, unknown>): DashboardProducto {
+export function normalizeProductoRow(raw: Record<string, unknown>, tituloKey?: string): DashboardProducto {
+  const articulo = String(
+    tituloKey ? raw[tituloKey] ?? raw.articulo ?? raw.nombre : raw.articulo ?? raw.nombre
+  )
+    .trim() || "—";
   return {
     id: String(raw.id ?? ""),
-    articulo: String(raw.articulo ?? raw.nombre ?? "").trim() || "—",
+    articulo,
     categoria: raw.categoria != null && String(raw.categoria).trim() !== "" ? String(raw.categoria).trim() : null,
     stock_actual: toIntStock(raw.stock_actual, 0),
     stock_minimo: toIntStock(raw.stock_minimo, 0),
@@ -55,7 +59,7 @@ export async function fetchDashboardProductos(establecimientoId: string): Promis
     .order(t, { ascending: true });
 
   if (!error) {
-    return ((data ?? []) as unknown as Record<string, unknown>[]).map(normalizeProductoRow);
+    return ((data ?? []) as unknown as Record<string, unknown>[]).map((r) => normalizeProductoRow(r, t));
   }
 
   const msg = (error as { message?: string }).message?.toLowerCase?.() ?? "";
@@ -74,7 +78,7 @@ export async function fetchDashboardProductos(establecimientoId: string): Promis
     .order(t, { ascending: true });
   if (lite.error) throw lite.error;
   return ((lite.data ?? []) as unknown as Record<string, unknown>[]).map((r) =>
-    normalizeProductoRow({ ...r, unidad: null, proveedor: null })
+    normalizeProductoRow({ ...r, unidad: null, proveedor: null }, t)
   );
 }
 

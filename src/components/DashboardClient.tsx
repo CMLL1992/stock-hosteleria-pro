@@ -229,40 +229,18 @@ export function DashboardClient() {
           </div>
         ) : (
           <ul className="flex flex-col gap-3">
-            {urgentes.map((p) => {
-              const hrefWa = waUrlProductoPedido(p);
-              const diff = deficitPedido(p.stock_actual, p.stock_minimo);
-              const cant = diff > 0 ? diff : Math.max(1, p.stock_minimo - p.stock_actual);
-              return (
-                <li
-                  key={p.id}
-                  className="flex flex-col gap-3 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-100 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-base font-bold leading-snug text-slate-900">{p.articulo}</p>
-                    <p className="mt-1 text-sm text-slate-600">
-                      Stock <span className="font-mono font-semibold tabular-nums">{p.stock_actual}</span>
-                      {" · "}
-                      Mín. <span className="font-mono font-semibold tabular-nums">{p.stock_minimo}</span>
-                    </p>
-                    <p className="mt-1 text-xs font-semibold text-orange-700">Reposición sugerida: {cant}</p>
-                  </div>
-                  {hrefWa ? (
-                    <a
-                      href={hrefWa}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex min-h-12 w-full shrink-0 items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white shadow-sm hover:bg-emerald-600 sm:w-auto"
-                    >
-                      <IconWhatsApp className="h-6 w-6 text-white" />
-                      WhatsApp
-                    </a>
-                  ) : (
-                    <p className="text-xs text-amber-800">Sin enlace WhatsApp.</p>
-                  )}
-                </li>
-              );
-            })}
+            {urgentes.map((p) => (
+              <li
+                key={p.id}
+                className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-100"
+              >
+                <p className="text-base font-bold leading-snug text-slate-900">{p.articulo}</p>
+                <p className="mt-1 text-sm text-slate-600">
+                  Stock{" "}
+                  <span className="font-mono font-semibold tabular-nums text-slate-900">{p.stock_actual}</span>
+                </p>
+              </li>
+            ))}
           </ul>
         )}
       </section>

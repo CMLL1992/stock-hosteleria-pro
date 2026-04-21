@@ -166,7 +166,7 @@ export function EditarProductoClient({ id }: { id: string }) {
       return;
     }
     setOk("Guardado correctamente");
-    router.push("/mas?toast=guardado");
+    router.push("/admin/productos?toast=guardado");
   }
 
   return (

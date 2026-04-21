@@ -3,7 +3,7 @@
  * Valores persistidos en minúsculas, sin emoji en la BD.
  */
 
-export const CATEGORIA_PRODUCTO = ["vino", "cerveza", "agua", "refresco", "otros"] as const;
+export const CATEGORIA_PRODUCTO = ["vino", "cerveza", "agua", "refresco", "licor", "otros"] as const;
 export type CategoriaProductoValor = (typeof CATEGORIA_PRODUCTO)[number];
 
 export const UNIDAD_PRODUCTO = ["caja", "barril", "gas", "botella"] as const;
@@ -19,6 +19,7 @@ export const CATEGORIA_OPTIONS: ReadonlyArray<{
   { value: "cerveza", emoji: "🍺", label: "🍺 Cerveza" },
   { value: "agua", emoji: "💧", label: "💧 Agua" },
   { value: "refresco", emoji: "🥤", label: "🥤 Refresco" },
+  { value: "licor", emoji: "🥃", label: "🥃 Licor" },
   { value: "otros", emoji: "📦", label: "📦 Otros" }
 ];
 
@@ -64,6 +65,7 @@ export function mapCategoriaDbToValor(raw: string | null | undefined): Categoria
   if (n.includes("cerveza") || n.includes("beer")) return "cerveza";
   if (n.includes("agua") || n === "water") return "agua";
   if (n.includes("refresco") || n.includes("refrescos") || n.includes("soft")) return "refresco";
+  if (n.includes("licor") || n.includes("spirit") || n.includes("whisky") || n.includes("ron")) return "licor";
 
   if (
     CATEGORIA_PRODUCTO.includes(n as CategoriaProductoValor)
@@ -72,7 +74,6 @@ export function mapCategoriaDbToValor(raw: string | null | undefined): Categoria
   }
 
   // Legacy / variantes
-  if (n.includes("licor") || n.includes("spirit") || n.includes("whisky") || n.includes("ron")) return "otros";
   if (n === "general" || n === "otros" || n.includes("misc")) return "otros";
 
   return "otros";

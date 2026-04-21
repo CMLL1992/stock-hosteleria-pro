@@ -76,10 +76,10 @@ function tituloUnidad(u: string | null | undefined): string {
   return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
 }
 
-function mapProductoQueryRow(r: Record<string, unknown>): ProductoRow {
+function mapProductoQueryRow(r: Record<string, unknown>, tituloKey: string): ProductoRow {
   return {
     id: String(r.id ?? ""),
-    articulo: String(r.articulo ?? r.nombre ?? "").trim() || "—",
+    articulo: String(r[tituloKey] ?? r.articulo ?? r.nombre ?? "").trim() || "—",
     categoria: r.categoria != null ? String(r.categoria) : null,
     tipo: r.tipo != null ? String(r.tipo) : null,
     unidad: r.unidad != null ? String(r.unidad) : null,
@@ -333,7 +333,7 @@ export default function AdminProductosPage() {
         if (!full.error) {
           if (cancelled) return;
           setHasPrecioTarifa(true);
-          setItems(((full.data ?? []) as unknown as Record<string, unknown>[]).map(mapProductoQueryRow));
+          setItems(((full.data ?? []) as unknown as Record<string, unknown>[]).map((r) => mapProductoQueryRow(r, t)));
           return;
         }
 
@@ -351,7 +351,7 @@ export default function AdminProductosPage() {
         setHasPrecioTarifa(false);
         setItems(
           ((lite.data ?? []) as unknown as Record<string, unknown>[]).map((r) => ({
-            ...mapProductoQueryRow(r),
+            ...mapProductoQueryRow(r, t),
             precio_tarifa: null
           }))
         );
@@ -397,6 +397,19 @@ export default function AdminProductosPage() {
     });
   }, [items]);
 
+  useEffect(() => {
+    try {
+      const u = new URL(window.location.href);
+      if (u.searchParams.get("toast") !== "guardado") return;
+      setToast({ kind: "ok", message: "Guardado correctamente." });
+      u.searchParams.delete("toast");
+      const next = u.pathname + (u.searchParams.toString() ? `?${u.searchParams.toString()}` : "") + u.hash;
+      window.history.replaceState({}, "", next || "/admin/productos");
+    } catch {
+      /* noop */
+    }
+  }, []);
+
   const categories = useMemo(() => {
     const s = new Set<string>();
     for (const p of items) s.add(parseCategoriaTipo(p));
@@ -423,7 +436,7 @@ export default function AdminProductosPage() {
       .order(t, { ascending: true });
     if (!full.error) {
       setHasPrecioTarifa(true);
-      setItems(((full.data ?? []) as unknown as Record<string, unknown>[]).map(mapProductoQueryRow));
+      setItems(((full.data ?? []) as unknown as Record<string, unknown>[]).map((r) => mapProductoQueryRow(r, t)));
       return;
     }
     const msg = (full.error as { message?: string }).message?.toLowerCase?.() ?? "";
@@ -439,7 +452,7 @@ export default function AdminProductosPage() {
     setHasPrecioTarifa(false);
     setItems(
       ((lite.data ?? []) as unknown as Record<string, unknown>[]).map((r) => ({
-        ...mapProductoQueryRow(r),
+        ...mapProductoQueryRow(r, t),
         precio_tarifa: null
       }))
     );

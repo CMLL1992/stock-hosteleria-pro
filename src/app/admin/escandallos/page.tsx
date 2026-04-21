@@ -79,7 +79,7 @@ export default function EscandallosPage() {
     setItems(
       ((data ?? []) as unknown as Record<string, unknown>[]).map((r) => ({
         id: String(r.id ?? ""),
-        articulo: String(r.articulo ?? r.nombre ?? "").trim() || "—",
+        articulo: String(r[t] ?? r.articulo ?? r.nombre ?? "").trim() || "—",
         precio_tarifa: r.precio_tarifa != null ? Number(r.precio_tarifa) : null,
         descuento_valor: r.descuento_valor != null ? Number(r.descuento_valor) : null,
         descuento_tipo: (r.descuento_tipo as ProductoRow["descuento_tipo"]) ?? null,
