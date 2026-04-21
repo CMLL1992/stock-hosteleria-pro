@@ -92,7 +92,7 @@ export function ProductList() {
     refetchInterval: 4000
   });
 
-  const { data: role } = useMyRole();
+  const { data: my } = useMyRole();
   const [tab, setTab] = useState<string>("todos");
 
   const filtered = useMemo(() => {
@@ -206,7 +206,7 @@ export function ProductList() {
                   >
                     QR
                   </a>
-                  {role === "admin" ? (
+                  {my?.isAdmin ? (
                     <a
                       className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-gray-100 bg-white px-3 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
                       href={`/admin/productos/${encodeURIComponent(p.id)}/editar`}

@@ -19,7 +19,7 @@ const TABS: Tab[] = [
 ];
 
 export function BottomTabBar() {
-  const { data: role } = useMyRole();
+  const { data } = useMyRole();
   const [path, setPath] = useState<string>("");
 
   useEffect(() => {
@@ -27,8 +27,8 @@ export function BottomTabBar() {
   }, []);
 
   const tabs = useMemo(() => {
-    return TABS.filter((t) => (t.adminOnly ? role === "admin" : true));
-  }, [role]);
+    return TABS.filter((t) => (t.adminOnly ? data?.isAdmin : true));
+  }, [data?.isAdmin]);
 
   return (
     <nav

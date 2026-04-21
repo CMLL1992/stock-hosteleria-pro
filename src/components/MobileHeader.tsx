@@ -5,13 +5,13 @@ import { useMyRole } from "@/lib/useMyRole";
 import { supabase } from "@/lib/supabase";
 
 export function MobileHeader({ title }: { title: string }) {
-  const { data: role } = useMyRole();
+  const { data } = useMyRole();
 
   return (
     <header className="sticky top-0 z-30 border-b border-gray-100 bg-gray-50/85 backdrop-blur">
       <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
         <div className="min-w-0">
-          <p className="text-xs font-medium text-gray-500">{role === "admin" ? "Admin" : "Staff"}</p>
+          <p className="text-xs font-medium text-gray-500">{data?.isAdmin ? "Admin" : "Staff"}</p>
           <h1 className="truncate text-lg font-semibold text-gray-900">{title}</h1>
         </div>
         <div className="flex items-center gap-2">

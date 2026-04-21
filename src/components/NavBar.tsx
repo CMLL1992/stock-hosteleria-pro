@@ -22,7 +22,7 @@ function LinkItem({ href, label, activeHref }: { href: string; label: string; ac
 }
 
 export function NavBar() {
-  const { data: role } = useMyRole();
+  const { data } = useMyRole();
   const [activeHref, setActiveHref] = useState<string | null>(null);
 
   // Evita mismatch SSR/cliente: solo activamos el "active" tras montar.
@@ -35,17 +35,17 @@ export function NavBar() {
       <div className="mx-auto flex max-w-3xl items-center justify-between gap-2 p-2">
         <div className="flex items-center gap-1">
           <LinkItem href="/" label="Stock" activeHref={activeHref} />
-          {role === "admin" ? <LinkItem href="/admin" label="Admin" activeHref={activeHref} /> : null}
-          {role === "admin" ? (
+          {data?.isAdmin ? <LinkItem href="/admin" label="Admin" activeHref={activeHref} /> : null}
+          {data?.isAdmin ? (
             <LinkItem href="/admin/etiquetas" label="Gestión de Etiquetas" activeHref={activeHref} />
           ) : null}
-          {role === "admin" ? (
+          {data?.isAdmin ? (
             <LinkItem href="/admin/productos/nuevo" label="Crear Productos" activeHref={activeHref} />
           ) : null}
-          {role === "admin" ? (
+          {data?.isAdmin ? (
             <LinkItem href="/admin/importar-csv" label="Importar CSV" activeHref={activeHref} />
           ) : null}
-          {role === "admin" ? (
+          {data?.isAdmin ? (
             <LinkItem href="/admin/pedido-rapido" label="Pedido rápido" activeHref={activeHref} />
           ) : null}
         </div>
