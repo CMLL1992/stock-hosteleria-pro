@@ -6,7 +6,19 @@ import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
 import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
+import {
+  CATEGORIA_OPTIONS,
+  FORM_CONTROL_CLASS,
+  type CategoriaProductoValor,
+  type UnidadProductoValor,
+  UNIDAD_OPTIONS,
+  emojiCategoria,
+  etiquetaCategoriaMostrada,
+  mapCategoriaDbToValor,
+  mapUnidadDbToValor
+} from "@/lib/productoFormCatalogo";
 import { resolveProductoTituloColumn, tituloColSql, tituloWritePayload } from "@/lib/productosTituloColumn";
+import { updateProductoCategoriaCompat } from "@/lib/productoWriteCompat";
 
 type ProductoRow = {
   id: string;
@@ -46,11 +58,6 @@ function toNumberOrZero(v: unknown): number {
     return Number.isFinite(n) ? n : 0;
   }
   return 0;
-}
-
-function toNullableText(v: unknown): string | null {
-  const s = String(v ?? "").trim();
-  return s ? s : null;
 }
 
 function parseCategoriaTipo(p: ProductoRow): string {
@@ -120,8 +127,8 @@ function EditProductDrawer({
   onDelete: () => void;
 }) {
   const [articulo, setArticulo] = useState("");
-  const [categoria, setCategoria] = useState("");
-  const [unidad, setUnidad] = useState("");
+  const [categoriaVal, setCategoriaVal] = useState<CategoriaProductoValor>("otros");
+  const [unidadVal, setUnidadVal] = useState<UnidadProductoValor>("botella");
   const [precioTarifa, setPrecioTarifa] = useState<string>("0");
   const [stockActual, setStockActual] = useState<string>("0");
   const [stockMinimo, setStockMinimo] = useState<string>("0");
@@ -130,8 +137,9 @@ function EditProductDrawer({
   useEffect(() => {
     if (!producto) return;
     setArticulo(producto.articulo ?? "");
-    setCategoria(producto.categoria ?? "");
-    setUnidad(producto.unidad ?? "");
+    const catRaw = producto.categoria ?? producto.tipo;
+    setCategoriaVal(mapCategoriaDbToValor(catRaw));
+    setUnidadVal(mapUnidadDbToValor(producto.unidad));
     setPrecioTarifa(String(producto.precio_tarifa ?? 0));
     setStockActual(String(producto.stock_actual ?? 0));
     setStockMinimo(String(producto.stock_minimo ?? 0));
@@ -154,21 +162,33 @@ function EditProductDrawer({
             </div>
             <div className="space-y-1">
               <label className="text-sm font-semibold text-slate-900">Categoría</label>
-              <input
-                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-                value={categoria}
-                onChange={(e) => setCategoria(e.currentTarget.value)}
-                placeholder="Ej: cervezas, licores…"
-              />
+              <select
+                className={FORM_CONTROL_CLASS}
+                value={categoriaVal}
+                onChange={(e) => setCategoriaVal(e.currentTarget.value as CategoriaProductoValor)}
+                aria-label="Categoría del producto"
+              >
+                {CATEGORIA_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="space-y-1">
               <label className="text-sm font-semibold text-slate-900">Unidad</label>
-              <input
-                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-                value={unidad}
-                onChange={(e) => setUnidad(e.currentTarget.value)}
-                placeholder="caja, barril, botella…"
-              />
+              <select
+                className={FORM_CONTROL_CLASS}
+                value={unidadVal}
+                onChange={(e) => setUnidadVal(e.currentTarget.value as UnidadProductoValor)}
+                aria-label="Unidad de medida"
+              >
+                {UNIDAD_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="space-y-1">
               <label className="text-sm font-semibold text-slate-900">Precio tarifa</label>
@@ -221,8 +241,8 @@ function EditProductDrawer({
                   try {
                     await onSave({
                       articulo: articulo.trim(),
-                      categoria: toNullableText(categoria),
-                      unidad: toNullableText(unidad)?.toLowerCase() ?? null,
+                      categoria: categoriaVal,
+                      unidad: unidadVal,
                       precio_tarifa: toNumberOrZero(precioTarifa),
                       stock_actual: Math.max(0, Math.trunc(toNumberOrZero(stockActual))),
                       stock_minimo: Math.max(0, Math.trunc(toNumberOrZero(stockMinimo)))
@@ -376,17 +396,23 @@ export default function AdminProductosPage() {
       const col = await resolveProductoTituloColumn(activeEstablishmentId);
       const updatePayload: Record<string, unknown> = {
         ...tituloWritePayload(col, String(patch.articulo ?? "").trim()),
-        categoria: patch.categoria ?? null,
-        unidad: patch.unidad ?? null,
+        categoria: patch.categoria != null ? String(patch.categoria) : null,
+        unidad: patch.unidad != null ? String(patch.unidad) : null,
         stock_actual: patch.stock_actual ?? 0,
         stock_minimo: patch.stock_minimo ?? 0
       };
       if (hasPrecioTarifa) updatePayload.precio_tarifa = patch.precio_tarifa ?? 0;
-      const { error } = await supabase()
-        .from("productos")
-        .update(updatePayload)
-        .eq("id", editing.id)
-        .eq("establecimiento_id", activeEstablishmentId);
+      const { error } = await updateProductoCategoriaCompat(
+        async (fields) => {
+          const r = await supabase()
+            .from("productos")
+            .update(fields)
+            .eq("id", editing.id)
+            .eq("establecimiento_id", activeEstablishmentId);
+          return { error: r.error };
+        },
+        updatePayload
+      );
       if (error) throw error;
       await refetch();
       setToast({ kind: "ok", message: "Producto actualizado correctamente." });
@@ -534,7 +560,6 @@ export default function AdminProductosPage() {
             const minimo = typeof p.stock_minimo === "number" && Number.isFinite(p.stock_minimo) ? p.stock_minimo : 0;
             const low = p.stock_actual <= minimo;
             const busy = busyDeltaId === p.id;
-            const catLabel = parseCategoriaTipo(p);
             const unidadLabel = tituloUnidad(p.unidad);
             const stockCircleClass = low
               ? "border-[3px] border-orange-500 bg-orange-50 text-orange-900 shadow-[0_0_0_3px_rgba(249,115,22,0.25)] animate-stock-alert"
@@ -555,8 +580,11 @@ export default function AdminProductosPage() {
                   >
                     <p className="text-lg font-bold leading-snug text-slate-900">{p.articulo}</p>
                     <p className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-slate-600">
-                      <span className="inline-flex max-w-full rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold capitalize text-slate-800">
-                        {catLabel}
+                      <span className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-800">
+                        <span aria-hidden className="text-[1.05rem] leading-none">
+                          {emojiCategoria(p.categoria ?? p.tipo)}
+                        </span>
+                        <span className="capitalize">{etiquetaCategoriaMostrada(p.categoria ?? p.tipo)}</span>
                       </span>
                       <span className="text-slate-400" aria-hidden>
                         •

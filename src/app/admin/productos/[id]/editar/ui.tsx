@@ -9,17 +9,25 @@ import { fetchMyRole } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { resolveProductoTituloColumn, tituloColSql, tituloWritePayload } from "@/lib/productosTituloColumn";
+import {
+  CATEGORIA_OPTIONS,
+  FORM_CONTROL_CLASS_GRAY,
+  type CategoriaProductoValor,
+  type UnidadProductoValor,
+  UNIDAD_OPTIONS,
+  mapCategoriaDbToValor,
+  mapUnidadDbToValor
+} from "@/lib/productoFormCatalogo";
+import { updateProductoCategoriaCompat } from "@/lib/productoWriteCompat";
 
 type Proveedor = { id: string; nombre: string };
-
-const TIPOS = ["barril", "refresco", "cerveza", "vino", "licor", "agua", "otros"] as const;
-const UNIDADES = ["caja", "barril", "botella", "lata", "unidad"] as const;
 
 type Producto = {
   id: string;
   articulo: string;
   unidad: string | null;
   categoria: string | null;
+  tipo: string | null;
   stock_minimo: number | null;
   proveedor_id: string | null;
 };
@@ -36,10 +44,8 @@ export function EditarProductoClient({ id }: { id: string }) {
   const [producto, setProducto] = useState<Producto | null>(null);
 
   const [articulo, setArticulo] = useState("");
-  // En este esquema, tratamos el selector TIPOS como categoria.
-  const [tipo, setTipo] = useState<(typeof TIPOS)[number]>("otros");
-  const [unidad, setUnidad] = useState<(typeof UNIDADES)[number]>("unidad");
-  const [categoria, setCategoria] = useState("");
+  const [categoriaVal, setCategoriaVal] = useState<CategoriaProductoValor>("otros");
+  const [unidadVal, setUnidadVal] = useState<UnidadProductoValor>("botella");
   const [stockMinimo, setStockMinimo] = useState<number>(0);
   const [proveedorId, setProveedorId] = useState<string>("");
 
@@ -77,7 +83,7 @@ export function EditarProductoClient({ id }: { id: string }) {
         const t = tituloColSql(col);
         const { data: p, error: pErr } = await supabase()
           .from("productos")
-          .select(`id,${t},unidad,categoria,stock_minimo,proveedor_id` as "*")
+          .select(`id,${t},unidad,categoria,tipo,stock_minimo,proveedor_id` as "*")
           .eq("id", id)
           .eq("establecimiento_id", activeEstablishmentId)
           .maybeSingle();
@@ -94,14 +100,15 @@ export function EditarProductoClient({ id }: { id: string }) {
           articulo: String(raw.articulo ?? raw.nombre ?? "").trim() || "—",
           unidad: raw.unidad != null ? String(raw.unidad) : null,
           categoria: raw.categoria != null ? String(raw.categoria) : null,
+          tipo: raw.tipo != null ? String(raw.tipo) : null,
           stock_minimo: raw.stock_minimo != null ? Number(raw.stock_minimo) : null,
           proveedor_id: raw.proveedor_id != null ? String(raw.proveedor_id) : null
         };
         setProducto(prod);
         setArticulo(prod.articulo ?? "");
-        setTipo(((prod.categoria ?? "otros") as (typeof TIPOS)[number]) ?? "otros");
-        setUnidad((prod.unidad as (typeof UNIDADES)[number]) ?? "unidad");
-        setCategoria(prod.categoria ?? "");
+        const catRaw = prod.categoria ?? prod.tipo;
+        setCategoriaVal(mapCategoriaDbToValor(catRaw));
+        setUnidadVal(mapUnidadDbToValor(prod.unidad));
         setStockMinimo(typeof prod.stock_minimo === "number" ? prod.stock_minimo : 0);
         setProveedorId(prod.proveedor_id ?? "");
 
@@ -131,25 +138,34 @@ export function EditarProductoClient({ id }: { id: string }) {
     }
     setErr(null);
     setOk(null);
-    const categoriaFinal = (categoria.trim() || tipo).trim();
+
     const col = await resolveProductoTituloColumn(activeEstablishmentId);
-    const { error } = await supabase()
-      .from("productos")
-      .update({
-        ...tituloWritePayload(col, articulo.trim()),
-        unidad,
-        categoria: categoriaFinal ? categoriaFinal : null,
-        stock_minimo: Number.isFinite(stockMinimo) ? stockMinimo : 0,
-        proveedor_id: proveedorId || null
-      })
-      .eq("id", producto.id)
-      .eq("establecimiento_id", activeEstablishmentId);
+
+    const payload: Record<string, unknown> = {
+      ...tituloWritePayload(col, articulo.trim()),
+      unidad: unidadVal,
+      categoria: categoriaVal,
+      stock_minimo: Number.isFinite(stockMinimo) ? stockMinimo : 0,
+      proveedor_id: proveedorId || null
+    };
+
+    const { error } = await updateProductoCategoriaCompat(
+      async (fields) => {
+        const r = await supabase()
+          .from("productos")
+          .update(fields)
+          .eq("id", producto.id)
+          .eq("establecimiento_id", activeEstablishmentId);
+        return { error: r.error };
+      },
+      payload
+    );
+
     if (error) {
       setErr(error.message);
       return;
     }
     setOk("Guardado correctamente");
-    // Navegación fluida tipo app (y mostramos toast en /mas)
     router.push("/mas?toast=guardado");
   }
 
@@ -159,14 +175,10 @@ export function EditarProductoClient({ id }: { id: string }) {
       <main className="mx-auto max-w-3xl p-4 pb-28">
         {loading ? <p className="text-sm text-gray-600">Cargando…</p> : null}
         {err ? (
-          <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-            {err}
-          </p>
+          <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{err}</p>
         ) : null}
         {ok ? (
-          <p className="mb-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-3 text-sm font-medium text-emerald-900">
-            {ok}
-          </p>
+          <p className="mb-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-3 text-sm font-medium text-emerald-900">{ok}</p>
         ) : null}
 
         {role !== "admin" && role !== "superadmin" && !loading ? (
@@ -185,56 +197,48 @@ export function EditarProductoClient({ id }: { id: string }) {
                 <div className="space-y-1">
                   <label className="text-sm font-semibold text-gray-900">Artículo</label>
                   <input
-                    className="min-h-12 w-full rounded-2xl border border-gray-100 bg-gray-50 px-4 text-base"
+                    className={FORM_CONTROL_CLASS_GRAY}
                     value={articulo}
                     onChange={(e) => setArticulo(e.currentTarget.value)}
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-sm font-semibold text-gray-900">Categoría</label>
-                    <select
-                      className="min-h-12 w-full rounded-2xl border border-gray-100 bg-gray-50 px-4 text-base"
-                      value={tipo}
-                      onChange={(e) => setTipo(e.currentTarget.value as (typeof TIPOS)[number])}
-                    >
-                      {TIPOS.map((t) => (
-                        <option key={t} value={t}>
-                          {t}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-sm font-semibold text-gray-900">Unidad</label>
-                    <select
-                      className="min-h-12 w-full rounded-2xl border border-gray-100 bg-gray-50 px-4 text-base"
-                      value={unidad}
-                      onChange={(e) => setUnidad(e.currentTarget.value as (typeof UNIDADES)[number])}
-                    >
-                      {UNIDADES.map((u) => (
-                        <option key={u} value={u}>
-                          {u}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-gray-900">Categoría</label>
+                  <select
+                    className={FORM_CONTROL_CLASS_GRAY}
+                    value={categoriaVal}
+                    onChange={(e) => setCategoriaVal(e.currentTarget.value as CategoriaProductoValor)}
+                    aria-label="Categoría del producto"
+                  >
+                    {CATEGORIA_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-sm font-semibold text-gray-900">Categoría (opcional)</label>
-                  <input
-                    className="min-h-12 w-full rounded-2xl border border-gray-100 bg-gray-50 px-4 text-base"
-                    value={categoria}
-                    onChange={(e) => setCategoria(e.currentTarget.value)}
-                  />
+                  <label className="text-sm font-semibold text-gray-900">Unidad</label>
+                  <select
+                    className={FORM_CONTROL_CLASS_GRAY}
+                    value={unidadVal}
+                    onChange={(e) => setUnidadVal(e.currentTarget.value as UnidadProductoValor)}
+                    aria-label="Unidad de medida"
+                  >
+                    {UNIDAD_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="space-y-1">
                   <label className="text-sm font-semibold text-gray-900">Stock mínimo</label>
                   <input
-                    className="min-h-12 w-full rounded-2xl border border-gray-100 bg-gray-50 px-4 text-base"
+                    className={FORM_CONTROL_CLASS_GRAY}
                     type="number"
                     min={0}
                     value={stockMinimo}
@@ -245,9 +249,10 @@ export function EditarProductoClient({ id }: { id: string }) {
                 <div className="space-y-1">
                   <label className="text-sm font-semibold text-gray-900">Proveedor</label>
                   <select
-                    className="min-h-12 w-full rounded-2xl border border-gray-100 bg-gray-50 px-4 text-base"
+                    className={FORM_CONTROL_CLASS_GRAY}
                     value={proveedorId}
                     onChange={(e) => setProveedorId(e.currentTarget.value)}
+                    aria-label="Proveedor"
                   >
                     <option value="">(Sin proveedor)</option>
                     {proveedores.map((p) => (
@@ -269,4 +274,3 @@ export function EditarProductoClient({ id }: { id: string }) {
     </div>
   );
 }
-
