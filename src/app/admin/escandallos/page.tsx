@@ -152,7 +152,7 @@ export default function EscandallosPage() {
       <div className="mb-3 flex items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">Escandallos</h1>
-          <p className="text-sm text-slate-600">Edita precios y márgenes rápidamente. Desliza horizontalmente en móvil.</p>
+          <p className="text-sm text-slate-600">Edita precios y márgenes por producto (vista tarjetas).</p>
         </div>
         <div className="flex items-center gap-2">
           {saved ? <span className="text-sm font-semibold text-emerald-700">Guardado ✓</span> : null}
@@ -163,149 +163,138 @@ export default function EscandallosPage() {
         <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{err}</p>
       ) : null}
 
-      <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="min-w-[1100px] w-full border-separate border-spacing-0">
-            <thead>
-              <tr className="text-left text-xs font-semibold text-slate-600">
-                <th className="sticky left-0 z-10 bg-white px-4 py-3">Producto</th>
-                <th className="px-3 py-3">Tarifa</th>
-                <th className="px-3 py-3">Desc.</th>
-                <th className="px-3 py-3">Tipo</th>
-                <th className="px-3 py-3">IVA compra</th>
-                <th className="px-3 py-3">PVP</th>
-                <th className="px-3 py-3">IVA venta</th>
-                <th className="px-3 py-3">Coste neto</th>
-                <th className="px-3 py-3">Venta neta</th>
-                <th className="px-3 py-3">Margen €</th>
-                <th className="px-3 py-3">Margen %</th>
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(({ p, cn, vn, mb, mp, healthy }) => (
-                <tr key={p.id} className="border-t border-slate-100">
-                  <td className="sticky left-0 z-10 bg-white px-4 py-3">
-                    <p className="max-w-[260px] truncate text-sm font-semibold text-slate-900">{p.articulo}</p>
-                  </td>
+      <div className="flex flex-col gap-3">
+        {rows.map(({ p, cn, vn, mb, mp, healthy }) => (
+          <article key={p.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-100">
+            <h2 className="text-base font-bold leading-snug text-slate-900">{p.articulo}</h2>
 
-                  <td className="px-3 py-3">
-                    <input
-                      className="min-h-11 w-28 rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-                      inputMode="decimal"
-                      value={String(p.precio_tarifa ?? 0)}
-                      onChange={(e) =>
-                        setItems((prev) =>
-                          prev.map((x) => (x.id === p.id ? { ...x, precio_tarifa: toNum(e.currentTarget.value) } : x))
-                        )
-                      }
-                    />
-                  </td>
+            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <label className="col-span-1 flex flex-col gap-1 text-xs font-semibold text-slate-600">
+                Tarifa
+                <input
+                  className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                  inputMode="decimal"
+                  value={String(p.precio_tarifa ?? 0)}
+                  onChange={(e) =>
+                    setItems((prev) => prev.map((x) => (x.id === p.id ? { ...x, precio_tarifa: toNum(e.currentTarget.value) } : x)))
+                  }
+                />
+              </label>
+              <label className="col-span-1 flex flex-col gap-1 text-xs font-semibold text-slate-600">
+                Descuento
+                <input
+                  className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                  inputMode="decimal"
+                  value={String(p.descuento_valor ?? 0)}
+                  onChange={(e) =>
+                    setItems((prev) =>
+                      prev.map((x) => (x.id === p.id ? { ...x, descuento_valor: toNum(e.currentTarget.value) } : x))
+                    )
+                  }
+                />
+              </label>
+              <label className="col-span-1 flex flex-col gap-1 text-xs font-semibold text-slate-600">
+                Tipo desc.
+                <select
+                  className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                  value={(p.descuento_tipo ?? "%") as "%" | "€"}
+                  onChange={(e) =>
+                    setItems((prev) =>
+                      prev.map((x) => (x.id === p.id ? { ...x, descuento_tipo: e.currentTarget.value as "%" | "€" } : x))
+                    )
+                  }
+                >
+                  {DESC_OPTIONS.map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="col-span-1 flex flex-col gap-1 text-xs font-semibold text-slate-600">
+                IVA compra
+                <select
+                  className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                  value={Number(p.iva_compra ?? 10)}
+                  onChange={(e) =>
+                    setItems((prev) =>
+                      prev.map((x) => (x.id === p.id ? { ...x, iva_compra: Number(e.currentTarget.value) } : x))
+                    )
+                  }
+                >
+                  {IVA_OPTIONS.map((v) => (
+                    <option key={v} value={v}>
+                      {v}%
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="col-span-1 flex flex-col gap-1 text-xs font-semibold text-slate-600">
+                PVP
+                <input
+                  className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                  inputMode="decimal"
+                  value={String(p.pvp ?? 0)}
+                  onChange={(e) =>
+                    setItems((prev) => prev.map((x) => (x.id === p.id ? { ...x, pvp: toNum(e.currentTarget.value) } : x)))
+                  }
+                />
+              </label>
+              <label className="col-span-1 flex flex-col gap-1 text-xs font-semibold text-slate-600">
+                IVA venta
+                <select
+                  className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                  value={Number(p.iva_venta ?? 10)}
+                  onChange={(e) =>
+                    setItems((prev) =>
+                      prev.map((x) => (x.id === p.id ? { ...x, iva_venta: Number(e.currentTarget.value) } : x))
+                    )
+                  }
+                >
+                  {IVA_OPTIONS.map((v) => (
+                    <option key={v} value={v}>
+                      {v}%
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
 
-                  <td className="px-3 py-3">
-                    <input
-                      className="min-h-11 w-24 rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-                      inputMode="decimal"
-                      value={String(p.descuento_valor ?? 0)}
-                      onChange={(e) =>
-                        setItems((prev) =>
-                          prev.map((x) =>
-                            x.id === p.id ? { ...x, descuento_valor: toNum(e.currentTarget.value) } : x
-                          )
-                        )
-                      }
-                    />
-                  </td>
+            <dl className="mt-4 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+              <div className="rounded-xl bg-slate-50 px-3 py-2">
+                <dt className="text-xs font-semibold text-slate-500">Coste neto</dt>
+                <dd className="font-semibold tabular-nums text-slate-900">{formatEUR(cn)}</dd>
+              </div>
+              <div className="rounded-xl bg-slate-50 px-3 py-2">
+                <dt className="text-xs font-semibold text-slate-500">Venta neta</dt>
+                <dd className="tabular-nums text-slate-800">{formatEUR(vn)}</dd>
+              </div>
+              <div className="rounded-xl bg-slate-50 px-3 py-2">
+                <dt className="text-xs font-semibold text-slate-500">Margen €</dt>
+                <dd className="font-semibold tabular-nums text-slate-900">{formatEUR(mb)}</dd>
+              </div>
+              <div className="rounded-xl bg-slate-50 px-3 py-2">
+                <dt className="text-xs font-semibold text-slate-500">Margen %</dt>
+                <dd>
+                  <span
+                    className={[
+                      "inline-flex min-h-8 items-center rounded-full px-2.5 text-xs font-semibold tabular-nums ring-1",
+                      healthy ? "bg-emerald-50 text-emerald-800 ring-emerald-100" : "bg-red-50 text-red-800 ring-red-100"
+                    ].join(" ")}
+                  >
+                    {mp.toFixed(2)}%
+                  </span>
+                </dd>
+              </div>
+            </dl>
 
-                  <td className="px-3 py-3">
-                    <select
-                      className="min-h-11 w-20 rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-                      value={(p.descuento_tipo ?? "%") as "%" | "€"}
-                      onChange={(e) =>
-                        setItems((prev) =>
-                          prev.map((x) => (x.id === p.id ? { ...x, descuento_tipo: e.currentTarget.value as "%" | "€" } : x))
-                        )
-                      }
-                    >
-                      {DESC_OPTIONS.map((v) => (
-                        <option key={v} value={v}>
-                          {v}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-
-                  <td className="px-3 py-3">
-                    <select
-                      className="min-h-11 w-28 rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-                      value={Number(p.iva_compra ?? 10)}
-                      onChange={(e) =>
-                        setItems((prev) =>
-                          prev.map((x) => (x.id === p.id ? { ...x, iva_compra: Number(e.currentTarget.value) } : x))
-                        )
-                      }
-                    >
-                      {IVA_OPTIONS.map((v) => (
-                        <option key={v} value={v}>
-                          {v}%
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-
-                  <td className="px-3 py-3">
-                    <input
-                      className="min-h-11 w-28 rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-                      inputMode="decimal"
-                      value={String(p.pvp ?? 0)}
-                      onChange={(e) =>
-                        setItems((prev) => prev.map((x) => (x.id === p.id ? { ...x, pvp: toNum(e.currentTarget.value) } : x)))
-                      }
-                    />
-                  </td>
-
-                  <td className="px-3 py-3">
-                    <select
-                      className="min-h-11 w-28 rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-                      value={Number(p.iva_venta ?? 10)}
-                      onChange={(e) =>
-                        setItems((prev) =>
-                          prev.map((x) => (x.id === p.id ? { ...x, iva_venta: Number(e.currentTarget.value) } : x))
-                        )
-                      }
-                    >
-                      {IVA_OPTIONS.map((v) => (
-                        <option key={v} value={v}>
-                          {v}%
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-
-                  <td className="px-3 py-3 text-sm font-semibold text-slate-900 tabular-nums">{formatEUR(cn)}</td>
-                  <td className="px-3 py-3 text-sm text-slate-700 tabular-nums">{formatEUR(vn)}</td>
-                  <td className="px-3 py-3 text-sm font-semibold text-slate-900 tabular-nums">{formatEUR(mb)}</td>
-                  <td className="px-3 py-3">
-                    <span
-                      className={[
-                        "inline-flex min-h-9 items-center rounded-full px-3 text-sm font-semibold tabular-nums ring-1",
-                        healthy ? "bg-emerald-50 text-emerald-800 ring-emerald-100" : "bg-red-50 text-red-800 ring-red-100"
-                      ].join(" ")}
-                    >
-                      {mp.toFixed(2)}%
-                    </span>
-                  </td>
-
-                  <td className="px-4 py-3">
-                    <Button onClick={() => saveRow(p)} disabled={saving === p.id} className="min-h-11">
-                      {saving === p.id ? "Guardando…" : "Guardar"}
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            <div className="mt-4">
+              <Button onClick={() => saveRow(p)} disabled={saving === p.id} className="min-h-11 w-full sm:w-auto">
+                {saving === p.id ? "Guardando…" : "Guardar"}
+              </Button>
+            </div>
+          </article>
+        ))}
       </div>
       </main>
     </div>

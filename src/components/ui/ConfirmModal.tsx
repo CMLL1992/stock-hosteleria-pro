@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { X } from "lucide-react";
 
 type Props = {
   open: boolean;
@@ -38,43 +39,48 @@ export function ConfirmModal({
   if (!open) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="confirm-modal-title"
-    >
-      <button
-        type="button"
-        className="absolute inset-0 bg-slate-900/40"
-        onClick={busy ? undefined : onCancel}
-        aria-label="Cerrar"
-      />
-      <div className="relative w-full max-w-md rounded-3xl border border-slate-200 bg-white p-5 shadow-lg">
-        <h2 id="confirm-modal-title" className="text-base font-semibold text-slate-900">
-          {title}
-        </h2>
-        <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-slate-600">{message}</p>
-        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
+      <button type="button" className="absolute inset-0" onClick={busy ? undefined : onCancel} aria-label="Cerrar" />
+      <div
+        className="relative z-10 w-full max-w-lg rounded-t-3xl border border-slate-200 bg-white shadow-2xl"
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      >
+        <div className="mx-auto mt-2 h-1.5 w-12 rounded-full bg-slate-200" />
+        <div className="flex items-start justify-between gap-2 px-5 pt-2">
+          <h2 id="confirm-modal-title" className="min-w-0 flex-1 text-base font-semibold text-slate-900">
+            {title}
+          </h2>
           <button
             type="button"
-            className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 sm:w-auto"
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
             onClick={onCancel}
             disabled={busy}
+            aria-label="Cerrar"
           >
-            {cancelLabel}
+            <X className="h-5 w-5" />
           </button>
+        </div>
+        <p className="mt-2 max-h-[50dvh] overflow-y-auto px-5 whitespace-pre-line text-sm leading-relaxed text-slate-600">{message}</p>
+        <div className="mt-5 flex flex-col gap-2 px-5 pb-5">
           <button
             type="button"
             className={
               danger
-                ? "min-h-11 w-full rounded-2xl bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 sm:w-auto"
-                : "min-h-11 w-full rounded-2xl bg-black px-4 text-sm font-semibold text-white hover:bg-slate-900 disabled:opacity-50 sm:w-auto"
+                ? "min-h-12 w-full rounded-2xl bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                : "min-h-12 w-full rounded-2xl bg-black px-4 text-sm font-semibold text-white hover:bg-slate-900 disabled:opacity-50"
             }
             onClick={onConfirm}
             disabled={busy}
           >
             {busy ? "Procesando…" : confirmLabel}
+          </button>
+          <button
+            type="button"
+            className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+            onClick={onCancel}
+            disabled={busy}
+          >
+            {cancelLabel}
           </button>
         </div>
       </div>

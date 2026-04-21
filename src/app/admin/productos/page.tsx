@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { MobileHeader } from "@/components/MobileHeader";
 import { Button } from "@/components/ui/Button";
+import { Drawer } from "@/components/ui/Drawer";
 import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { resolveProductoTituloColumn, tituloColSql, tituloWritePayload } from "@/lib/productosTituloColumn";
@@ -59,6 +60,12 @@ function parseCategoriaTipo(p: ProductoRow): string {
   return t || "otros";
 }
 
+function tituloUnidad(u: string | null | undefined): string {
+  const s = (u ?? "—").trim() || "—";
+  if (s === "—") return s;
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+}
+
 function mapProductoQueryRow(r: Record<string, unknown>): ProductoRow {
   return {
     id: String(r.id ?? ""),
@@ -97,18 +104,20 @@ function ToastView({ toast, onClose }: { toast: Toast; onClose: () => void }) {
   );
 }
 
-function EditModal({
+function EditProductDrawer({
   open,
   producto,
   onClose,
   onSave,
-  hasPrecioTarifa
+  hasPrecioTarifa,
+  onDelete
 }: {
   open: boolean;
   producto: ProductoRow | null;
   onClose: () => void;
   onSave: (patch: Partial<ProductoRow>) => Promise<void>;
   hasPrecioTarifa: boolean;
+  onDelete: () => void;
 }) {
   const [articulo, setArticulo] = useState("");
   const [categoria, setCategoria] = useState("");
@@ -128,119 +137,117 @@ function EditModal({
     setStockMinimo(String(producto.stock_minimo ?? 0));
   }, [producto]);
 
-  if (!open || !producto) return null;
-
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="dialog" aria-modal="true">
-      <div className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-4 shadow-xl">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold text-slate-900">Editar producto</p>
-            <p className="mt-0.5 text-xs text-slate-600">ID: {producto.id}</p>
-          </div>
-          <button
-            type="button"
-            className="min-h-12 rounded-2xl px-4 text-sm font-semibold text-slate-700 underline decoration-slate-400 hover:bg-slate-50"
-            onClick={onClose}
-          >
-            Cerrar
-          </button>
-        </div>
+    <Drawer open={open && !!producto} title="Editar producto" onClose={onClose}>
+      {producto ? (
+        <div className="space-y-4 pb-2">
+          <p className="text-xs text-slate-500">ID: {producto.id}</p>
 
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="space-y-1 sm:col-span-2">
-            <label className="text-sm font-semibold text-slate-900">Artículo</label>
-            <input
-              className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-              value={articulo}
-              onChange={(e) => setArticulo(e.currentTarget.value)}
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-sm font-semibold text-slate-900">Categoría</label>
-            <input
-              className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-              value={categoria}
-              onChange={(e) => setCategoria(e.currentTarget.value)}
-              placeholder="Ej: cervezas, licores…"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-sm font-semibold text-slate-900">Unidad</label>
-            <input
-              className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-              value={unidad}
-              onChange={(e) => setUnidad(e.currentTarget.value)}
-              placeholder="caja, barril, botella…"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-sm font-semibold text-slate-900">Precio tarifa</label>
-            {hasPrecioTarifa ? (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-1 sm:col-span-2">
+              <label className="text-sm font-semibold text-slate-900">Artículo</label>
+              <input
+                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                value={articulo}
+                onChange={(e) => setArticulo(e.currentTarget.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-semibold text-slate-900">Categoría</label>
+              <input
+                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                value={categoria}
+                onChange={(e) => setCategoria(e.currentTarget.value)}
+                placeholder="Ej: cervezas, licores…"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-semibold text-slate-900">Unidad</label>
+              <input
+                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                value={unidad}
+                onChange={(e) => setUnidad(e.currentTarget.value)}
+                placeholder="caja, barril, botella…"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-semibold text-slate-900">Precio tarifa</label>
+              {hasPrecioTarifa ? (
+                <input
+                  className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 font-mono text-base text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-black/10"
+                  value={precioTarifa}
+                  onChange={(e) => setPrecioTarifa(e.currentTarget.value)}
+                  inputMode="decimal"
+                />
+              ) : (
+                <p className="min-h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                  No disponible (sin columna <span className="font-mono">precio_tarifa</span>).
+                </p>
+              )}
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-semibold text-slate-900">Stock actual</label>
               <input
                 className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 font-mono text-base text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-black/10"
-                value={precioTarifa}
-                onChange={(e) => setPrecioTarifa(e.currentTarget.value)}
-                inputMode="decimal"
+                value={stockActual}
+                onChange={(e) => setStockActual(e.currentTarget.value)}
+                inputMode="numeric"
               />
-            ) : (
-              <p className="min-h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                No disponible (la BD no tiene la columna <span className="font-mono">precio_tarifa</span>).
-              </p>
-            )}
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-semibold text-slate-900">Stock mínimo</label>
+              <input
+                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 font-mono text-base text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-black/10"
+                value={stockMinimo}
+                onChange={(e) => setStockMinimo(e.currentTarget.value)}
+                inputMode="numeric"
+              />
+            </div>
           </div>
-          <div className="space-y-1">
-            <label className="text-sm font-semibold text-slate-900">Stock actual</label>
-            <input
-              className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 font-mono text-base text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-black/10"
-              value={stockActual}
-              onChange={(e) => setStockActual(e.currentTarget.value)}
-              inputMode="numeric"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-sm font-semibold text-slate-900">Stock mínimo</label>
-            <input
-              className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 font-mono text-base text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-black/10"
-              value={stockMinimo}
-              onChange={(e) => setStockMinimo(e.currentTarget.value)}
-              inputMode="numeric"
-            />
-          </div>
-        </div>
 
-        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
-          <button
-            type="button"
-            className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50"
-            onClick={onClose}
-            disabled={saving}
-          >
-            Cancelar
-          </button>
-          <Button
-            onClick={async () => {
-              setSaving(true);
-              try {
-                await onSave({
-                  articulo: articulo.trim(),
-                  categoria: toNullableText(categoria),
-                  unidad: toNullableText(unidad)?.toLowerCase() ?? null,
-                  precio_tarifa: toNumberOrZero(precioTarifa),
-                  stock_actual: Math.max(0, Math.trunc(toNumberOrZero(stockActual))),
-                  stock_minimo: Math.max(0, Math.trunc(toNumberOrZero(stockMinimo)))
-                });
-              } finally {
-                setSaving(false);
-              }
-            }}
-            disabled={saving || !articulo.trim()}
-          >
-            {saving ? "Guardando…" : "Guardar"}
-          </Button>
+          <div className="flex flex-col gap-2 border-t border-slate-100 pt-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50"
+                onClick={onClose}
+                disabled={saving}
+              >
+                Cancelar
+              </button>
+              <Button
+                onClick={async () => {
+                  setSaving(true);
+                  try {
+                    await onSave({
+                      articulo: articulo.trim(),
+                      categoria: toNullableText(categoria),
+                      unidad: toNullableText(unidad)?.toLowerCase() ?? null,
+                      precio_tarifa: toNumberOrZero(precioTarifa),
+                      stock_actual: Math.max(0, Math.trunc(toNumberOrZero(stockActual))),
+                      stock_minimo: Math.max(0, Math.trunc(toNumberOrZero(stockMinimo)))
+                    });
+                  } finally {
+                    setSaving(false);
+                  }
+                }}
+                disabled={saving || !articulo.trim()}
+              >
+                {saving ? "Guardando…" : "Guardar"}
+              </Button>
+            </div>
+            <button
+              type="button"
+              className="min-h-12 w-full rounded-2xl border border-red-200 bg-red-50 text-sm font-semibold text-red-800 hover:bg-red-100"
+              onClick={onDelete}
+              disabled={saving}
+            >
+              Eliminar producto…
+            </button>
+          </div>
         </div>
-      </div>
-    </div>
+      ) : null}
+    </Drawer>
   );
 }
 
@@ -423,6 +430,8 @@ export default function AdminProductosPage() {
       if (error) throw error;
       await refetch();
       setToast({ kind: "ok", message: "Producto eliminado." });
+      setEditOpen(false);
+      setEditing(null);
     } catch (e) {
       setErr(supabaseErrToString(e));
       setToast({ kind: "error", message: "No se pudo eliminar el producto." });
@@ -519,36 +528,44 @@ export default function AdminProductosPage() {
           </div>
         </div>
 
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3">
           {filtered.map((p) => {
             const precio = typeof p.precio_tarifa === "number" ? p.precio_tarifa : 0;
             const minimo = typeof p.stock_minimo === "number" && Number.isFinite(p.stock_minimo) ? p.stock_minimo : 0;
             const low = p.stock_actual <= minimo;
             const busy = busyDeltaId === p.id;
+            const catLabel = parseCategoriaTipo(p);
+            const unidadLabel = tituloUnidad(p.unidad);
+            const stockCircleClass = low
+              ? "border-[3px] border-orange-500 bg-orange-50 text-orange-900 shadow-[0_0_0_3px_rgba(249,115,22,0.25)] animate-stock-alert"
+              : "border-2 border-slate-200 bg-slate-50 text-slate-900";
             return (
-              <div
+              <article
                 key={p.id}
-                className={[
-                  "rounded-3xl border border-slate-200 bg-white p-5 shadow-sm ring-1 ring-slate-100",
-                  low ? "border-red-200 bg-red-50/30 ring-red-100" : ""
-                ].join(" ")}
+                className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm ring-1 ring-slate-100"
               >
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
                   <button
                     type="button"
-                    className="min-h-12 min-w-0 flex-1 rounded-2xl py-1 text-left transition active:bg-slate-50"
+                    className="min-h-[52px] min-w-0 flex-1 rounded-xl py-0.5 text-left transition active:bg-slate-50"
                     onClick={() => {
                       setEditing(p);
                       setEditOpen(true);
                     }}
                   >
                     <p className="text-lg font-bold leading-snug text-slate-900">{p.articulo}</p>
-                    <p className="mt-1 text-sm text-slate-600">
-                      {parseCategoriaTipo(p)} · {p.unidad ?? "—"}
+                    <p className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-slate-600">
+                      <span className="inline-flex max-w-full rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold capitalize text-slate-800">
+                        {catLabel}
+                      </span>
+                      <span className="text-slate-400" aria-hidden>
+                        •
+                      </span>
+                      <span className="font-medium capitalize text-slate-700">{unidadLabel}</span>
                     </p>
-                    <p className="mt-1 text-sm text-slate-600">
-                      Precio:{" "}
-                      <span className="font-mono font-semibold tabular-nums text-slate-900">
+                    <p className="mt-1 text-xs text-slate-500">
+                      Precio{" "}
+                      <span className="font-mono font-semibold text-slate-700">
                         {hasPrecioTarifa
                           ? `${precio.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
                           : "—"}
@@ -557,45 +574,48 @@ export default function AdminProductosPage() {
                       Mín. <span className="font-mono font-semibold tabular-nums">{minimo}</span>
                     </p>
                   </button>
-                  <button
-                    type="button"
-                    className="inline-flex min-h-12 min-w-12 shrink-0 items-center justify-center rounded-2xl border border-red-200 bg-white text-lg text-red-700 shadow-sm hover:bg-red-50"
-                    onClick={() => onDelete(p)}
-                    title="Eliminar"
-                    aria-label="Eliminar"
-                  >
-                    🗑️
-                  </button>
-                </div>
 
-                <div className="mt-5 flex items-center justify-between gap-4">
-                  <button
-                    type="button"
-                    disabled={busy || p.stock_actual <= 0}
-                    onClick={() => deltaStock(p, -1)}
-                    className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-2xl border-2 border-slate-300 bg-white text-2xl font-bold text-slate-800 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                    aria-label="Reducir stock"
-                  >
-                    −
-                  </button>
-                  <div className="flex flex-col items-center">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Stock</span>
-                    <span className="text-3xl font-bold tabular-nums text-slate-900">{p.stock_actual}</span>
+                  <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+                    <button
+                      type="button"
+                      disabled={busy || p.stock_actual <= 0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deltaStock(p, -1);
+                      }}
+                      className="inline-flex h-[50px] w-[50px] shrink-0 items-center justify-center rounded-full border-2 border-slate-300 bg-white text-2xl font-bold leading-none text-slate-800 shadow-sm hover:bg-slate-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-35"
+                      aria-label="Reducir una unidad de stock"
+                    >
+                      −
+                    </button>
+                    <div
+                      className={[
+                        "flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-full text-center tabular-nums transition",
+                        stockCircleClass
+                      ].join(" ")}
+                      title="Stock actual"
+                    >
+                      <span className="text-[10px] font-bold uppercase leading-none text-current/80">Stock</span>
+                      <span className="text-xl font-black leading-tight">{p.stock_actual}</span>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deltaStock(p, 1);
+                      }}
+                      className="inline-flex h-[50px] w-[50px] shrink-0 items-center justify-center rounded-full border-2 border-slate-900 bg-slate-900 text-2xl font-bold leading-none text-white shadow-md hover:bg-slate-800 active:scale-95 disabled:cursor-not-allowed disabled:opacity-35"
+                      aria-label="Aumentar una unidad de stock"
+                    >
+                      +
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => deltaStock(p, 1)}
-                    className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-2xl border-2 border-slate-900 bg-slate-900 text-2xl font-bold text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
-                    aria-label="Aumentar stock"
-                  >
-                    +
-                  </button>
                 </div>
 
                 <button
                   type="button"
-                  className="mt-4 min-h-12 w-full rounded-2xl border border-slate-200 bg-white text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50"
+                  className="mt-3 min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50/80 text-sm font-semibold text-slate-800 hover:bg-slate-100"
                   onClick={() => {
                     setEditing(p);
                     setEditOpen(true);
@@ -603,7 +623,7 @@ export default function AdminProductosPage() {
                 >
                   Editar detalles
                 </button>
-              </div>
+              </article>
             );
           })}
           {!filtered.length && !loading ? (
@@ -614,7 +634,7 @@ export default function AdminProductosPage() {
         </div>
       </main>
 
-      <EditModal
+      <EditProductDrawer
         open={editOpen}
         producto={editing}
         hasPrecioTarifa={hasPrecioTarifa}
@@ -623,6 +643,9 @@ export default function AdminProductosPage() {
           setEditing(null);
         }}
         onSave={onSave}
+        onDelete={() => {
+          if (editing) void onDelete(editing);
+        }}
       />
       <ToastView toast={toast} onClose={() => setToast(null)} />
     </div>

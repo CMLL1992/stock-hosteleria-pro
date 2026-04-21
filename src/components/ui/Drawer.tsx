@@ -29,9 +29,9 @@ export function Drawer({
         role="dialog"
         aria-modal="true"
       >
-        <div className="mx-auto max-w-3xl px-4 pb-4 pt-3">
-          <div className="mx-auto mb-2 h-1.5 w-12 rounded-full bg-gray-200" />
-          <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="mx-auto flex max-h-[min(92dvh,900px)] max-w-3xl flex-col px-4 pb-4 pt-3">
+          <div className="mx-auto mb-2 h-1.5 w-12 shrink-0 rounded-full bg-gray-200" />
+          <div className="mb-3 flex shrink-0 items-center justify-between gap-3">
             <div className="min-w-0">
               {title ? <p className="truncate text-base font-semibold text-gray-900">{title}</p> : null}
             </div>
@@ -44,7 +44,7 @@ export function Drawer({
               <X className="h-5 w-5 text-gray-700" />
             </button>
           </div>
-          {children}
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{children}</div>
         </div>
       </div>
     </div>

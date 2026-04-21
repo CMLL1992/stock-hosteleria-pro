@@ -13,9 +13,31 @@ export function urlWhatsApp(phoneDigits: string, message: string): string {
   return `https://wa.me/${phoneDigits}?text=${encodeURIComponent(message)}`;
 }
 
-/** Mensaje corto para flujo móvil (pedido por artículo). */
+function unidadLegible(u: string | null | undefined): string {
+  const t = (u ?? "uds").trim() || "uds";
+  return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
+}
+
+/**
+ * Mensaje estándar de pedido de stock (una línea de producto).
+ * Cantidad mostrada: unidades a reponer hasta el mínimo (mínimo 1 si hace falta pedir).
+ */
+export function mensajePedidoStockProfesional(nombre: string, stockActual: number, stockMinimo: number, unidad: string | null): string {
+  const diff = deficitPedido(stockActual, stockMinimo);
+  const cant = diff > 0 ? diff : Math.max(1, stockMinimo - stockActual);
+  const u = unidadLegible(unidad);
+  return [
+    "📦 *PEDIDO DE STOCK* 📦",
+    "Hola, necesito reponer:",
+    `- *Producto:* ${nombre}`,
+    `- *Cantidad:* ${cant} ${u}`,
+    "¡Gracias!"
+  ].join("\n");
+}
+
+/** Mensaje corto (legacy / tests). */
 export function mensajePedidoMovil(articulo: string, cantidad: number): string {
-  return `Hola, necesito pedir: ${articulo} - ${cantidad}`;
+  return mensajePedidoStockProfesional(articulo, 0, cantidad, "uds");
 }
 
 /**
@@ -26,27 +48,16 @@ export function waUrlSendText(message: string, phoneDigits: string | null): stri
   return `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
 }
 
-export function mensajePedidoUnitario(opts: {
-  proveedorNombre: string;
-  articulo: string;
-  deficit: number;
-  unidad: string;
-}): string {
-  const u = (opts.unidad || "uds").trim();
-  return `Hola ${opts.proveedorNombre}, necesito reponer el siguiente artículo: *${opts.articulo}* (Cantidad estimada: ${opts.deficit} ${u}).`;
-}
-
-export function mensajePedidoGlobal(
-  proveedorNombre: string,
-  lineas: Array<{ articulo: string; deficit: number; unidad: string }>
+export function mensajePedidoGlobalLineas(
+  lineas: Array<{ articulo: string; stock_actual: number; stock_minimo: number; unidad: string | null }>
 ): string {
-  const cuerpo = lineas
-    .map((l) => {
-      const u = (l.unidad || "uds").trim();
-      return `• *${l.articulo}* (Cantidad estimada: ${l.deficit} ${u})`;
-    })
-    .join("\n");
-  return `Hola ${proveedorNombre}, necesito reponer los siguientes artículos:\n\n${cuerpo}`;
+  const bloques = lineas.map((l) => {
+    const diff = deficitPedido(l.stock_actual, l.stock_minimo);
+    const cant = diff > 0 ? diff : Math.max(1, l.stock_minimo - l.stock_actual);
+    const u = unidadLegible(l.unidad);
+    return [`- *Producto:* ${l.articulo}`, `- *Cantidad:* ${cant} ${u}`].join("\n");
+  });
+  return ["📦 *PEDIDO DE STOCK* 📦", "Hola, necesito reponer:", ...bloques, "¡Gracias!"].join("\n");
 }
 
 export type ProductoPedidoWa = {
@@ -63,8 +74,7 @@ export type ProductoPedidoWa = {
  */
 export function waUrlProductoPedido(p: ProductoPedidoWa): string | null {
   if (p.stock_actual > p.stock_minimo) return null;
-  const cant = Math.max(1, deficitPedido(p.stock_actual, p.stock_minimo));
-  const msg = mensajePedidoMovil(p.articulo, cant);
+  const msg = mensajePedidoStockProfesional(p.articulo, p.stock_actual, p.stock_minimo, p.unidad);
   const tel = digitsWaPhone(p.proveedor?.telefono_whatsapp);
   return waUrlSendText(msg, tel);
 }
@@ -74,11 +84,11 @@ export function waUrlPedidoGlobal(bajoMinimos: ProductoPedidoWa[]): string | nul
   const head = bajoMinimos.find((p) => digitsWaPhone(p.proveedor?.telefono_whatsapp));
   const tel = head ? digitsWaPhone(head.proveedor?.telefono_whatsapp) : null;
   if (!tel || !head) return null;
-  const prov = head.proveedor?.nombre ?? "Proveedor";
   const lineas = bajoMinimos.map((p) => ({
     articulo: p.articulo,
-    deficit: Math.max(1, deficitPedido(p.stock_actual, p.stock_minimo)),
-    unidad: p.unidad ?? "uds"
+    stock_actual: p.stock_actual,
+    stock_minimo: p.stock_minimo,
+    unidad: p.unidad
   }));
-  return urlWhatsApp(tel, mensajePedidoGlobal(prov, lineas));
+  return urlWhatsApp(tel, mensajePedidoGlobalLineas(lineas));
 }

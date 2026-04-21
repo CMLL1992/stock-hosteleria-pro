@@ -109,38 +109,30 @@ export default function AdminMovimientosPage() {
             No hay movimientos registrados todavía.
           </p>
         ) : (
-          <div className="mt-4 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-100">
-            <table className="w-full border-collapse text-left text-sm">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                  <th className="px-3 py-2">Fecha</th>
-                  <th className="px-3 py-2">Producto</th>
-                  <th className="px-3 py-2">Tipo</th>
-                  <th className="px-3 py-2 text-right">Cant.</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => {
-                  const raw = r.productos;
-                  const prod = Array.isArray(raw) ? raw[0] ?? null : raw;
-                  const articuloEtiqueta =
-                    String(prod?.articulo ?? prod?.nombre ?? "")
-                      .trim() || "—";
-                  const ts = new Date(r.timestamp);
-                  return (
-                    <tr key={r.id} className="border-b border-slate-100 last:border-b-0">
-                      <td className="whitespace-nowrap px-3 py-2 text-slate-700">
-                        {ts.toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" })}
-                      </td>
-                      <td className="max-w-[140px] truncate px-3 py-2 font-medium text-slate-900">{articuloEtiqueta}</td>
-                      <td className="px-3 py-2 text-slate-700">{labelTipo(r.tipo)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-slate-900">{r.cantidad}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <ul className="mt-4 flex flex-col gap-2" aria-label="Movimientos recientes">
+            {rows.map((r) => {
+              const raw = r.productos;
+              const prod = Array.isArray(raw) ? raw[0] ?? null : raw;
+              const articuloEtiqueta =
+                String(prod?.articulo ?? prod?.nombre ?? "")
+                  .trim() || "—";
+              const ts = new Date(r.timestamp);
+              return (
+                <li
+                  key={r.id}
+                  className="flex flex-wrap items-baseline justify-between gap-2 rounded-2xl border border-slate-100 bg-white px-4 py-3 shadow-sm"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold leading-snug text-slate-900">{articuloEtiqueta}</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {ts.toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" })} · {labelTipo(r.tipo)}
+                    </p>
+                  </div>
+                  <p className="shrink-0 text-lg font-bold tabular-nums text-slate-900">{r.cantidad}</p>
+                </li>
+              );
+            })}
+          </ul>
         )}
 
         <p className="mt-6 text-center text-xs text-slate-500">
