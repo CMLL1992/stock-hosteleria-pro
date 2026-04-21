@@ -12,7 +12,7 @@ import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 
 type Producto = {
   id: string;
-  nombre: string;
+  articulo: string;
   stock_actual: number;
   stock_minimo: number | null;
   qr_code_uid: string;
@@ -41,7 +41,7 @@ async function fetchProducto(idOrUid: string, establecimientoId: string | null):
   const { data, error } = await supabase()
     .from("productos")
     .select(
-      "id,nombre,stock_actual,stock_minimo,qr_code_uid,proveedor:proveedores(id,nombre,telefono_whatsapp)"
+      "id,articulo,stock_actual,stock_minimo,qr_code_uid,proveedor:proveedores(id,nombre,telefono_whatsapp)"
     )
     .eq(isUuid(idOrUid) ? "id" : "qr_code_uid", idOrUid)
     .eq("establecimiento_id", establecimientoId ?? "")
@@ -144,10 +144,10 @@ export function ProductByUidClient({ uid }: { uid: string }) {
     const phone = normalizeWhatsAppPhone(tel);
     if (!phone) return null;
     const prov = producto?.proveedor?.nombre ?? "Proveedor";
-    const prod = producto?.nombre ?? "Producto";
+    const prod = producto?.articulo ?? "Producto";
     const msg = `Hola ${prov}, necesito pedir ${pedidoCantidad} de ${prod}.`;
     return `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
-  }, [pedidoCantidad, producto?.nombre, producto?.proveedor?.nombre, producto?.proveedor?.telefono_whatsapp]);
+  }, [pedidoCantidad, producto?.articulo, producto?.proveedor?.nombre, producto?.proveedor?.telefono_whatsapp]);
 
   async function registrar(tipo: "entrada" | "salida" | "pedido", cantidadMovimiento: number) {
     if (!producto) return;
@@ -201,7 +201,7 @@ export function ProductByUidClient({ uid }: { uid: string }) {
         <section className="space-y-4 rounded-3xl border border-gray-100 bg-white p-4 shadow-sm">
           <div className="space-y-0.5">
             <p className="text-xs font-medium text-gray-500">Producto</p>
-            <p className="text-lg font-semibold text-gray-900">{producto.nombre}</p>
+            <p className="text-lg font-semibold text-gray-900">{producto.articulo}</p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

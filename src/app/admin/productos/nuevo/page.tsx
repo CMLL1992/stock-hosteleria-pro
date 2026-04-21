@@ -24,7 +24,8 @@ export default function NuevoProductoPage() {
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
   const { activeEstablishmentId } = useActiveEstablishment();
 
-  const [nombre, setNombre] = useState("");
+  const [articulo, setArticulo] = useState("");
+  // En el esquema actual, preferimos guardar el "tipo" del selector como categoria.
   const [tipo, setTipo] = useState<(typeof TIPOS)[number]>("otros");
   const [unidad, setUnidad] = useState<(typeof UNIDADES)[number]>("unidad");
   const [categoria, setCategoria] = useState<string>("");
@@ -83,11 +84,11 @@ export default function NuevoProductoPage() {
       return;
     }
     const uid = newUid();
+    const categoriaFinal = (categoria.trim() || tipo).trim();
     const { error } = await supabase().from("productos").insert({
-      nombre,
-      tipo,
+      articulo: articulo.trim(),
       unidad,
-      categoria: categoria.trim() ? categoria.trim() : null,
+      categoria: categoriaFinal ? categoriaFinal : null,
       stock_minimo: Number.isFinite(stockMinimo) ? stockMinimo : 0,
       proveedor_id: proveedorId || null,
       qr_code_uid: uid,
@@ -124,16 +125,16 @@ export default function NuevoProductoPage() {
 
       <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="space-y-1">
-          <label className="text-sm font-semibold text-slate-900">Nombre</label>
+          <label className="text-sm font-semibold text-slate-900">Artículo</label>
           <input
             className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-black/10"
-            value={nombre}
-            onChange={(e) => setNombre(e.currentTarget.value)}
+            value={articulo}
+            onChange={(e) => setArticulo(e.currentTarget.value)}
           />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
-            <label className="text-sm font-semibold text-slate-900">Tipo</label>
+            <label className="text-sm font-semibold text-slate-900">Categoría</label>
             <select
               className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
               value={tipo}
@@ -180,7 +181,7 @@ export default function NuevoProductoPage() {
             onChange={(e) => setCategoria(e.currentTarget.value)}
           />
           <p className="text-xs text-slate-600">
-            Si lo dejas vacío, el filtro usará el campo <span className="font-mono">tipo</span>.
+            Si lo dejas vacío, se guardará la categoría del selector.
           </p>
         </div>
         <div className="space-y-1">
@@ -199,7 +200,7 @@ export default function NuevoProductoPage() {
           </select>
         </div>
 
-        <Button onClick={crear} disabled={!nombre.trim()}>
+        <Button onClick={crear} disabled={!articulo.trim()}>
           Crear
         </Button>
       </div>

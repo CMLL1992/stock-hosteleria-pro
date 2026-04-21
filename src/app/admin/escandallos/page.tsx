@@ -11,7 +11,7 @@ import { MobileHeader } from "@/components/MobileHeader";
 
 type ProductoRow = {
   id: string;
-  nombre: string;
+  articulo: string;
   precio_tarifa: number | null;
   descuento_valor: number | null;
   descuento_tipo: "%" | "€" | null;
@@ -68,9 +68,9 @@ export default function EscandallosPage() {
     setErr(null);
     const { data, error } = await supabase()
       .from("productos")
-      .select("id,nombre,precio_tarifa,descuento_valor,descuento_tipo,iva_compra,pvp,iva_venta")
+    .select("id,articulo,precio_tarifa,descuento_valor,descuento_tipo,iva_compra,pvp,iva_venta")
       .eq("establecimiento_id", activeEstablishmentId)
-      .order("nombre", { ascending: true });
+    .order("articulo", { ascending: true });
     if (error) throw error;
     setItems((data as unknown as ProductoRow[]) ?? []);
   }
@@ -171,7 +171,7 @@ export default function EscandallosPage() {
               {rows.map(({ p, cn, vn, mb, mp, healthy }) => (
                 <tr key={p.id} className="border-t border-slate-100">
                   <td className="sticky left-0 z-10 bg-white px-4 py-3">
-                    <p className="max-w-[260px] truncate text-sm font-semibold text-slate-900">{p.nombre}</p>
+                    <p className="max-w-[260px] truncate text-sm font-semibold text-slate-900">{p.articulo}</p>
                   </td>
 
                   <td className="px-3 py-3">

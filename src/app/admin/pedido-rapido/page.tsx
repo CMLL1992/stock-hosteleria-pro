@@ -10,10 +10,10 @@ import { MobileHeader } from "@/components/MobileHeader";
 
 type Row = {
   id: string;
-  nombre: string;
+  articulo: string;
   stock_actual: number;
   stock_minimo: number | null;
-  tipo: string | null;
+  categoria: string | null;
   unidad: string | null;
   proveedor: null | {
     id: string;
@@ -26,9 +26,9 @@ async function fetchProductos(establecimientoId: string | null): Promise<Row[]> 
   if (!establecimientoId) return [];
   const { data, error } = await supabase()
     .from("productos")
-    .select("id,nombre,stock_actual,stock_minimo,tipo,unidad,proveedor:proveedores(id,nombre,telefono_whatsapp)")
+    .select("id,articulo,stock_actual,stock_minimo,categoria,unidad,proveedor:proveedores(id,nombre,telefono_whatsapp)")
     .eq("establecimiento_id", establecimientoId)
-    .order("nombre", { ascending: true });
+    .order("articulo", { ascending: true });
   if (error) throw error;
   return (data as unknown as Row[]) ?? [];
 }
@@ -37,7 +37,7 @@ function waLink(p: Row, cantidad: number): string | null {
   const tel = p.proveedor?.telefono_whatsapp;
   if (!tel) return null;
   const prov = p.proveedor?.nombre ?? "Proveedor";
-  const msg = `Hola ${prov}, necesito pedir ${cantidad} de ${p.nombre}.`;
+  const msg = `Hola ${prov}, necesito pedir ${cantidad} de ${p.articulo}.`;
   return `https://wa.me/${encodeURIComponent(tel)}?text=${encodeURIComponent(msg)}`;
 }
 
@@ -107,7 +107,7 @@ export default function PedidoRapidoPage() {
       if (!cantidad || cantidad < 1) return;
       const link = waLink(p, cantidad);
       if (!link) {
-        setErr(`El proveedor de "${p.nombre}" no tiene teléfono WhatsApp.`);
+        setErr(`El proveedor de "${p.articulo}" no tiene teléfono WhatsApp.`);
         return;
       }
 
@@ -188,7 +188,7 @@ export default function PedidoRapidoPage() {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <p className="truncate text-sm font-semibold text-slate-900">{p.nombre}</p>
+                    <p className="truncate text-sm font-semibold text-slate-900">{p.articulo}</p>
                     {isLow ? (
                       <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700 ring-1 ring-red-100">
                         Bajo mínimo
@@ -200,7 +200,7 @@ export default function PedidoRapidoPage() {
                     )}
                   </div>
                   <p className="mt-1 text-xs text-slate-600">
-                    {p.tipo ?? "—"} · {p.unidad ?? "—"} · Stock:{" "}
+                    {p.categoria ?? "—"} · {p.unidad ?? "—"} · Stock:{" "}
                     <span className="font-mono">{p.stock_actual}</span> · Mín:{" "}
                     <span className="font-mono">{p.stock_minimo ?? "—"}</span>
                   </p>

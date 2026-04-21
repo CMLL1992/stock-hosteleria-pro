@@ -381,16 +381,20 @@ export default function AdminProductosPage() {
   if (meLoading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
   if (me?.role === null && !me?.profileReady) return <main className="p-4 text-sm text-slate-600">Cargando perfil…</main>;
   const isAdmin = !!me?.isAdmin;
+  if (!isAdmin) {
+    return (
+      <main className="mx-auto max-w-md p-4">
+        <h1 className="text-xl font-semibold">Gestionar productos</h1>
+        <p className="mt-2 text-sm text-slate-600">Acceso denegado.</p>
+      </main>
+    );
+  }
 
   return (
     <div className="min-h-dvh">
       <MobileHeader title="Gestionar productos" showBack backHref="/admin" />
       <main className="mx-auto max-w-6xl bg-slate-50 p-4 pb-28 text-slate-900">
-        {!isAdmin ? (
-          <p className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-            Aviso: tu usuario no tiene rol admin/superadmin. (Restricción desactivada temporalmente para diagnóstico).
-          </p>
-        ) : null}
+        {/* Acceso protegido por isAdmin */}
         <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h1 className="text-xl font-semibold">Gestión de Productos</h1>

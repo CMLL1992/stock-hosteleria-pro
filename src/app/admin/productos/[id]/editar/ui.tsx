@@ -16,8 +16,7 @@ const UNIDADES = ["caja", "barril", "botella", "lata", "unidad"] as const;
 
 type Producto = {
   id: string;
-  nombre: string;
-  tipo: string | null;
+  articulo: string;
   unidad: string | null;
   categoria: string | null;
   stock_minimo: number | null;
@@ -35,7 +34,8 @@ export function EditarProductoClient({ id }: { id: string }) {
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
   const [producto, setProducto] = useState<Producto | null>(null);
 
-  const [nombre, setNombre] = useState("");
+  const [articulo, setArticulo] = useState("");
+  // En este esquema, tratamos el selector TIPOS como categoria.
   const [tipo, setTipo] = useState<(typeof TIPOS)[number]>("otros");
   const [unidad, setUnidad] = useState<(typeof UNIDADES)[number]>("unidad");
   const [categoria, setCategoria] = useState("");
@@ -74,7 +74,7 @@ export function EditarProductoClient({ id }: { id: string }) {
 
         const { data: p, error: pErr } = await supabase()
           .from("productos")
-          .select("id,nombre,tipo,unidad,categoria,stock_minimo,proveedor_id")
+          .select("id,articulo,unidad,categoria,stock_minimo,proveedor_id")
           .eq("id", id)
           .eq("establecimiento_id", activeEstablishmentId)
           .maybeSingle();
@@ -87,8 +87,8 @@ export function EditarProductoClient({ id }: { id: string }) {
 
         const prod = p as unknown as Producto;
         setProducto(prod);
-        setNombre(prod.nombre ?? "");
-        setTipo((prod.tipo as (typeof TIPOS)[number]) ?? "otros");
+        setArticulo(prod.articulo ?? "");
+        setTipo(((prod.categoria ?? "otros") as (typeof TIPOS)[number]) ?? "otros");
         setUnidad((prod.unidad as (typeof UNIDADES)[number]) ?? "unidad");
         setCategoria(prod.categoria ?? "");
         setStockMinimo(typeof prod.stock_minimo === "number" ? prod.stock_minimo : 0);
@@ -120,13 +120,13 @@ export function EditarProductoClient({ id }: { id: string }) {
     }
     setErr(null);
     setOk(null);
+    const categoriaFinal = (categoria.trim() || tipo).trim();
     const { error } = await supabase()
       .from("productos")
       .update({
-        nombre: nombre.trim(),
-        tipo,
+        articulo: articulo.trim(),
         unidad,
-        categoria: categoria.trim() ? categoria.trim() : null,
+        categoria: categoriaFinal ? categoriaFinal : null,
         stock_minimo: Number.isFinite(stockMinimo) ? stockMinimo : 0,
         proveedor_id: proveedorId || null
       })
@@ -171,17 +171,17 @@ export function EditarProductoClient({ id }: { id: string }) {
             ) : (
               <div className="space-y-4">
                 <div className="space-y-1">
-                  <label className="text-sm font-semibold text-gray-900">Nombre</label>
+                  <label className="text-sm font-semibold text-gray-900">Artículo</label>
                   <input
                     className="min-h-12 w-full rounded-2xl border border-gray-100 bg-gray-50 px-4 text-base"
-                    value={nombre}
-                    onChange={(e) => setNombre(e.currentTarget.value)}
+                    value={articulo}
+                    onChange={(e) => setArticulo(e.currentTarget.value)}
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <label className="text-sm font-semibold text-gray-900">Tipo</label>
+                    <label className="text-sm font-semibold text-gray-900">Categoría</label>
                     <select
                       className="min-h-12 w-full rounded-2xl border border-gray-100 bg-gray-50 px-4 text-base"
                       value={tipo}
@@ -246,7 +246,7 @@ export function EditarProductoClient({ id }: { id: string }) {
                   </select>
                 </div>
 
-                <Button onClick={guardar} disabled={!nombre.trim() || !producto}>
+                <Button onClick={guardar} disabled={!articulo.trim() || !producto}>
                   Guardar cambios
                 </Button>
               </div>

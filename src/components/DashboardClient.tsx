@@ -54,8 +54,8 @@ async function fetchTopProductosSalida(range: RangeKey, establecimientoId: strin
   if (!establecimientoId) return { rows: [], totals: { units: 0, cost: 0, profit: 0 } };
   const since = sinceForRange(range);
   const selectFull =
-    "producto_id,tipo,cantidad,timestamp,producto:productos(articulo,nombre,precio_tarifa,descuento_valor,descuento_tipo,iva_compra,pvp,iva_venta)";
-  const selectLite = "producto_id,tipo,cantidad,timestamp,producto:productos(articulo,nombre)";
+    "producto_id,tipo,cantidad,timestamp,producto:productos(articulo,precio_tarifa,descuento_valor,descuento_tipo,iva_compra,pvp,iva_venta)";
+  const selectLite = "producto_id,tipo,cantidad,timestamp,producto:productos(articulo)";
 
   let data: unknown = null;
   let financeAvailable = true;
@@ -90,7 +90,7 @@ async function fetchTopProductosSalida(range: RangeKey, establecimientoId: strin
   const rows = (data as unknown as Movimiento[]) ?? [];
   const byProduct = new Map<string, { name: string; units: number; cost: number; profit: number }>();
   for (const r of rows) {
-    const name = r.producto?.articulo ?? r.producto?.nombre ?? "Producto";
+    const name = r.producto?.articulo ?? "Producto";
     const units = Math.abs(Number(r.cantidad) || 0);
     const cn = financeAvailable && r.producto ? costeNeto(r.producto) : 0;
     const mb = financeAvailable && r.producto ? margenBrutoEUR(r.producto) : 0; // margen por unidad (neto)

@@ -7,7 +7,7 @@ import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 
 type Producto = {
   id: string;
-  nombre: string;
+  articulo: string;
   stock_actual: number;
   stock_minimo: number | null;
   qr_code_uid: string;
@@ -20,14 +20,14 @@ async function fetchProductos(establecimientoId: string | null): Promise<Product
   if (!establecimientoId) return [];
   // Si la BD todavía no tiene las columnas tipo/unidad (schema cache), esta query puede fallar.
   // Hacemos fallback a una selección mínima para no "vaciar" la lista de stock.
-  const baseSelect = "id,nombre,stock_actual,stock_minimo,qr_code_uid";
+  const baseSelect = "id,articulo,stock_actual,stock_minimo,qr_code_uid";
   const extendedSelect = `${baseSelect},tipo,unidad,categoria`;
 
   const { data, error } = await supabase()
     .from("productos")
     .select(extendedSelect)
     .eq("establecimiento_id", establecimientoId)
-    .order("nombre", { ascending: true });
+    .order("articulo", { ascending: true });
 
   if (!error) return (data as unknown as Producto[]) ?? [];
 
@@ -44,7 +44,7 @@ async function fetchProductos(establecimientoId: string | null): Promise<Product
     .from("productos")
     .select(baseSelect)
     .eq("establecimiento_id", establecimientoId)
-    .order("nombre", { ascending: true });
+    .order("articulo", { ascending: true });
   if (fallback.error) throw fallback.error;
   return ((fallback.data ?? []) as unknown as Array<Omit<Producto, "tipo" | "unidad">>).map((p) => ({
     ...p,
@@ -185,7 +185,7 @@ export function ProductList() {
                       href={`/p/${encodeURIComponent(p.id)}`}
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <p className="truncate text-base font-semibold text-slate-900">{p.nombre}</p>
+                      <p className="truncate text-base font-semibold text-slate-900">{p.articulo}</p>
                     </a>
                     <span
                       className="inline-flex min-h-6 items-center rounded-full px-2 text-[11px] font-semibold text-gray-900"
