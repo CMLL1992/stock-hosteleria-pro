@@ -7,6 +7,8 @@ import type { AppRole } from "@/lib/session";
 import { fetchMyRole } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
 import { getBaseUrl } from "@/lib/baseUrl";
+import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
+import { MobileHeader } from "@/components/MobileHeader";
 
 type ProductoRow = {
   id: string;
@@ -14,10 +16,12 @@ type ProductoRow = {
   proveedor_id: string | null;
 };
 
-async function loadProductos(): Promise<ProductoRow[]> {
+async function loadProductos(establecimientoId: string | null): Promise<ProductoRow[]> {
+  if (!establecimientoId) return [];
   const { data, error } = await supabase()
     .from("productos")
     .select("id,nombre,proveedor_id")
+    .eq("establecimiento_id", establecimientoId)
     .order("nombre", { ascending: true });
   if (error) throw error;
   return (data as unknown as ProductoRow[]) ?? [];
@@ -28,6 +32,7 @@ export default function AdminEtiquetasPage() {
   const [items, setItems] = useState<ProductoRow[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const { activeEstablishmentId } = useActiveEstablishment();
 
   useEffect(() => {
     let cancelled = false;
@@ -55,7 +60,7 @@ export default function AdminEtiquetasPage() {
     if (role !== "admin" && role !== "superadmin") return;
     let cancelled = false;
     setErr(null);
-    loadProductos()
+    loadProductos(activeEstablishmentId ?? null)
       .then((p) => {
         if (cancelled) return;
         setItems(p);
@@ -67,7 +72,7 @@ export default function AdminEtiquetasPage() {
     return () => {
       cancelled = true;
     };
-  }, [role]);
+  }, [activeEstablishmentId, role]);
 
   const origin = useMemo(() => getBaseUrl(), []);
 
@@ -83,7 +88,9 @@ export default function AdminEtiquetasPage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl bg-slate-50 p-4 pb-28 text-slate-900">
+    <div className="min-h-dvh">
+      <MobileHeader title="Etiquetas" showBack backHref="/admin" />
+      <main className="mx-auto max-w-3xl bg-slate-50 p-4 pb-28 text-slate-900">
       <style>{`
         @media print {
           .no-print { display: none !important; }
@@ -121,7 +128,8 @@ export default function AdminEtiquetasPage() {
           );
         })}
       </div>
-    </main>
+      </main>
+    </div>
   );
 }
 

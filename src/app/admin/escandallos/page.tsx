@@ -6,6 +6,8 @@ import type { AppRole } from "@/lib/session";
 import { fetchMyRole } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
 import { costeNeto, formatEUR, margenBeneficioPct, margenBrutoEUR, ventaNetaSinIva } from "@/lib/finance";
+import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
+import { MobileHeader } from "@/components/MobileHeader";
 
 type ProductoRow = {
   id: string;
@@ -38,6 +40,7 @@ export default function EscandallosPage() {
   const [saved, setSaved] = useState(false);
 
   const [items, setItems] = useState<ProductoRow[]>([]);
+  const { activeEstablishmentId } = useActiveEstablishment();
 
   useEffect(() => {
     let cancelled = false;
@@ -66,6 +69,7 @@ export default function EscandallosPage() {
     const { data, error } = await supabase()
       .from("productos")
       .select("id,nombre,precio_tarifa,descuento_valor,descuento_tipo,iva_compra,pvp,iva_venta")
+      .eq("establecimiento_id", activeEstablishmentId)
       .order("nombre", { ascending: true });
     if (error) throw error;
     setItems((data as unknown as ProductoRow[]) ?? []);
@@ -73,15 +77,17 @@ export default function EscandallosPage() {
 
   useEffect(() => {
     if (role !== "admin" && role !== "superadmin") return;
+    if (!activeEstablishmentId) return;
     load().catch((e) => setErr(e instanceof Error ? e.message : String(e)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [role]);
+  }, [activeEstablishmentId, role]);
 
   async function saveRow(p: ProductoRow) {
     setErr(null);
     setSaved(false);
     setSaving(p.id);
     try {
+      if (!activeEstablishmentId) throw new Error("No hay establecimiento activo.");
       const payload = {
         precio_tarifa: clampNonNeg(Number(p.precio_tarifa ?? 0)),
         descuento_valor: clampNonNeg(Number(p.descuento_valor ?? 0)),
@@ -90,7 +96,11 @@ export default function EscandallosPage() {
         pvp: clampNonNeg(Number(p.pvp ?? 0)),
         iva_venta: Number(p.iva_venta ?? 10)
       };
-      const { error } = await supabase().from("productos").update(payload).eq("id", p.id);
+      const { error } = await supabase()
+        .from("productos")
+        .update(payload)
+        .eq("id", p.id)
+        .eq("establecimiento_id", activeEstablishmentId);
       if (error) throw error;
       setSaved(true);
       setTimeout(() => setSaved(false), 1200);
@@ -121,7 +131,9 @@ export default function EscandallosPage() {
   }
 
   return (
-    <main className="mx-auto max-w-5xl bg-slate-50 p-4 pb-28 text-slate-900">
+    <div className="min-h-dvh">
+      <MobileHeader title="Escandallos" showBack backHref="/admin" />
+      <main className="mx-auto max-w-5xl bg-slate-50 p-4 pb-28 text-slate-900">
       <div className="mb-3 flex items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">Escandallos</h1>
@@ -129,9 +141,6 @@ export default function EscandallosPage() {
         </div>
         <div className="flex items-center gap-2">
           {saved ? <span className="text-sm font-semibold text-emerald-700">Guardado ✓</span> : null}
-          <a className="text-sm text-slate-700 underline" href="/admin">
-            Volver
-          </a>
         </div>
       </div>
 
@@ -283,7 +292,8 @@ export default function EscandallosPage() {
           </table>
         </div>
       </div>
-    </main>
+      </main>
+    </div>
   );
 }
 

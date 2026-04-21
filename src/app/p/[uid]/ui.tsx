@@ -8,6 +8,7 @@ import { MobileHeader } from "@/components/MobileHeader";
 import { enqueueMovimiento } from "@/lib/offlineQueue";
 import { requireUserId } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
+import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 
 type Producto = {
   id: string;
@@ -36,13 +37,14 @@ function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
-async function fetchProducto(idOrUid: string): Promise<Producto | null> {
+async function fetchProducto(idOrUid: string, establecimientoId: string | null): Promise<Producto | null> {
   const { data, error } = await supabase()
     .from("productos")
     .select(
       "id,nombre,stock_actual,stock_minimo,qr_code_uid,proveedor:proveedores(id,nombre,telefono_whatsapp)"
     )
     .eq(isUuid(idOrUid) ? "id" : "qr_code_uid", idOrUid)
+    .eq("establecimiento_id", establecimientoId ?? "")
     .maybeSingle();
   if (error) throw error;
   return (data as unknown as Producto) ?? null;
@@ -50,6 +52,7 @@ async function fetchProducto(idOrUid: string): Promise<Producto | null> {
 
 async function createMovimientoOnline(input: {
   producto_id: string;
+  establecimiento_id: string;
   tipo: "entrada" | "salida" | "pedido";
   cantidad: number;
   usuario_id: string;
@@ -60,6 +63,7 @@ async function createMovimientoOnline(input: {
 }
 
 export function ProductByUidClient({ uid }: { uid: string }) {
+  const { activeEstablishmentId } = useActiveEstablishment();
   const [producto, setProducto] = useState<Producto | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -76,7 +80,7 @@ export function ProductByUidClient({ uid }: { uid: string }) {
     let cancelled = false;
     setLoading(true);
     setErr(null);
-    fetchProducto(uid)
+    fetchProducto(uid, activeEstablishmentId ?? null)
       .then((p) => {
         if (cancelled) return;
         setProducto(p);
@@ -94,7 +98,7 @@ export function ProductByUidClient({ uid }: { uid: string }) {
     return () => {
       cancelled = true;
     };
-  }, [uid]);
+  }, [activeEstablishmentId, uid]);
 
   useEffect(() => {
     if (loading) return;
@@ -121,9 +125,14 @@ export function ProductByUidClient({ uid }: { uid: string }) {
 
   async function registrar(tipo: "entrada" | "salida" | "pedido", cantidadMovimiento: number) {
     if (!producto) return;
+    if (!activeEstablishmentId) {
+      setErr("No hay establecimiento activo.");
+      return;
+    }
     const usuario_id = await requireUserId();
     const payload = {
       producto_id: producto.id,
+      establecimiento_id: activeEstablishmentId,
       tipo,
       cantidad: cantidadMovimiento,
       usuario_id,
@@ -136,7 +145,7 @@ export function ProductByUidClient({ uid }: { uid: string }) {
         await enqueueMovimiento(payload);
       }
       // refresco sencillo
-      setProducto(await fetchProducto(uid));
+      setProducto(await fetchProducto(uid, activeEstablishmentId));
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     }

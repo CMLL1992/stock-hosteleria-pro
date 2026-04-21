@@ -5,6 +5,7 @@ import type { AppRole } from "@/lib/session";
 import { fetchMyRole } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
+import { MobileHeader } from "@/components/MobileHeader";
 
 type Proveedor = {
   id: string;
@@ -76,16 +77,13 @@ export default function ProveedoresPage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl bg-slate-50 p-4 pb-28 text-slate-900">
-      <div className="mb-3 flex items-end justify-between gap-3">
-        <div>
+    <div className="min-h-dvh">
+      <MobileHeader title="Proveedores" showBack backHref="/admin" />
+      <main className="mx-auto max-w-3xl bg-slate-50 p-4 pb-28 text-slate-900">
+        <div className="mb-3">
           <h1 className="text-xl font-semibold">Proveedores</h1>
           <p className="text-sm text-slate-600">{items.length} proveedores</p>
         </div>
-        <a className="text-sm text-slate-700 underline" href="/admin">
-          Volver
-        </a>
-      </div>
 
       {err ? (
         <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
@@ -114,7 +112,8 @@ export default function ProveedoresPage() {
           </div>
         ))}
       </div>
-    </main>
+      </main>
+    </div>
   );
 }
 

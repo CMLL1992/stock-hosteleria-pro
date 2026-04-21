@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/Button";
 import type { AppRole } from "@/lib/session";
 import { fetchMyRole, requireUserId } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
+import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
+import { MobileHeader } from "@/components/MobileHeader";
 
 type Row = {
   id: string;
@@ -20,10 +22,12 @@ type Row = {
   };
 };
 
-async function fetchProductos(): Promise<Row[]> {
+async function fetchProductos(establecimientoId: string | null): Promise<Row[]> {
+  if (!establecimientoId) return [];
   const { data, error } = await supabase()
     .from("productos")
     .select("id,nombre,stock_actual,stock_minimo,tipo,unidad,proveedor:proveedores(id,nombre,telefono_whatsapp)")
+    .eq("establecimiento_id", establecimientoId)
     .order("nombre", { ascending: true });
   if (error) throw error;
   return (data as unknown as Row[]) ?? [];
@@ -43,6 +47,7 @@ export default function PedidoRapidoPage() {
   const [err, setErr] = useState<string | null>(null);
   const [items, setItems] = useState<Row[]>([]);
   const [qty, setQty] = useState<Record<string, number>>({});
+  const { activeEstablishmentId } = useActiveEstablishment();
 
   useEffect(() => {
     let cancelled = false;
@@ -69,7 +74,7 @@ export default function PedidoRapidoPage() {
   useEffect(() => {
     if (role !== "admin" && role !== "superadmin") return;
     let cancelled = false;
-    fetchProductos()
+    fetchProductos(activeEstablishmentId ?? null)
       .then((rows) => {
         if (cancelled) return;
         setItems(rows);
@@ -81,12 +86,16 @@ export default function PedidoRapidoPage() {
     return () => {
       cancelled = true;
     };
-  }, [role]);
+  }, [activeEstablishmentId, role]);
 
   const totals = useMemo(() => items.length, [items.length]);
 
   async function pedir(p: Row) {
     setErr(null);
+    if (!activeEstablishmentId) {
+      setErr("No hay establecimiento activo.");
+      return;
+    }
     const cantidad = qty[p.id] ?? 0;
     if (!cantidad || cantidad < 1) return;
     const link = waLink(p, cantidad);
@@ -99,6 +108,7 @@ export default function PedidoRapidoPage() {
     const usuario_id = await requireUserId();
     const { error } = await supabase().from("movimientos").insert({
       producto_id: p.id,
+      establecimiento_id: activeEstablishmentId,
       tipo: "pedido",
       cantidad,
       usuario_id,
@@ -127,15 +137,14 @@ export default function PedidoRapidoPage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl bg-slate-50 p-4 pb-28 text-slate-900">
+    <div className="min-h-dvh">
+      <MobileHeader title="Pedido rápido" showBack backHref="/admin" />
+      <main className="mx-auto max-w-3xl bg-slate-50 p-4 pb-28 text-slate-900">
       <div className="mb-3 flex items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">Pedido rápido</h1>
           <p className="text-sm text-slate-600">{totals} productos</p>
         </div>
-        <a className="text-sm text-slate-700 underline" href="/admin">
-          Volver
-        </a>
       </div>
 
       {err ? (
@@ -205,7 +214,8 @@ export default function PedidoRapidoPage() {
           );
         })}
       </div>
-    </main>
+      </main>
+    </div>
   );
 }
 

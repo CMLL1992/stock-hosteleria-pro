@@ -94,13 +94,10 @@ export default function AdminUsersPage() {
 
   return (
     <div className="min-h-dvh">
-      <MobileHeader title="Usuarios" />
+      <MobileHeader title="Usuarios" showBack backHref="/admin" />
       <main className="mx-auto max-w-3xl p-4 pb-28">
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3">
           <h1 className="text-xl font-semibold text-slate-900">Gestión de usuarios</h1>
-          <a className="text-sm text-slate-700 underline" href="/admin">
-            Volver
-          </a>
         </div>
 
         {err ? <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{err}</p> : null}

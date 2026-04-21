@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/Button";
 import type { AppRole } from "@/lib/session";
 import { fetchMyRole } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
+import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
+import { MobileHeader } from "@/components/MobileHeader";
 
 function normalizeWhatsappPhone(input: string): string {
   const trimmed = input.trim();
@@ -23,6 +25,7 @@ export default function EditarProveedorPage({ params }: { params: { id: string }
   const [role, setRole] = useState<AppRole | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const { activeEstablishmentId } = useActiveEstablishment();
 
   const [prov, setProv] = useState<Proveedor | null>(null);
   const [nombre, setNombre] = useState("");
@@ -52,6 +55,7 @@ export default function EditarProveedorPage({ params }: { params: { id: string }
 
   useEffect(() => {
     if (role !== "admin" && role !== "superadmin") return;
+    if (!activeEstablishmentId) return;
     let cancelled = false;
     (async () => {
       try {
@@ -59,6 +63,7 @@ export default function EditarProveedorPage({ params }: { params: { id: string }
           .from("proveedores")
           .select("id,nombre,telefono_whatsapp")
           .eq("id", params.id)
+          .eq("establecimiento_id", activeEstablishmentId)
           .single();
         if (error) throw error;
         if (cancelled) return;
@@ -74,16 +79,21 @@ export default function EditarProveedorPage({ params }: { params: { id: string }
     return () => {
       cancelled = true;
     };
-  }, [params.id, role]);
+  }, [activeEstablishmentId, params.id, role]);
 
   async function guardar() {
     if (!prov) return;
+    if (!activeEstablishmentId) {
+      setErr("No hay establecimiento activo.");
+      return;
+    }
     setErr(null);
     const telefono_whatsapp = telefono.trim() ? normalizeWhatsappPhone(telefono) : null;
     const { error } = await supabase()
       .from("proveedores")
       .update({ nombre: nombre.trim(), telefono_whatsapp })
-      .eq("id", prov.id);
+      .eq("id", prov.id)
+      .eq("establecimiento_id", activeEstablishmentId);
     if (error) {
       setErr(error.message);
       return;
@@ -102,11 +112,10 @@ export default function EditarProveedorPage({ params }: { params: { id: string }
   }
 
   return (
-    <main className="mx-auto max-w-md bg-slate-50 p-4 pb-28 text-slate-900">
-      <a className="text-sm text-slate-700 underline" href="/admin/proveedores">
-        Volver
-      </a>
-      <h1 className="mb-3 mt-2 text-xl font-semibold">Editar proveedor</h1>
+    <div className="min-h-dvh">
+      <MobileHeader title="Editar proveedor" showBack backHref="/admin/proveedores" />
+      <main className="mx-auto max-w-md bg-slate-50 p-4 pb-28 text-slate-900">
+        <h1 className="mb-3 text-xl font-semibold">Editar proveedor</h1>
 
       {err ? (
         <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
@@ -138,7 +147,8 @@ export default function EditarProveedorPage({ params }: { params: { id: string }
           Guardar cambios
         </Button>
       </div>
-    </main>
+      </main>
+    </div>
   );
 }
 

@@ -1,16 +1,27 @@
 "use client";
 
-import { LogOut, User } from "lucide-react";
+import { ArrowLeft, LogOut, User } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { supabase } from "@/lib/supabase";
 
-export function MobileHeader({ title }: { title: string }) {
+export function MobileHeader({
+  title,
+  showBack,
+  backHref
+}: {
+  title: string;
+  showBack?: boolean;
+  backHref?: string;
+}) {
+  const router = useRouter();
   const {
     me,
     isSuperadmin,
     establishments,
     activeEstablishmentId,
     activeEstablishmentName,
+    activeEstablishmentLogoUrl,
     setActiveEstablishmentId
   } = useActiveEstablishment();
 
@@ -18,7 +29,38 @@ export function MobileHeader({ title }: { title: string }) {
     <header className="sticky top-0 z-30 border-b border-slate-200 bg-slate-50/85 backdrop-blur">
       <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
         <div className="min-w-0">
-          <p className="text-xs font-medium text-slate-500">
+          <div className="flex items-center gap-2">
+            {showBack ? (
+              <button
+                className="grid h-9 w-9 place-items-center rounded-full border border-slate-200 bg-white shadow-sm hover:bg-slate-50"
+                aria-label="Volver"
+                title="Volver"
+                onClick={() => {
+                  router.back();
+                  // fallback si no hay historial útil
+                  window.setTimeout(() => {
+                    if (backHref) window.location.href = backHref;
+                  }, 150);
+                }}
+              >
+                <ArrowLeft className="h-4 w-4 text-slate-800" />
+              </button>
+            ) : null}
+            {activeEstablishmentLogoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={activeEstablishmentLogoUrl}
+                alt={activeEstablishmentName ?? "Logo"}
+                className="h-9 w-9 rounded-2xl border border-slate-200 bg-white object-contain p-1 shadow-sm"
+              />
+            ) : (
+              <div className="min-w-0">
+                <p className="truncate text-xs font-semibold text-slate-700">{activeEstablishmentName ?? "OPS"}</p>
+              </div>
+            )}
+          </div>
+
+          <p className="mt-1 text-xs font-medium text-slate-500">
             {me?.isSuperadmin ? "Superadmin" : me?.isAdmin ? "Admin" : "Staff"}
           </p>
           <h1 className="truncate text-lg font-semibold text-slate-900">{title}</h1>

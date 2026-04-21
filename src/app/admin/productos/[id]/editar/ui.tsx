@@ -7,6 +7,7 @@ import { MobileHeader } from "@/components/MobileHeader";
 import type { AppRole } from "@/lib/session";
 import { fetchMyRole } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
+import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 
 type Proveedor = { id: string; nombre: string };
 
@@ -25,6 +26,7 @@ type Producto = {
 
 export function EditarProductoClient({ id }: { id: string }) {
   const router = useRouter();
+  const { activeEstablishmentId } = useActiveEstablishment();
   const [role, setRole] = useState<AppRole | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -64,6 +66,7 @@ export function EditarProductoClient({ id }: { id: string }) {
 
   useEffect(() => {
     if (role !== "admin" && role !== "superadmin") return;
+    if (!activeEstablishmentId) return;
     let cancelled = false;
     (async () => {
       try {
@@ -73,6 +76,7 @@ export function EditarProductoClient({ id }: { id: string }) {
           .from("productos")
           .select("id,nombre,tipo,unidad,categoria,stock_minimo,proveedor_id")
           .eq("id", id)
+          .eq("establecimiento_id", activeEstablishmentId)
           .maybeSingle();
         if (pErr) throw pErr;
         if (cancelled) return;
@@ -93,6 +97,7 @@ export function EditarProductoClient({ id }: { id: string }) {
         const { data: provs, error: provErr } = await supabase()
           .from("proveedores")
           .select("id,nombre")
+          .eq("establecimiento_id", activeEstablishmentId)
           .order("nombre", { ascending: true });
         if (provErr) throw provErr;
         if (cancelled) return;
@@ -105,10 +110,14 @@ export function EditarProductoClient({ id }: { id: string }) {
     return () => {
       cancelled = true;
     };
-  }, [id, role]);
+  }, [activeEstablishmentId, id, role]);
 
   async function guardar() {
     if (!producto) return;
+    if (!activeEstablishmentId) {
+      setErr("No hay establecimiento activo.");
+      return;
+    }
     setErr(null);
     setOk(null);
     const { error } = await supabase()
@@ -121,7 +130,8 @@ export function EditarProductoClient({ id }: { id: string }) {
         stock_minimo: Number.isFinite(stockMinimo) ? stockMinimo : 0,
         proveedor_id: proveedorId || null
       })
-      .eq("id", producto.id);
+      .eq("id", producto.id)
+      .eq("establecimiento_id", activeEstablishmentId);
     if (error) {
       setErr(error.message);
       return;
@@ -133,7 +143,7 @@ export function EditarProductoClient({ id }: { id: string }) {
 
   return (
     <div className="min-h-dvh">
-      <MobileHeader title="Editar" />
+      <MobileHeader title="Editar" showBack backHref="/admin" />
       <main className="mx-auto max-w-3xl p-4 pb-28">
         {loading ? <p className="text-sm text-gray-600">Cargando…</p> : null}
         {err ? (

@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/Button";
 import type { AppRole } from "@/lib/session";
 import { fetchMyRole } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
+import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
+import { MobileHeader } from "@/components/MobileHeader";
 
 type Proveedor = { id: string; nombre: string; telefono_whatsapp: string | null };
 
@@ -20,6 +22,7 @@ export default function NuevoProductoPage() {
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
+  const { activeEstablishmentId } = useActiveEstablishment();
 
   const [nombre, setNombre] = useState("");
   const [tipo, setTipo] = useState<(typeof TIPOS)[number]>("otros");
@@ -51,12 +54,14 @@ export default function NuevoProductoPage() {
 
   useEffect(() => {
     if (role !== "admin" && role !== "superadmin") return;
+    if (!activeEstablishmentId) return;
     let cancelled = false;
     (async () => {
       try {
         const { data, error } = await supabase()
           .from("proveedores")
           .select("id,nombre,telefono_whatsapp")
+          .eq("establecimiento_id", activeEstablishmentId)
           .order("nombre", { ascending: true });
         if (cancelled) return;
         if (error) throw error;
@@ -69,10 +74,14 @@ export default function NuevoProductoPage() {
     return () => {
       cancelled = true;
     };
-  }, [role]);
+  }, [activeEstablishmentId, role]);
 
   async function crear() {
     setErr(null);
+    if (!activeEstablishmentId) {
+      setErr("No hay establecimiento activo.");
+      return;
+    }
     const uid = newUid();
     const { error } = await supabase().from("productos").insert({
       nombre,
@@ -81,7 +90,8 @@ export default function NuevoProductoPage() {
       categoria: categoria.trim() ? categoria.trim() : null,
       stock_minimo: Number.isFinite(stockMinimo) ? stockMinimo : 0,
       proveedor_id: proveedorId || null,
-      qr_code_uid: uid
+      qr_code_uid: uid,
+      establecimiento_id: activeEstablishmentId
     });
     if (error) {
       setErr(error.message);
@@ -102,8 +112,10 @@ export default function NuevoProductoPage() {
   }
 
   return (
-    <main className="mx-auto max-w-md bg-slate-50 p-4 pb-28 text-slate-900">
-      <h1 className="mb-3 text-xl font-semibold">Crear producto</h1>
+    <div className="min-h-dvh">
+      <MobileHeader title="Crear producto" showBack backHref="/admin" />
+      <main className="mx-auto max-w-md bg-slate-50 p-4 pb-28 text-slate-900">
+        <h1 className="mb-3 text-xl font-semibold">Crear producto</h1>
       {err ? (
         <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
           {err}
@@ -191,7 +203,8 @@ export default function NuevoProductoPage() {
           Crear
         </Button>
       </div>
-    </main>
+      </main>
+    </div>
   );
 }
 

@@ -9,6 +9,7 @@ export type Establecimiento = {
   id: string;
   nombre: string;
   plan_suscripcion: string;
+  logo_url?: string | null;
 };
 
 const LS_KEY = "ops_active_establecimiento_id";
@@ -35,10 +36,20 @@ function writeLs(v: string | null) {
 async function fetchEstablecimientos(): Promise<Establecimiento[]> {
   const { data, error } = await supabase()
     .from("establecimientos")
-    .select("id,nombre,plan_suscripcion")
+    .select("id,nombre,plan_suscripcion,logo_url")
     .order("nombre", { ascending: true });
   if (error) throw error;
   return (data as unknown as Establecimiento[]) ?? [];
+}
+
+async function fetchEstablecimiento(id: string): Promise<Establecimiento | null> {
+  const { data, error } = await supabase()
+    .from("establecimientos")
+    .select("id,nombre,plan_suscripcion,logo_url")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as unknown as Establecimiento) ?? null;
 }
 
 export function useActiveEstablishment() {
@@ -72,6 +83,23 @@ export function useActiveEstablishment() {
     return list.find((x) => x.id === activeId)?.nombre ?? null;
   }, [activeId, estQuery.data]);
 
+  const activeDetailQuery = useQuery({
+    queryKey: ["establecimiento", activeId],
+    queryFn: () => (activeId ? fetchEstablecimiento(activeId) : Promise.resolve(null)),
+    enabled: !!activeId && !isSuperadmin,
+    staleTime: 60_000,
+    retry: 1
+  });
+
+  const activeLogoUrl = useMemo(() => {
+    if (!activeId) return null;
+    if (isSuperadmin) {
+      const list = estQuery.data ?? [];
+      return list.find((x) => x.id === activeId)?.logo_url ?? null;
+    }
+    return activeDetailQuery.data?.logo_url ?? null;
+  }, [activeDetailQuery.data?.logo_url, activeId, estQuery.data, isSuperadmin]);
+
   function setActiveId(id: string | null) {
     setOverrideId(id);
     writeLs(id);
@@ -85,6 +113,7 @@ export function useActiveEstablishment() {
     establishmentsLoading: estQuery.isLoading,
     activeEstablishmentId: activeId,
     activeEstablishmentName: activeName,
+    activeEstablishmentLogoUrl: activeLogoUrl,
     setActiveEstablishmentId: setActiveId
   };
 }

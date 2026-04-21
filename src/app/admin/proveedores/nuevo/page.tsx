@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/Button";
 import type { AppRole } from "@/lib/session";
 import { fetchMyRole } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
+import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
+import { MobileHeader } from "@/components/MobileHeader";
 
 function normalizeWhatsappPhone(input: string): string {
   // Mantiene solo dígitos y un '+' inicial si existe.
@@ -21,6 +23,7 @@ export default function NuevoProveedorPage() {
 
   const [nombre, setNombre] = useState("");
   const [telefono, setTelefono] = useState("");
+  const { activeEstablishmentId } = useActiveEstablishment();
 
   useEffect(() => {
     let cancelled = false;
@@ -46,10 +49,15 @@ export default function NuevoProveedorPage() {
 
   async function crear() {
     setErr(null);
+    if (!activeEstablishmentId) {
+      setErr("No hay establecimiento activo.");
+      return;
+    }
     const telefono_whatsapp = telefono ? normalizeWhatsappPhone(telefono) : null;
     const { error } = await supabase().from("proveedores").insert({
       nombre,
-      telefono_whatsapp
+      telefono_whatsapp,
+      establecimiento_id: activeEstablishmentId
     });
     if (error) {
       setErr(error.message);
@@ -70,8 +78,10 @@ export default function NuevoProveedorPage() {
   }
 
   return (
-    <main className="mx-auto max-w-md bg-slate-50 p-4 pb-28 text-slate-900">
-      <h1 className="mb-3 text-xl font-semibold">Crear proveedor</h1>
+    <div className="min-h-dvh">
+      <MobileHeader title="Crear proveedor" showBack backHref="/admin" />
+      <main className="mx-auto max-w-md bg-slate-50 p-4 pb-28 text-slate-900">
+        <h1 className="mb-3 text-xl font-semibold">Crear proveedor</h1>
       {err ? (
         <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
           {err}
@@ -106,7 +116,8 @@ export default function NuevoProveedorPage() {
           Crear proveedor
         </Button>
       </div>
-    </main>
+      </main>
+    </div>
   );
 }
 

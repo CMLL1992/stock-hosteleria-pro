@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-type Body = { nombre?: string; plan_suscripcion?: string };
+type Body = { nombre?: string; plan_suscripcion?: string; logo_url?: string | null };
 
 const SUPERADMIN_EMAIL = "ximomitja1992@hotmail.com";
 
@@ -11,11 +11,11 @@ export async function POST(req: Request) {
     const token = auth.startsWith("Bearer ") ? auth.slice("Bearer ".length) : "";
     if (!token) return NextResponse.json({ error: "Missing auth token" }, { status: 401 });
 
-    const { nombre, plan_suscripcion } = (await req.json()) as Body;
+    const { nombre, plan_suscripcion, logo_url } = (await req.json()) as Body;
     if (!nombre || !plan_suscripcion) return NextResponse.json({ error: "Missing fields" }, { status: 400 });
 
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+    const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+    const anonKey = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
     if (!supabaseUrl || !anonKey || !serviceKey) return NextResponse.json({ error: "Missing Supabase env" }, { status: 500 });
 
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
 
     const { data, error } = await adminClient
       .from("establecimientos")
-      .insert({ nombre, plan_suscripcion })
+      .insert({ nombre, plan_suscripcion, logo_url: logo_url || null })
       .select("id")
       .single();
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });

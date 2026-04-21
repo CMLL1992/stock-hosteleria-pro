@@ -4,6 +4,7 @@ export type MovimientoTipo = "entrada" | "salida" | "pedido";
 
 export type MovimientoDraft = {
   producto_id: string;
+  establecimiento_id: string;
   tipo: MovimientoTipo;
   cantidad: number;
   usuario_id: string;

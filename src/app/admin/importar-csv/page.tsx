@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/Button";
 import type { AppRole } from "@/lib/session";
 import { fetchMyRole } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
+import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
+import { MobileHeader } from "@/components/MobileHeader";
 
 type CsvRow = {
   nombre: string;
@@ -66,6 +68,7 @@ export default function ImportarCsvPage() {
   const [role, setRole] = useState<AppRole | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const { activeEstablishmentId } = useActiveEstablishment();
 
   const [csvText, setCsvText] = useState(
     "nombre,tipo,unidad,stock_actual,stock_minimo\n"
@@ -137,6 +140,7 @@ export default function ImportarCsvPage() {
     const { data: existing, error: selErr } = await supabase()
       .from("proveedores")
       .select("id,nombre,telefono_whatsapp")
+      .eq("establecimiento_id", activeEstablishmentId ?? "")
       .ilike("nombre", trimmed) /* best-effort */
       .limit(1);
     if (selErr) throw selErr;
@@ -144,14 +148,18 @@ export default function ImportarCsvPage() {
       const row = existing[0] as { id: string; telefono_whatsapp: string | null };
       // Si el proveedor existe pero no tiene WhatsApp y el CSV sí, lo actualizamos.
       if (tel && !row.telefono_whatsapp) {
-        await supabase().from("proveedores").update({ telefono_whatsapp: tel }).eq("id", row.id);
+        await supabase()
+          .from("proveedores")
+          .update({ telefono_whatsapp: tel })
+          .eq("id", row.id)
+          .eq("establecimiento_id", activeEstablishmentId ?? "");
       }
       return row.id;
     }
 
     const { data: inserted, error: insErr } = await supabase()
       .from("proveedores")
-      .insert({ nombre: trimmed, telefono_whatsapp: tel })
+      .insert({ nombre: trimmed, telefono_whatsapp: tel, establecimiento_id: activeEstablishmentId })
       .select("id")
       .single();
     if (insErr) throw insErr;
@@ -184,6 +192,7 @@ export default function ImportarCsvPage() {
       // Cache para no buscar/crear proveedores repetidamente
       const provCache = new Map<string, string>();
 
+      if (!activeEstablishmentId) throw new Error("No hay establecimiento activo.");
       let createdProductos = 0;
       for (const r of rows) {
         if (!TIPOS.has(r.tipo)) throw new Error(`Tipo inválido "${r.tipo}" en producto "${r.nombre}"`);
@@ -211,7 +220,8 @@ export default function ImportarCsvPage() {
           proveedor_id,
           stock_actual,
           stock_minimo,
-          qr_code_uid: crypto.randomUUID().replaceAll("-", "")
+          qr_code_uid: crypto.randomUUID().replaceAll("-", ""),
+          establecimiento_id: activeEstablishmentId
         });
         if (error) throw error;
         createdProductos++;
@@ -236,7 +246,9 @@ export default function ImportarCsvPage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl bg-slate-50 p-4 pb-28 text-slate-900">
+    <div className="min-h-dvh">
+      <MobileHeader title="Importar CSV" showBack backHref="/admin" />
+      <main className="mx-auto max-w-3xl bg-slate-50 p-4 pb-28 text-slate-900">
       <h1 className="mb-2 text-xl font-semibold">Importar CSV</h1>
       <p className="mb-4 text-sm text-slate-600">
         Formato esperado (cabecera obligatoria):{" "}
@@ -342,7 +354,8 @@ export default function ImportarCsvPage() {
         <br />
         unidad = <span className="font-mono">caja, barril, botella, lata, unidad</span>
       </p>
-    </main>
+      </main>
+    </div>
   );
 }
 

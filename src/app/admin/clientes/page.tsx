@@ -17,6 +17,7 @@ export default function AdminClientesPage() {
 
   const [nombre, setNombre] = useState("");
   const [plan, setPlan] = useState("free");
+  const [logoUrl, setLogoUrl] = useState("");
 
   const [userEmail, setUserEmail] = useState("");
   const [userPassword, setUserPassword] = useState("");
@@ -60,13 +61,14 @@ export default function AdminClientesPage() {
       const res = await fetch("/api/admin/establecimientos", {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-        body: JSON.stringify({ nombre: nombre.trim(), plan_suscripcion: plan })
+        body: JSON.stringify({ nombre: nombre.trim(), plan_suscripcion: plan, logo_url: logoUrl.trim() || null })
       });
       const json = (await res.json()) as { ok?: boolean; error?: string };
       if (!res.ok) throw new Error(json.error || "Error creando establecimiento.");
       setOk("Establecimiento creado.");
       setNombre("");
       setPlan("free");
+      setLogoUrl("");
       await refreshEts();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -128,13 +130,10 @@ export default function AdminClientesPage() {
 
   return (
     <div className="min-h-dvh">
-      <MobileHeader title="Clientes" />
+      <MobileHeader title="Clientes" showBack backHref="/admin" />
       <main className="mx-auto max-w-3xl p-4 pb-28">
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3">
           <h1 className="text-xl font-semibold text-slate-900">Clientes (Establecimientos)</h1>
-          <a className="text-sm text-slate-700 underline" href="/admin">
-            Volver
-          </a>
         </div>
 
         {err ? <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{err}</p> : null}
@@ -163,6 +162,16 @@ export default function AdminClientesPage() {
                   <option value="pro">pro</option>
                   <option value="enterprise">enterprise</option>
                 </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-semibold text-slate-900">URL del logo (opcional)</label>
+                <input
+                  className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                  value={logoUrl}
+                  onChange={(e) => setLogoUrl(e.currentTarget.value)}
+                  placeholder="https://…"
+                  inputMode="url"
+                />
               </div>
               <Button onClick={crearEstablecimiento} disabled={!canCreateEst}>
                 {busy ? "Creando…" : "Crear"}
