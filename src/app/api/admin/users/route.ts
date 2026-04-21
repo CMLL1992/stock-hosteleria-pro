@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { assertSuperadminOrThrow } from "@/lib/admin/assertSuperadmin";
 
 type Body = {
   email?: string;
@@ -8,61 +8,17 @@ type Body = {
   establecimiento_id?: string;
 };
 
-const SUPERADMIN_EMAIL = "ximomitja1992@hotmail.com";
-
 export async function POST(req: Request) {
   try {
-    const auth = req.headers.get("authorization") ?? "";
-    const token = auth.startsWith("Bearer ") ? auth.slice("Bearer ".length) : "";
-    if (!token) return NextResponse.json({ error: "Missing auth token" }, { status: 401 });
+    const gate = await assertSuperadminOrThrow(req);
+    if (!gate.ok) return gate.response;
 
     const { email, password, rol, establecimiento_id } = (await req.json()) as Body;
     if (!email || !password || !rol || !establecimiento_id) {
       return NextResponse.json({ error: "Missing fields" }, { status: 400 });
     }
 
-    const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-    const anonKey = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
-    const serviceKey =
-      process.env.SUPABASE_SERVICE_ROLE_KEY ??
-      process.env.SUPABASE_SERVICE_KEY ??
-      process.env.SUPABASE_SERVICE_ROLE ??
-      "";
-
-    const missing: string[] = [];
-    if (!supabaseUrl) missing.push("SUPABASE_URL (o NEXT_PUBLIC_SUPABASE_URL)");
-    if (!anonKey) missing.push("SUPABASE_ANON_KEY (o NEXT_PUBLIC_SUPABASE_ANON_KEY)");
-    if (!serviceKey) missing.push("SUPABASE_SERVICE_ROLE_KEY");
-    if (missing.length) {
-      return NextResponse.json(
-        { error: `Missing Supabase env: ${missing.join(", ")}` },
-        { status: 500 }
-      );
-    }
-
-    // 1) Verifica quién llama (token del usuario actual)
-    const authClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: `Bearer ${token}` } },
-      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
-    });
-
-    const me = await authClient.auth.getUser();
-    const meEmail = (me.data.user?.email ?? "").toLowerCase();
-    if (!me.data.user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-
-    // Check superadmin en DB (y fallback por email duro)
-    const { data: meRow } = await authClient
-      .from("usuarios")
-      .select("rol")
-      .eq("id", me.data.user.id)
-      .maybeSingle();
-    const isSuperadmin = meRow?.rol === "superadmin" || meEmail === SUPERADMIN_EMAIL;
-    if (!isSuperadmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-    // 2) Crea usuario en Auth + inserta perfil en usuarios (service role)
-    const adminClient = createClient(supabaseUrl, serviceKey, {
-      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
-    });
+    const { service: adminClient } = gate;
 
     const created = await adminClient.auth.admin.createUser({
       email,
@@ -89,4 +45,3 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
 }
-

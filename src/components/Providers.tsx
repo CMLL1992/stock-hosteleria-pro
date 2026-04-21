@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { useState } from "react";
 import { AuthRefresh } from "@/components/AuthRefresh";
 import { AuthBootstrap } from "@/components/AuthBootstrap";
+import { AuthQuerySync } from "@/components/AuthQuerySync";
 import { OfflineSync } from "@/components/OfflineSync";
 import { BottomTabBar } from "@/components/BottomTabBar";
 import { createIdbPersister } from "@/lib/queryPersist";
@@ -40,6 +41,7 @@ export function Providers({ children }: { children: ReactNode }) {
       }}
     >
       <AuthRefresh />
+      <AuthQuerySync />
       <AuthBootstrap />
       <SessionGuard />
       <OfflineSync />

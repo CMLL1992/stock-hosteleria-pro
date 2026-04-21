@@ -2,15 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { fetchAdminEstablecimientosList } from "@/lib/fetchAdminEstablecimientos";
 import { supabase } from "@/lib/supabase";
 import { useMyRole } from "@/lib/useMyRole";
+import type { EstablecimientoRow } from "@/types/ops";
 
-export type Establecimiento = {
-  id: string;
-  nombre: string;
-  plan_suscripcion?: string | null;
-  logo_url?: string | null;
-};
+export type Establecimiento = EstablecimientoRow;
 
 const LS_KEY = "ops_active_establecimiento_id";
 
@@ -33,26 +30,12 @@ function writeLs(v: string | null) {
   }
 }
 
-async function fetchEstablecimientos(): Promise<Establecimiento[]> {
-  const { data, error } = await supabase()
-    .from("establecimientos")
-    .select("id,nombre,plan_suscripcion,logo_url")
-    .order("nombre", { ascending: true });
-  if (!error) return (data as unknown as Establecimiento[]) ?? [];
-
-  const msg = (error as { message?: string }).message?.toLowerCase() ?? "";
-  const missingPlan = msg.includes("plan_suscripcion") && msg.includes("could not find");
-  if (!missingPlan) throw error;
-
-  const fallback = await supabase()
-    .from("establecimientos")
-    .select("id,nombre,logo_url")
-    .order("nombre", { ascending: true });
-  if (fallback.error) throw fallback.error;
-  return ((fallback.data as unknown as Array<Omit<Establecimiento, "plan_suscripcion">>) ?? []).map((x) => ({
-    ...x,
-    plan_suscripcion: null
-  }));
+/**
+ * Listado de establecimientos para superadmin: vía API (service role) para no depender de RLS
+ * (y para alinear "superadmin por email" con el servidor).
+ */
+async function fetchEstablecimientosForSuperadmin(): Promise<Establecimiento[]> {
+  return fetchAdminEstablecimientosList();
 }
 
 async function fetchEstablecimiento(id: string): Promise<Establecimiento | null> {
@@ -82,8 +65,8 @@ export function useActiveEstablishment() {
   const isSuperadmin = !!me?.isSuperadmin;
 
   const estQuery = useQuery({
-    queryKey: ["establecimientos", isSuperadmin],
-    queryFn: fetchEstablecimientos,
+    queryKey: ["establecimientos", isSuperadmin, me?.email],
+    queryFn: fetchEstablecimientosForSuperadmin,
     enabled: isSuperadmin,
     staleTime: 60_000,
     retry: 1

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { MobileHeader } from "@/components/MobileHeader";
+import { fetchAdminEstablecimientosList } from "@/lib/fetchAdminEstablecimientos";
 import { supabase } from "@/lib/supabase";
 import { useMyRole } from "@/lib/useMyRole";
 
@@ -26,27 +27,12 @@ export default function AdminUsersPage() {
     if (!allowed) return;
     let cancelled = false;
     (async () => {
-      const { data, error } = await supabase()
-        .from("establecimientos")
-        .select("id,nombre,plan_suscripcion")
-        .order("created_at", { ascending: true });
+      const list = await fetchAdminEstablecimientosList();
       if (cancelled) return;
-      if (!error) {
-        const rows = (data as unknown as EstRow[]) ?? [];
-        setEsts(rows);
-        if (!establecimientoId && rows[0]?.id) setEstablecimientoId(rows[0].id);
-        return;
-      }
-
-      const msg = (error as { message?: string }).message?.toLowerCase() ?? "";
-      const missingPlan = msg.includes("plan_suscripcion") && msg.includes("could not find");
-      if (!missingPlan) throw error;
-
-      const fb = await supabase().from("establecimientos").select("id,nombre").order("created_at", { ascending: true });
-      if (fb.error) throw fb.error;
-      const rows = ((fb.data as unknown as Array<{ id: string; nombre: string }>) ?? []).map((r) => ({
-        ...r,
-        plan_suscripcion: null
+      const rows: EstRow[] = list.map((x) => ({
+        id: x.id,
+        nombre: x.nombre,
+        plan_suscripcion: x.plan_suscripcion ?? null
       }));
       setEsts(rows);
       if (!establecimientoId && rows[0]?.id) setEstablecimientoId(rows[0].id);

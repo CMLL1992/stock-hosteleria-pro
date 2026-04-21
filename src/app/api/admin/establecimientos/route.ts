@@ -1,56 +1,59 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { assertSuperadminOrThrow } from "@/lib/admin/assertSuperadmin";
+import type { EstablecimientoRow } from "@/types/ops";
 
 type Body = { nombre?: string; plan_suscripcion?: string; logo_url?: string | null };
 
-const SUPERADMIN_EMAIL = "ximomitja1992@hotmail.com";
+/**
+ * GET: lista todos los establecimientos (service role, bypass RLS).
+ * Necesario para superadmin por email, donde el cliente con anon + RLS no ve todas las filas.
+ */
+export async function GET(req: Request) {
+  try {
+    const gate = await assertSuperadminOrThrow(req);
+    if (!gate.ok) return gate.response;
+
+    const { service } = gate;
+
+    const full = await service
+      .from("establecimientos")
+      .select("id,nombre,plan_suscripcion,logo_url,created_at")
+      .order("nombre", { ascending: true });
+
+    if (!full.error) {
+      return NextResponse.json({ items: (full.data as EstablecimientoRow[]) ?? [] });
+    }
+
+    const msg = full.error.message.toLowerCase();
+    const missingPlan = msg.includes("plan_suscripcion") && msg.includes("could not find");
+    if (!missingPlan) {
+      return NextResponse.json({ error: full.error.message }, { status: 400 });
+    }
+
+    const fb = await service
+      .from("establecimientos")
+      .select("id,nombre,logo_url,created_at")
+      .order("nombre", { ascending: true });
+    if (fb.error) return NextResponse.json({ error: fb.error.message }, { status: 400 });
+    return NextResponse.json({ items: (fb.data as EstablecimientoRow[]) ?? [] });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
+  }
+}
 
 export async function POST(req: Request) {
   try {
-    const auth = req.headers.get("authorization") ?? "";
-    const token = auth.startsWith("Bearer ") ? auth.slice("Bearer ".length) : "";
-    if (!token) return NextResponse.json({ error: "Missing auth token" }, { status: 401 });
+    const gate = await assertSuperadminOrThrow(req);
+    if (!gate.ok) return gate.response;
 
     const { nombre, plan_suscripcion, logo_url } = (await req.json()) as Body;
-    if (!nombre || !plan_suscripcion) return NextResponse.json({ error: "Missing fields" }, { status: 400 });
-
-    const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-    const anonKey = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
-    const serviceKey =
-      process.env.SUPABASE_SERVICE_ROLE_KEY ??
-      process.env.SUPABASE_SERVICE_KEY ??
-      process.env.SUPABASE_SERVICE_ROLE ??
-      "";
-
-    const missing: string[] = [];
-    if (!supabaseUrl) missing.push("SUPABASE_URL (o NEXT_PUBLIC_SUPABASE_URL)");
-    if (!anonKey) missing.push("SUPABASE_ANON_KEY (o NEXT_PUBLIC_SUPABASE_ANON_KEY)");
-    if (!serviceKey) missing.push("SUPABASE_SERVICE_ROLE_KEY");
-    if (missing.length) {
-      return NextResponse.json(
-        { error: `Missing Supabase env: ${missing.join(", ")}` },
-        { status: 500 }
-      );
+    if (!nombre || !plan_suscripcion) {
+      return NextResponse.json({ error: "Missing fields" }, { status: 400 });
     }
 
-    const authClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: `Bearer ${token}` } },
-      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
-    });
+    const { service } = gate;
 
-    const me = await authClient.auth.getUser();
-    const meEmail = (me.data.user?.email ?? "").toLowerCase();
-    if (!me.data.user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-
-    const { data: meRow } = await authClient.from("usuarios").select("rol").eq("id", me.data.user.id).maybeSingle();
-    const isSuperadmin = meRow?.rol === "superadmin" || meEmail === SUPERADMIN_EMAIL;
-    if (!isSuperadmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-    const adminClient = createClient(supabaseUrl, serviceKey, {
-      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
-    });
-
-    const attempt = await adminClient
+    const attempt = await service
       .from("establecimientos")
       .insert({ nombre, plan_suscripcion, logo_url: logo_url || null })
       .select("id")
@@ -59,10 +62,10 @@ export async function POST(req: Request) {
     if (attempt.error) {
       const msg = attempt.error.message.toLowerCase();
       const missingPlan = msg.includes("plan_suscripcion") && msg.includes("could not find");
-      if (!missingPlan) return NextResponse.json({ error: attempt.error.message }, { status: 400 });
-
-      // Fallback si la columna aún no está en caché/esquema
-      const fb = await adminClient
+      if (!missingPlan) {
+        return NextResponse.json({ error: attempt.error.message }, { status: 400 });
+      }
+      const fb = await service
         .from("establecimientos")
         .insert({ nombre, logo_url: logo_url || null })
         .select("id")
@@ -76,4 +79,3 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
 }
-

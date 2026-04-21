@@ -1,14 +1,17 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { MobileHeader } from "@/components/MobileHeader";
+import { fetchAdminEstablecimientosList } from "@/lib/fetchAdminEstablecimientos";
 import { supabase } from "@/lib/supabase";
 import { useMyRole } from "@/lib/useMyRole";
 
 type EstRow = { id: string; nombre: string; plan_suscripcion?: string | null };
 
 export default function AdminClientesPage() {
+  const queryClient = useQueryClient();
   const { data: me, isLoading } = useMyRole();
   const [ests, setEsts] = useState<EstRow[]>([]);
   const [err, setErr] = useState<string | null>(null);
@@ -27,29 +30,11 @@ export default function AdminClientesPage() {
   const allowed = !!me?.isSuperadmin && me.profileReady;
 
   async function refreshEts() {
-    const { data, error } = await supabase()
-      .from("establecimientos")
-      .select("id,nombre,plan_suscripcion")
-      .order("nombre", { ascending: true });
-    if (!error) {
-      const rows = (data as unknown as EstRow[]) ?? [];
-      setEsts(rows);
-      if (!establecimientoId && rows[0]?.id) setEstablecimientoId(rows[0].id);
-      return;
-    }
-
-    const msg = (error as { message?: string }).message?.toLowerCase() ?? "";
-    const missingPlan = msg.includes("plan_suscripcion") && msg.includes("could not find");
-    if (!missingPlan) throw error;
-
-    const fb = await supabase()
-      .from("establecimientos")
-      .select("id,nombre")
-      .order("nombre", { ascending: true });
-    if (fb.error) throw fb.error;
-    const rows = ((fb.data as unknown as Array<{ id: string; nombre: string }>) ?? []).map((r) => ({
-      ...r,
-      plan_suscripcion: null
+    const list = await fetchAdminEstablecimientosList();
+    const rows: EstRow[] = list.map((x) => ({
+      id: x.id,
+      nombre: x.nombre,
+      plan_suscripcion: x.plan_suscripcion ?? null
     }));
     setEsts(rows);
     if (!establecimientoId && rows[0]?.id) setEstablecimientoId(rows[0].id);
@@ -88,6 +73,7 @@ export default function AdminClientesPage() {
       setPlan("free");
       setLogoUrl("");
       await refreshEts();
+      void queryClient.invalidateQueries({ queryKey: ["establecimientos"] });
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {

@@ -44,9 +44,13 @@ async function fetchMyRoleRobust(): Promise<MyRoleResult> {
   for (const t of tryTables) {
     const selectCols = t.table === "usuarios" ? `${t.column},establecimiento_id` : t.column;
     const res = await supabase().from(t.table).select(selectCols).eq("id", user.id).maybeSingle();
-    if (!res.error) {
+    if (!res.error && res.data) {
       // @ts-expect-error: lectura dinámica por nombre de columna
-      role = (res.data?.[t.column] as AppRole | undefined) ?? "staff";
+      const raw = String(res.data?.[t.column] ?? "")
+        .trim()
+        .toLowerCase() as string;
+      const asRole = raw as AppRole;
+      role = raw === "superadmin" || raw === "admin" || raw === "staff" ? asRole : "staff";
       // @ts-expect-error: columna opcional
       establecimientoId = (res.data?.establecimiento_id as string | undefined) ?? null;
       break;
