@@ -6,8 +6,8 @@ import { Providers } from "@/components/Providers";
 
 const inter = Inter({ subsets: ["latin"], display: "swap" });
 
-const APP_NAME = "Stock Hostelería";
-const APP_DEFAULT_TITLE = "Stock Hostelería";
+const APP_NAME = "OPS";
+const APP_DEFAULT_TITLE = "OPS";
 const APP_DESCRIPTION = "Gestión de stock offline-first para hostelería.";
 
 export const metadata: Metadata = {
@@ -29,7 +29,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0b0b0d"
+  themeColor: "#000000"
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
