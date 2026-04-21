@@ -20,6 +20,8 @@ import {
 import { resolveProductoTituloColumn, tituloColSql, tituloWritePayload } from "@/lib/productosTituloColumn";
 import { updateProductoCategoriaCompat } from "@/lib/productoWriteCompat";
 
+type ProveedorOpt = { id: string; nombre: string };
+
 type ProductoRow = {
   id: string;
   articulo: string;
@@ -29,6 +31,7 @@ type ProductoRow = {
   precio_tarifa: number | null;
   stock_actual: number;
   stock_minimo: number | null;
+  proveedor_id: string | null;
 };
 
 type Toast = { kind: "ok" | "error"; message: string } | null;
@@ -83,7 +86,8 @@ function mapProductoQueryRow(r: Record<string, unknown>): ProductoRow {
     precio_tarifa: r.precio_tarifa != null && Number.isFinite(Number(r.precio_tarifa)) ? Number(r.precio_tarifa) : null,
     stock_actual: Math.trunc(toNumberOrZero(r.stock_actual)),
     stock_minimo:
-      r.stock_minimo === null || r.stock_minimo === undefined ? null : Math.trunc(toNumberOrZero(r.stock_minimo))
+      r.stock_minimo === null || r.stock_minimo === undefined ? null : Math.trunc(toNumberOrZero(r.stock_minimo)),
+    proveedor_id: r.proveedor_id != null ? String(r.proveedor_id) : null
   };
 }
 
@@ -114,6 +118,7 @@ function ToastView({ toast, onClose }: { toast: Toast; onClose: () => void }) {
 function EditProductDrawer({
   open,
   producto,
+  proveedores,
   onClose,
   onSave,
   hasPrecioTarifa,
@@ -121,6 +126,7 @@ function EditProductDrawer({
 }: {
   open: boolean;
   producto: ProductoRow | null;
+  proveedores: ProveedorOpt[];
   onClose: () => void;
   onSave: (patch: Partial<ProductoRow>) => Promise<void>;
   hasPrecioTarifa: boolean;
@@ -129,6 +135,7 @@ function EditProductDrawer({
   const [articulo, setArticulo] = useState("");
   const [categoriaVal, setCategoriaVal] = useState<CategoriaProductoValor>("otros");
   const [unidadVal, setUnidadVal] = useState<UnidadProductoValor>("botella");
+  const [proveedorId, setProveedorId] = useState<string>("");
   const [precioTarifa, setPrecioTarifa] = useState<string>("0");
   const [stockActual, setStockActual] = useState<string>("0");
   const [stockMinimo, setStockMinimo] = useState<string>("0");
@@ -140,6 +147,7 @@ function EditProductDrawer({
     const catRaw = producto.categoria ?? producto.tipo;
     setCategoriaVal(mapCategoriaDbToValor(catRaw));
     setUnidadVal(mapUnidadDbToValor(producto.unidad));
+    setProveedorId(producto.proveedor_id ?? "");
     setPrecioTarifa(String(producto.precio_tarifa ?? 0));
     setStockActual(String(producto.stock_actual ?? 0));
     setStockMinimo(String(producto.stock_minimo ?? 0));
@@ -186,6 +194,22 @@ function EditProductDrawer({
                 {UNIDAD_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1 sm:col-span-2">
+              <label className="text-sm font-semibold text-slate-900">Proveedor</label>
+              <select
+                className={FORM_CONTROL_CLASS}
+                value={proveedorId}
+                onChange={(e) => setProveedorId(e.currentTarget.value)}
+                aria-label="Proveedor"
+              >
+                <option value="">(Sin proveedor)</option>
+                {proveedores.map((pr) => (
+                  <option key={pr.id} value={pr.id}>
+                    {pr.nombre}
                   </option>
                 ))}
               </select>
@@ -243,6 +267,7 @@ function EditProductDrawer({
                       articulo: articulo.trim(),
                       categoria: categoriaVal,
                       unidad: unidadVal,
+                      proveedor_id: proveedorId || null,
                       precio_tarifa: toNumberOrZero(precioTarifa),
                       stock_actual: Math.max(0, Math.trunc(toNumberOrZero(stockActual))),
                       stock_minimo: Math.max(0, Math.trunc(toNumberOrZero(stockMinimo)))
@@ -285,6 +310,8 @@ export default function AdminProductosPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [editing, setEditing] = useState<ProductoRow | null>(null);
   const [busyDeltaId, setBusyDeltaId] = useState<string | null>(null);
+  const [proveedoresOpts, setProveedoresOpts] = useState<ProveedorOpt[]>([]);
+  const [stockQuickDraft, setStockQuickDraft] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (me?.role === null && !me?.profileReady) return;
@@ -299,7 +326,7 @@ export default function AdminProductosPage() {
         const t = tituloColSql(col);
         const full = await supabase()
           .from("productos")
-          .select(`id,${t},categoria,tipo,unidad,precio_tarifa,stock_actual,stock_minimo` as "*")
+          .select(`id,${t},categoria,tipo,unidad,precio_tarifa,stock_actual,stock_minimo,proveedor_id` as "*")
           .eq("establecimiento_id", activeEstablishmentId)
           .order(t, { ascending: true });
 
@@ -316,7 +343,7 @@ export default function AdminProductosPage() {
 
         const lite = await supabase()
           .from("productos")
-          .select(`id,${t},categoria,tipo,unidad,stock_actual,stock_minimo` as "*")
+          .select(`id,${t},categoria,tipo,unidad,stock_actual,stock_minimo,proveedor_id` as "*")
           .eq("establecimiento_id", activeEstablishmentId)
           .order(t, { ascending: true });
         if (lite.error) throw lite.error;
@@ -341,6 +368,35 @@ export default function AdminProductosPage() {
     };
   }, [activeEstablishmentId, me?.isAdmin, me?.profileReady, me?.role]);
 
+  useEffect(() => {
+    if (!activeEstablishmentId) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase()
+        .from("proveedores")
+        .select("id,nombre")
+        .eq("establecimiento_id", activeEstablishmentId)
+        .order("nombre", { ascending: true });
+      if (cancelled) return;
+      if (!error && data) {
+        setProveedoresOpts((data as ProveedorOpt[]) ?? []);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeEstablishmentId]);
+
+  useEffect(() => {
+    setStockQuickDraft((prev) => {
+      const n = { ...prev };
+      for (const p of items) {
+        if (n[p.id] === undefined) n[p.id] = String(Math.max(0, p.stock_actual));
+      }
+      return n;
+    });
+  }, [items]);
+
   const categories = useMemo(() => {
     const s = new Set<string>();
     for (const p of items) s.add(parseCategoriaTipo(p));
@@ -362,7 +418,7 @@ export default function AdminProductosPage() {
     const t = tituloColSql(col);
     const full = await supabase()
       .from("productos")
-      .select(`id,${t},categoria,tipo,unidad,precio_tarifa,stock_actual,stock_minimo` as "*")
+      .select(`id,${t},categoria,tipo,unidad,precio_tarifa,stock_actual,stock_minimo,proveedor_id` as "*")
       .eq("establecimiento_id", activeEstablishmentId)
       .order(t, { ascending: true });
     if (!full.error) {
@@ -376,7 +432,7 @@ export default function AdminProductosPage() {
 
     const lite = await supabase()
       .from("productos")
-      .select(`id,${t},categoria,tipo,unidad,stock_actual,stock_minimo` as "*")
+      .select(`id,${t},categoria,tipo,unidad,stock_actual,stock_minimo,proveedor_id` as "*")
       .eq("establecimiento_id", activeEstablishmentId)
       .order(t, { ascending: true });
     if (lite.error) throw lite.error;
@@ -398,6 +454,7 @@ export default function AdminProductosPage() {
         ...tituloWritePayload(col, String(patch.articulo ?? "").trim()),
         categoria: patch.categoria != null ? String(patch.categoria) : null,
         unidad: patch.unidad != null ? String(patch.unidad) : null,
+        proveedor_id: patch.proveedor_id ?? null,
         stock_actual: patch.stock_actual ?? 0,
         stock_minimo: patch.stock_minimo ?? 0
       };
@@ -424,22 +481,24 @@ export default function AdminProductosPage() {
     }
   }
 
-  async function deltaStock(p: ProductoRow, delta: number) {
+  async function commitQuickStock(p: ProductoRow, raw: string) {
     if (!activeEstablishmentId) return;
+    const next = Math.max(0, Math.trunc(toNumberOrZero(raw)));
     setBusyDeltaId(p.id);
     setErr(null);
     try {
-      const next = Math.max(0, Math.trunc(p.stock_actual + delta));
       const { error } = await supabase()
         .from("productos")
         .update({ stock_actual: next })
         .eq("id", p.id)
         .eq("establecimiento_id", activeEstablishmentId);
       if (error) throw error;
+      setStockQuickDraft((d) => ({ ...d, [p.id]: String(next) }));
       await refetch();
       setToast({ kind: "ok", message: "Stock actualizado." });
     } catch (e) {
       setErr(supabaseErrToString(e));
+      setStockQuickDraft((d) => ({ ...d, [p.id]: String(p.stock_actual) }));
       setToast({ kind: "error", message: "No se pudo actualizar el stock." });
     } finally {
       setBusyDeltaId(null);
@@ -561,9 +620,11 @@ export default function AdminProductosPage() {
             const low = p.stock_actual <= minimo;
             const busy = busyDeltaId === p.id;
             const unidadLabel = tituloUnidad(p.unidad);
-            const stockCircleClass = low
-              ? "border-[3px] border-orange-500 bg-orange-50 text-orange-900 shadow-[0_0_0_3px_rgba(249,115,22,0.25)] animate-stock-alert"
-              : "border-2 border-slate-200 bg-slate-50 text-slate-900";
+            const provNombre =
+              proveedoresOpts.find((pr) => pr.id === p.proveedor_id)?.nombre ?? (p.proveedor_id ? "—" : "Sin proveedor");
+            const stockRingClass = low
+              ? "border-orange-500 bg-orange-50 ring-2 ring-orange-200 animate-stock-alert"
+              : "border-slate-200 bg-white ring-1 ring-slate-100";
             return (
               <article
                 key={p.id}
@@ -592,7 +653,7 @@ export default function AdminProductosPage() {
                       <span className="font-medium capitalize text-slate-700">{unidadLabel}</span>
                     </p>
                     <p className="mt-1 text-xs text-slate-500">
-                      Precio{" "}
+                      Proveedor: {provNombre} · Precio{" "}
                       <span className="font-mono font-semibold text-slate-700">
                         {hasPrecioTarifa
                           ? `${precio.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
@@ -603,41 +664,24 @@ export default function AdminProductosPage() {
                     </p>
                   </button>
 
-                  <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-                    <button
-                      type="button"
-                      disabled={busy || p.stock_actual <= 0}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deltaStock(p, -1);
-                      }}
-                      className="inline-flex h-[50px] w-[50px] shrink-0 items-center justify-center rounded-full border-2 border-slate-300 bg-white text-2xl font-bold leading-none text-slate-800 shadow-sm hover:bg-slate-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-35"
-                      aria-label="Reducir una unidad de stock"
-                    >
-                      −
-                    </button>
-                    <div
-                      className={[
-                        "flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-full text-center tabular-nums transition",
-                        stockCircleClass
-                      ].join(" ")}
-                      title="Stock actual"
-                    >
-                      <span className="text-[10px] font-bold uppercase leading-none text-current/80">Stock</span>
-                      <span className="text-xl font-black leading-tight">{p.stock_actual}</span>
-                    </div>
-                    <button
-                      type="button"
+                  <div className={`flex shrink-0 flex-col items-center gap-1 rounded-2xl border-2 p-2 ${stockRingClass}`}>
+                    <span className="text-[10px] font-bold uppercase text-slate-500">Stock</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      min={0}
                       disabled={busy}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deltaStock(p, 1);
+                      className="h-14 w-[5.5rem] rounded-xl border border-slate-300 bg-white px-1 text-center text-2xl font-black tabular-nums text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
+                      value={stockQuickDraft[p.id] ?? String(p.stock_actual)}
+                      onChange={(e) => setStockQuickDraft((d) => ({ ...d, [p.id]: e.target.value }))}
+                      onBlur={(e) => {
+                        void commitQuickStock(p, e.target.value);
                       }}
-                      className="inline-flex h-[50px] w-[50px] shrink-0 items-center justify-center rounded-full border-2 border-slate-900 bg-slate-900 text-2xl font-bold leading-none text-white shadow-md hover:bg-slate-800 active:scale-95 disabled:cursor-not-allowed disabled:opacity-35"
-                      aria-label="Aumentar una unidad de stock"
-                    >
-                      +
-                    </button>
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                      }}
+                    />
                   </div>
                 </div>
 
@@ -665,6 +709,7 @@ export default function AdminProductosPage() {
       <EditProductDrawer
         open={editOpen}
         producto={editing}
+        proveedores={proveedoresOpts}
         hasPrecioTarifa={hasPrecioTarifa}
         onClose={() => {
           setEditOpen(false);

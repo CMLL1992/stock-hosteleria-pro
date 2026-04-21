@@ -1,14 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Drawer } from "@/components/ui/Drawer";
 import { IconWhatsApp } from "@/components/IconWhatsApp";
 import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { stockSemaforo } from "@/lib/stockSemaforo";
-import { waUrlProductoPedido } from "@/lib/whatsappPedido";
+import {
+  cantidadSugeridaPedido,
+  waUrlPedidoCestaProveedor
+} from "@/lib/whatsappPedido";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 
 type Producto = {
@@ -20,6 +24,7 @@ type Producto = {
   tipo: string | null;
   unidad: string | null;
   categoria: string | null;
+  proveedor_id: string | null;
   proveedor: { nombre: string; telefono_whatsapp: string | null } | null;
 };
 
@@ -28,7 +33,21 @@ async function fetchProductos(establecimientoId: string | null): Promise<Product
   const col = await resolveProductoTituloColumn(establecimientoId);
   const t = tituloColSql(col);
   const baseSelect = `id,${t},stock_actual,stock_minimo,qr_code_uid`;
-  const extendedSelect = `${baseSelect},tipo,unidad,categoria,proveedor:proveedores(nombre,telefono_whatsapp)`;
+  const extendedSelect = `${baseSelect},proveedor_id,tipo,unidad,categoria,proveedor:proveedores(nombre,telefono_whatsapp)`;
+
+  const tituloKey = t;
+  const mapRow = (row: Record<string, unknown>): Producto => ({
+    id: String(row.id ?? ""),
+    articulo: String(row[tituloKey] ?? row.articulo ?? row.nombre ?? "").trim() || "—",
+    stock_actual: Number(row.stock_actual ?? 0) || 0,
+    stock_minimo: row.stock_minimo != null ? Number(row.stock_minimo) : null,
+    qr_code_uid: String(row.qr_code_uid ?? ""),
+    tipo: row.tipo != null ? String(row.tipo) : null,
+    unidad: row.unidad != null ? String(row.unidad) : null,
+    categoria: row.categoria != null ? String(row.categoria) : null,
+    proveedor_id: row.proveedor_id != null ? String(row.proveedor_id) : null,
+    proveedor: row.proveedor as Producto["proveedor"]
+  });
 
   const { data, error } = await supabase()
     .from("productos")
@@ -37,28 +56,35 @@ async function fetchProductos(establecimientoId: string | null): Promise<Product
     .order(t, { ascending: true });
 
   if (!error) {
-    return ((data ?? []) as unknown as Record<string, unknown>[]).map((row) => ({
-      id: String(row.id ?? ""),
-      articulo: String(row.articulo ?? row.nombre ?? "").trim() || "—",
-      stock_actual: Number(row.stock_actual ?? 0) || 0,
-      stock_minimo: row.stock_minimo != null ? Number(row.stock_minimo) : null,
-      qr_code_uid: String(row.qr_code_uid ?? ""),
-      tipo: row.tipo != null ? String(row.tipo) : null,
-      unidad: row.unidad != null ? String(row.unidad) : null,
-      categoria: row.categoria != null ? String(row.categoria) : null,
-      proveedor: row.proveedor as Producto["proveedor"]
-    }));
+    return ((data ?? []) as unknown as Record<string, unknown>[]).map(mapRow);
   }
 
   const msg = (error as { message?: string }).message ?? "";
   const m = msg.toLowerCase();
   const looksLikeMissingColumn =
     (m.includes("column") &&
-      (m.includes("tipo") || m.includes("unidad") || m.includes("categoria") || m.includes("proveedor"))) ||
+      (m.includes("tipo") ||
+        m.includes("unidad") ||
+        m.includes("categoria") ||
+        m.includes("proveedor") ||
+        m.includes("proveedor_id"))) ||
     m.includes("embed") ||
     m.includes("schema cache");
 
   if (!looksLikeMissingColumn) throw error;
+
+  const midSelect = `${baseSelect},proveedor_id,tipo,unidad,categoria`;
+  const fb1 = await supabase()
+    .from("productos")
+    .select(midSelect as "*")
+    .eq("establecimiento_id", establecimientoId)
+    .order(t, { ascending: true });
+  if (!fb1.error) {
+    return ((fb1.data ?? []) as unknown as Record<string, unknown>[]).map((row) => ({
+      ...mapRow(row),
+      proveedor: null
+    }));
+  }
 
   const fallback = await supabase()
     .from("productos")
@@ -68,13 +94,14 @@ async function fetchProductos(establecimientoId: string | null): Promise<Product
   if (fallback.error) throw fallback.error;
   return ((fallback.data ?? []) as unknown as Record<string, unknown>[]).map((row) => ({
     id: String(row.id ?? ""),
-    articulo: String(row.articulo ?? row.nombre ?? "").trim() || "—",
+    articulo: String(row[tituloKey] ?? row.articulo ?? row.nombre ?? "").trim() || "—",
     stock_actual: Number(row.stock_actual ?? 0) || 0,
     stock_minimo: row.stock_minimo != null ? Number(row.stock_minimo) : null,
     qr_code_uid: String(row.qr_code_uid ?? ""),
     tipo: null,
     unidad: null,
     categoria: null,
+    proveedor_id: null,
     proveedor: null
   }));
 }
@@ -109,14 +136,25 @@ function productTabKey(p: Producto): string {
   return t || "otros";
 }
 
+function proveedorNombreOrDefault(p: Producto): string {
+  return (p.proveedor?.nombre ?? "").trim() || "Sin proveedor";
+}
+
+const STOCK_INPUT_CLASS =
+  "h-14 w-[5.5rem] shrink-0 rounded-2xl border-2 border-slate-800 bg-white px-2 text-center text-2xl font-black tabular-nums text-slate-900 shadow-inner focus:outline-none focus:ring-4 focus:ring-slate-300";
+
 export function ProductList() {
   const searchParams = useSearchParams();
   const listaCompra = searchParams.get("compra") === "1";
   const queryClient = useQueryClient();
-  const { me, activeEstablishmentId: establecimientoId } = useActiveEstablishment();
+  const { me, activeEstablishmentId: establecimientoId, activeEstablishmentName } = useActiveEstablishment();
   const [tab, setTab] = useState<string>("todos");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [stockErr, setStockErr] = useState<string | null>(null);
+  const [stockDraft, setStockDraft] = useState<Record<string, string>>({});
+  const [agruparPorProveedor, setAgruparPorProveedor] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [cestaOpen, setCestaOpen] = useState(false);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["productos", establecimientoId],
@@ -125,6 +163,17 @@ export function ProductList() {
     refetchOnReconnect: true,
     refetchInterval: 4000
   });
+
+  useEffect(() => {
+    if (!data?.length) return;
+    setStockDraft((prev) => {
+      const next = { ...prev };
+      for (const p of data) {
+        if (next[p.id] === undefined) next[p.id] = String(Math.max(0, Math.trunc(p.stock_actual)));
+      }
+      return next;
+    });
+  }, [data]);
 
   const filteredByTab = useMemo(() => {
     if (!data) return [];
@@ -140,26 +189,74 @@ export function ProductList() {
     });
   }, [filteredByTab, listaCompra]);
 
-  async function deltaStock(p: Producto, delta: number) {
+  const orderedList = useMemo(() => {
+    const list = [...filtered];
+    if (!agruparPorProveedor) return list;
+    return list.sort((a, b) => {
+      const pa = proveedorNombreOrDefault(a).toLowerCase();
+      const pb = proveedorNombreOrDefault(b).toLowerCase();
+      if (pa !== pb) return pa.localeCompare(pb);
+      return a.articulo.localeCompare(b.articulo);
+    });
+  }, [filtered, agruparPorProveedor]);
+
+  const estNombre = activeEstablishmentName?.trim() || "mi establecimiento";
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  }, []);
+
+  const selectedProductos = useMemo(() => {
+    if (!data) return [];
+    return data.filter((p) => selectedIds.has(p.id));
+  }, [data, selectedIds]);
+
+  const cestaPorProveedor = useMemo(() => {
+    const map = new Map<
+      string,
+      { nombre: string; telefono: string | null; items: Producto[] }
+    >();
+    for (const p of selectedProductos) {
+      const key = proveedorNombreOrDefault(p);
+      const tel = p.proveedor?.telefono_whatsapp ?? null;
+      let g = map.get(key);
+      if (!g) {
+        g = { nombre: key, telefono: tel, items: [] };
+        map.set(key, g);
+      }
+      g.items.push(p);
+      if (tel) g.telefono = tel;
+    }
+    return Array.from(map.values());
+  }, [selectedProductos]);
+
+  const setStockFromInput = async (p: Producto, raw: string) => {
     if (!establecimientoId) return;
+    const n = Math.max(0, Math.trunc(Number(String(raw).replace(",", "."))));
     setBusyId(p.id);
     setStockErr(null);
     try {
-      const next = Math.max(0, Math.trunc(p.stock_actual + delta));
       const { error: upErr } = await supabase()
         .from("productos")
-        .update({ stock_actual: next })
+        .update({ stock_actual: n })
         .eq("id", p.id)
         .eq("establecimiento_id", establecimientoId);
       if (upErr) throw upErr;
+      setStockDraft((d) => ({ ...d, [p.id]: String(n) }));
       await queryClient.invalidateQueries({ queryKey: ["productos", establecimientoId] });
       await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", establecimientoId] });
     } catch (e) {
       setStockErr(e instanceof Error ? e.message : String(e));
+      setStockDraft((d) => ({ ...d, [p.id]: String(p.stock_actual) }));
     } finally {
       setBusyId(null);
     }
-  }
+  };
 
   if (me?.role === null && !me?.profileReady) return <p className="text-sm text-slate-600">Cargando perfil…</p>;
   if (isLoading) return <p className="text-sm text-slate-600">Cargando stock…</p>;
@@ -176,7 +273,7 @@ export function ProductList() {
   }
 
   return (
-    <div className="space-y-4 pb-24">
+    <div className="space-y-4 pb-32">
       {listaCompra ? (
         <div className="flex flex-col gap-3 rounded-3xl border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-base font-bold text-amber-950">Lista de compra: solo productos bajo mínimos</p>
@@ -192,6 +289,21 @@ export function ProductList() {
       {stockErr ? (
         <p className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{stockErr}</p>
       ) : null}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setAgruparPorProveedor((v) => !v)}
+          className={[
+            "min-h-12 rounded-full border px-4 text-sm font-semibold",
+            agruparPorProveedor
+              ? "border-indigo-600 bg-indigo-600 text-white"
+              : "border-slate-200 bg-white text-slate-800"
+          ].join(" ")}
+        >
+          {agruparPorProveedor ? "✓ Agrupar por proveedor" : "Agrupar por proveedor"}
+        </button>
+      </div>
 
       <div className="flex gap-2 overflow-x-auto pb-1">
         {TAB_ORDER.map((t) => {
@@ -221,7 +333,7 @@ export function ProductList() {
       </div>
 
       <div className="space-y-4">
-        {filtered.map((p) => {
+        {orderedList.map((p, idx) => {
           const minimo = typeof p.stock_minimo === "number" && Number.isFinite(p.stock_minimo) ? p.stock_minimo : 0;
           const sem = stockSemaforo(p.stock_actual, minimo);
           const stockPill =
@@ -231,101 +343,98 @@ export function ProductList() {
                 ? { bg: "#FFF7ED", text: "#9A3412", ring: "ring-1 ring-orange-100", label: "Bajo mín." }
                 : { bg: "#ECFDF5", text: "#065F46", ring: "ring-1 ring-emerald-100", label: "OK" };
 
-          const hrefWa =
-            p.stock_actual <= minimo
-              ? waUrlProductoPedido({
-                  articulo: p.articulo,
-                  stock_actual: p.stock_actual,
-                  stock_minimo: minimo,
-                  unidad: p.unidad,
-                  proveedor: p.proveedor
-                })
-              : null;
-
           const key = productTabKey(p);
           const chipBg = (CATEGORY_COLORS[key] ?? CATEGORY_COLORS.otros).bg;
           const busy = busyId === p.id;
+          const provLabel = proveedorNombreOrDefault(p);
+          const prev = idx > 0 ? orderedList[idx - 1] : null;
+          const showProvHeader = agruparPorProveedor && (!prev || proveedorNombreOrDefault(prev) !== provLabel);
 
           return (
-            <div
-              key={p.id}
-              className={[
-                "w-full max-w-full rounded-3xl border border-slate-200 bg-white p-4 shadow-sm",
-                sem === "sin" ? "border-l-4 border-l-red-500" : sem === "bajo" ? "border-l-4 border-l-amber-400" : "border-l-4 border-l-emerald-500"
-              ].join(" ")}
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Link href={`/p/${encodeURIComponent(p.id)}`} className="min-w-0">
-                      <p className="text-lg font-bold leading-snug text-slate-900">{p.articulo}</p>
-                    </Link>
-                    <span
-                      className="inline-flex min-h-8 items-center rounded-full px-2 text-xs font-semibold text-gray-900"
-                      style={{ backgroundColor: chipBg }}
-                    >
-                      {key === "todos" ? "otros" : key}
-                    </span>
-                    <span
-                      className={["inline-flex min-h-8 items-center rounded-full px-2 text-xs font-semibold", stockPill.ring].join(" ")}
-                      style={{ backgroundColor: stockPill.bg, color: stockPill.text }}
-                    >
-                      {stockPill.label}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-sm text-slate-600">{p.unidad ?? "—"}</p>
-                </div>
-              </div>
-
-              <div className="mt-5 flex items-center justify-between gap-4">
-                <button
-                  type="button"
-                  disabled={busy || p.stock_actual <= 0}
-                  onClick={() => deltaStock(p, -1)}
-                  className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border-2 border-slate-300 bg-white text-2xl font-bold text-slate-800 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                  aria-label="Reducir stock"
-                >
-                  −
-                </button>
-                <span className="text-3xl font-bold tabular-nums text-slate-900">{p.stock_actual}</span>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => deltaStock(p, 1)}
-                  className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border-2 border-slate-900 bg-slate-900 text-2xl font-bold text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
-                  aria-label="Aumentar stock"
-                >
-                  +
-                </button>
-              </div>
-
-              {hrefWa ? (
-                <a
-                  href={hrefWa}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-3xl bg-emerald-500 px-4 py-3 text-base font-bold text-white shadow-md hover:bg-emerald-600"
-                >
-                  <IconWhatsApp className="h-7 w-7 text-white" />
-                  Pedir por WhatsApp
-                </a>
+            <div key={p.id}>
+              {showProvHeader ? (
+                <p className="mb-1 pl-1 text-xs font-bold uppercase tracking-wide text-indigo-700">{provLabel}</p>
               ) : null}
 
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Link
-                  href={`/qr/${encodeURIComponent(p.id)}`}
-                  className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm"
-                >
-                  QR
-                </Link>
-                {me?.isAdmin ? (
+              <div
+                className={[
+                  "w-full max-w-full rounded-3xl border border-slate-200 bg-white p-4 shadow-sm",
+                  sem === "sin" ? "border-l-4 border-l-red-500" : sem === "bajo" ? "border-l-4 border-l-amber-400" : "border-l-4 border-l-emerald-500"
+                ].join(" ")}
+              >
+                <div className="flex items-start gap-3">
+                  <label className="mt-1 flex shrink-0 cursor-pointer items-center">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(p.id)}
+                      onChange={() => toggleSelect(p.id)}
+                      className="h-6 w-6 rounded border-slate-300 text-slate-900"
+                      aria-label={`Seleccionar ${p.articulo}`}
+                    />
+                  </label>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Link href={`/p/${encodeURIComponent(p.id)}`} className="min-w-0">
+                        <p className="text-lg font-bold leading-snug text-slate-900">{p.articulo}</p>
+                      </Link>
+                      <span
+                        className="inline-flex min-h-8 items-center rounded-full px-2 text-xs font-semibold text-gray-900"
+                        style={{ backgroundColor: chipBg }}
+                      >
+                        {key === "todos" ? "otros" : key}
+                      </span>
+                      <span
+                        className={["inline-flex min-h-8 items-center rounded-full px-2 text-xs font-semibold", stockPill.ring].join(" ")}
+                        style={{ backgroundColor: stockPill.bg, color: stockPill.text }}
+                      >
+                        {stockPill.label}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {p.unidad ?? "—"} · {provLabel}
+                    </p>
+                  </div>
+
+                  <div className="flex shrink-0 flex-col items-center gap-1">
+                    <span className="text-[10px] font-bold uppercase text-slate-500">Stock</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      min={0}
+                      disabled={busy}
+                      className={STOCK_INPUT_CLASS}
+                      value={stockDraft[p.id] ?? String(p.stock_actual)}
+                      onChange={(e) => setStockDraft((d) => ({ ...d, [p.id]: e.target.value }))}
+                      onBlur={(e) => {
+                        void setStockFromInput(p, e.target.value);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.currentTarget.blur();
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-2 pl-9">
                   <Link
-                    href={`/admin/productos/${encodeURIComponent(p.id)}/editar`}
+                    href={`/qr/${encodeURIComponent(p.id)}`}
                     className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm"
                   >
-                    Editar
+                    QR
                   </Link>
-                ) : null}
+                  {me?.isAdmin ? (
+                    <Link
+                      href={`/admin/productos/${encodeURIComponent(p.id)}/editar`}
+                      className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm"
+                    >
+                      Editar
+                    </Link>
+                  ) : null}
+                </div>
               </div>
             </div>
           );
@@ -337,6 +446,63 @@ export function ProductList() {
           {listaCompra ? "No hay productos bajo el mínimo en esta categoría." : "No hay productos en esta categoría."}
         </p>
       ) : null}
+
+      {selectedIds.size > 0 ? (
+        <button
+          type="button"
+          className="fixed bottom-24 right-4 z-30 flex min-h-[52px] items-center gap-2 rounded-full border-2 border-slate-900 bg-slate-900 px-5 py-3 text-base font-bold text-white shadow-xl"
+          style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+          onClick={() => setCestaOpen(true)}
+        >
+          🛒 Pedido ({selectedIds.size})
+        </button>
+      ) : null}
+
+      <Drawer open={cestaOpen} title="Resumen del pedido" onClose={() => setCestaOpen(false)}>
+        <div className="space-y-6 pb-4">
+          <p className="text-sm text-slate-600">
+            {estNombre} · {selectedProductos.length} artículo{selectedProductos.length === 1 ? "" : "s"}
+          </p>
+          {cestaPorProveedor.map((grupo) => {
+            const lineas = grupo.items.map((p) => {
+              const min = typeof p.stock_minimo === "number" ? p.stock_minimo : 0;
+              const cant = cantidadSugeridaPedido(p.stock_actual, min);
+              return {
+                articulo: p.articulo,
+                cantidad: cant,
+                unidad: p.unidad
+              };
+            });
+            const url = waUrlPedidoCestaProveedor({
+              nombreProveedor: grupo.nombre === "Sin proveedor" ? "Proveedor" : grupo.nombre,
+              telefonoWhatsapp: grupo.telefono,
+              nombreEstablecimiento: estNombre,
+              lineas
+            });
+            return (
+              <section key={grupo.nombre} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <h3 className="font-bold text-slate-900">{grupo.nombre}</h3>
+                <ul className="mt-2 list-inside list-disc text-sm text-slate-700">
+                  {lineas.map((l, i) => (
+                    <li key={i}>
+                      {l.cantidad} {(l.unidad ?? "uds").toString()} de {l.articulo}
+                    </li>
+                  ))}
+                </ul>
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-600"
+                >
+                  <IconWhatsApp className="h-6 w-6 shrink-0 text-white" />
+                  Enviar pedido a {grupo.nombre === "Sin proveedor" ? "WhatsApp" : grupo.nombre}
+                </a>
+              </section>
+            );
+          })}
+        </div>
+      </Drawer>
     </div>
   );
 }

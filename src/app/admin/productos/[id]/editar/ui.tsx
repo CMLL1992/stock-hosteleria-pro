@@ -97,7 +97,7 @@ export function EditarProductoClient({ id }: { id: string }) {
         const raw = p as unknown as Record<string, unknown>;
         const prod: Producto = {
           id: String(raw.id ?? ""),
-          articulo: String(raw.articulo ?? raw.nombre ?? "").trim() || "—",
+          articulo: String(raw[t] ?? raw.articulo ?? raw.nombre ?? "").trim() || "—",
           unidad: raw.unidad != null ? String(raw.unidad) : null,
           categoria: raw.categoria != null ? String(raw.categoria) : null,
           tipo: raw.tipo != null ? String(raw.tipo) : null,

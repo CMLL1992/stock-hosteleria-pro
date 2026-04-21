@@ -92,3 +92,41 @@ export function waUrlPedidoGlobal(bajoMinimos: ProductoPedidoWa[]): string | nul
   }));
   return urlWhatsApp(tel, mensajePedidoGlobalLineas(lineas));
 }
+
+/** Líneas para cesta: cantidad sugerida para reponer (mín. 1 si hace falta pedir). */
+export function cantidadSugeridaPedido(stockActual: number, stockMinimo: number): number {
+  const d = deficitPedido(stockActual, stockMinimo);
+  return d > 0 ? d : Math.max(1, stockMinimo - stockActual);
+}
+
+/**
+ * Mensaje multi-línea por proveedor (cesta).
+ * Ej.: "Hola Distribuidora X, pedido de Piqui Blinders:\n- 10 caja de Estrella"
+ */
+export function mensajePedidoCestaPorProveedor(opts: {
+  nombreEstablecimiento: string;
+  nombreProveedor: string;
+  lineas: Array<{ articulo: string; cantidad: number; unidad: string | null }>;
+}): string {
+  const est = opts.nombreEstablecimiento.trim() || "mi local";
+  const prov = opts.nombreProveedor.trim() || "Proveedor";
+  const body = opts.lineas.map((l) => {
+    const u = unidadLegible(l.unidad);
+    return `- ${l.cantidad} ${u} de ${l.articulo}`;
+  });
+  return [`Hola ${prov}, pedido de ${est}:`, "", ...body].join("\n");
+}
+
+export function waUrlPedidoCestaProveedor(opts: {
+  nombreProveedor: string;
+  telefonoWhatsapp: string | null;
+  nombreEstablecimiento: string;
+  lineas: Array<{ articulo: string; cantidad: number; unidad: string | null }>;
+}): string {
+  const msg = mensajePedidoCestaPorProveedor({
+    nombreEstablecimiento: opts.nombreEstablecimiento,
+    nombreProveedor: opts.nombreProveedor,
+    lineas: opts.lineas
+  });
+  return waUrlSendText(msg, digitsWaPhone(opts.telefonoWhatsapp));
+}
