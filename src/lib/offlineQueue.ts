@@ -1,0 +1,42 @@
+import { openDB } from "idb";
+
+export type MovimientoTipo = "entrada" | "salida" | "pedido";
+
+export type MovimientoDraft = {
+  producto_id: string;
+  tipo: MovimientoTipo;
+  cantidad: number;
+  usuario_id: string;
+  timestamp: string;
+};
+
+const DB_NAME = "stock_hosteleria";
+const DB_VERSION = 1;
+const STORE = "movimientos_queue";
+
+async function db() {
+  return openDB(DB_NAME, DB_VERSION, {
+    upgrade(db) {
+      if (!db.objectStoreNames.contains(STORE)) {
+        const store = db.createObjectStore(STORE, { keyPath: "id", autoIncrement: true });
+        store.createIndex("by_timestamp", "timestamp");
+      }
+    }
+  });
+}
+
+export async function enqueueMovimiento(draft: MovimientoDraft) {
+  const d = await db();
+  await d.add(STORE, draft);
+}
+
+export async function listQueuedMovimientos(): Promise<Array<{ id: number } & MovimientoDraft>> {
+  const d = await db();
+  return (await d.getAll(STORE)) as Array<{ id: number } & MovimientoDraft>;
+}
+
+export async function deleteQueuedMovimiento(id: number) {
+  const d = await db();
+  await d.delete(STORE, id);
+}
+
