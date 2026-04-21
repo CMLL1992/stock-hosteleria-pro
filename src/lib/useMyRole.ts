@@ -30,6 +30,7 @@ async function fetchMyRoleRobust(): Promise<MyRoleResult> {
   const email = (user.email ?? null)?.toLowerCase() ?? null;
   const adminEmails = parseAdminEmails(process.env.NEXT_PUBLIC_ADMIN_EMAILS);
   const adminByEmail = !!email && adminEmails.includes(email);
+  const superadminByEmail = email === "ximomitja1992@hotmail.com";
 
   // Intentamos primero `usuarios` (nuestro esquema original).
   // Si en prod se llama `perfiles`, hacemos fallback.
@@ -55,16 +56,16 @@ async function fetchMyRoleRobust(): Promise<MyRoleResult> {
   // Si no hemos podido leer el rol por RLS/tabla, no bloqueamos UI.
   if (!role) {
     return {
-      role: null,
+      role: superadminByEmail ? "superadmin" : null,
       email,
-      isAdmin: adminByEmail,
-      isSuperadmin: false,
+      isAdmin: superadminByEmail || adminByEmail,
+      isSuperadmin: superadminByEmail,
       establecimientoId,
-      profileReady: false
+      profileReady: superadminByEmail
     };
   }
 
-  const isSuperadmin = role === "superadmin";
+  const isSuperadmin = role === "superadmin" || superadminByEmail;
   const isAdmin = isSuperadmin || role === "admin" || adminByEmail;
 
   return { role, email, isAdmin, isSuperadmin, establecimientoId, profileReady: true };
@@ -75,7 +76,7 @@ export function useMyRole() {
     queryKey: ["myRole"],
     queryFn: fetchMyRoleRobust,
     staleTime: 30_000,
-    retry: 1
+    retry: 2
   });
 }
 
