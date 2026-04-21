@@ -32,7 +32,7 @@ function waLink(p: Row, cantidad: number): string | null {
   const tel = p.proveedor?.telefono_whatsapp;
   if (!tel) return null;
   const prov = p.proveedor?.nombre ?? "Proveedor";
-  const msg = `Hola ${prov}, soy del establecimiento. Necesito un pedido de ${p.nombre}. Cantidad: ${cantidad}. ¡Gracias!`;
+  const msg = `Hola ${prov}, necesito pedir ${cantidad} de ${p.nombre}.`;
   return `https://wa.me/${encodeURIComponent(tel)}?text=${encodeURIComponent(msg)}`;
 }
 
@@ -111,7 +111,7 @@ export default function PedidoRapidoPage() {
     window.open(link, "_blank", "noreferrer");
   }
 
-  if (loading) return <main className="p-4 text-sm text-zinc-600 dark:text-zinc-300">Cargando…</main>;
+  if (loading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
   if (err) {
     // sigue renderizando lista si hay items
   }
@@ -126,19 +126,19 @@ export default function PedidoRapidoPage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl p-4">
+    <main className="mx-auto max-w-3xl bg-slate-50 p-4 pb-28 text-slate-900">
       <div className="mb-3 flex items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">Pedido rápido</h1>
-          <p className="text-sm text-zinc-600 dark:text-zinc-300">{totals} productos</p>
+          <p className="text-sm text-slate-600">{totals} productos</p>
         </div>
-        <a className="text-sm text-zinc-600 underline dark:text-zinc-300" href="/admin">
+        <a className="text-sm text-slate-700 underline" href="/admin">
           Volver
         </a>
       </div>
 
       {err ? (
-        <p className="mb-3 rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
+        <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
           {err}
         </p>
       ) : null}
@@ -152,21 +152,31 @@ export default function PedidoRapidoPage() {
           return (
             <div
               key={p.id}
-              className={
-                isLow
-                  ? "rounded-xl border border-red-300 bg-red-50 p-3 dark:border-red-900 dark:bg-red-950/30"
-                  : "rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950"
-              }
+              className={[
+                "rounded-3xl border bg-white p-4 shadow-sm",
+                isLow ? "border-red-200" : "border-slate-200"
+              ].join(" ")}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{p.nombre}</p>
-                  <p className="text-xs text-zinc-600 dark:text-zinc-300">
+                  <div className="flex items-center gap-2">
+                    <p className="truncate text-sm font-semibold text-slate-900">{p.nombre}</p>
+                    {isLow ? (
+                      <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700 ring-1 ring-red-100">
+                        Bajo mínimo
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-full bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-700 ring-1 ring-slate-200">
+                        OK
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs text-slate-600">
                     {p.tipo ?? "—"} · {p.unidad ?? "—"} · Stock:{" "}
                     <span className="font-mono">{p.stock_actual}</span> · Mín:{" "}
                     <span className="font-mono">{p.stock_minimo ?? "—"}</span>
                   </p>
-                  <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-300">
+                  <p className="mt-1 text-xs text-slate-600">
                     Proveedor: {p.proveedor?.nombre ?? "—"}{" "}
                     {p.proveedor?.telefono_whatsapp ? "" : "(sin WhatsApp)"}
                   </p>
@@ -174,7 +184,7 @@ export default function PedidoRapidoPage() {
 
                 <div className="flex shrink-0 items-center gap-2">
                   <input
-                    className="min-h-12 w-24 rounded-xl border border-zinc-200 bg-white px-3 text-base dark:border-zinc-800 dark:bg-zinc-950"
+                    className="min-h-12 w-24 rounded-2xl border border-slate-200 bg-white px-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
                     inputMode="numeric"
                     type="number"
                     min={0}
@@ -184,7 +194,7 @@ export default function PedidoRapidoPage() {
                   <Button
                     onClick={() => pedir(p)}
                     disabled={!p.proveedor?.telefono_whatsapp || (qty[p.id] ?? 0) < 1}
-                    className="bg-green-600 hover:bg-green-700 active:bg-green-800 dark:bg-green-600 dark:text-white"
+                    className="bg-black hover:bg-slate-900 active:bg-slate-950"
                   >
                     WhatsApp
                   </Button>

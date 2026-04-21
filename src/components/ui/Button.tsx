@@ -7,8 +7,8 @@ export function Button({
   return (
     <button
       className={[
-        "inline-flex min-h-12 items-center justify-center rounded-xl px-4 text-sm font-medium",
-        "bg-zinc-950 text-white hover:bg-zinc-900 active:bg-black",
+        "inline-flex min-h-12 items-center justify-center rounded-2xl px-4 text-sm font-semibold",
+        "bg-black text-white hover:bg-slate-900 active:bg-slate-950",
         "disabled:opacity-50 disabled:pointer-events-none",
         className
       ].join(" ")}

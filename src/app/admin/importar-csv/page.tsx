@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import type { DragEvent, ChangeEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { fetchMyRole } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
@@ -70,6 +71,8 @@ export default function ImportarCsvPage() {
   );
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  const [drag, setDrag] = useState(false);
+  const fileRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -100,6 +103,23 @@ export default function ImportarCsvPage() {
       return [];
     }
   }, [csvText]);
+
+  async function loadFile(file: File) {
+    const text = await file.text();
+    setCsvText(text);
+  }
+
+  function onDrop(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setDrag(false);
+    const f = e.dataTransfer.files?.[0];
+    if (f) loadFile(f).catch(() => undefined);
+  }
+
+  function onPick(e: ChangeEvent<HTMLInputElement>) {
+    const f = e.currentTarget.files?.[0];
+    if (f) loadFile(f).catch(() => undefined);
+  }
 
   function normalizeWhatsapp(input: string): string {
     const trimmed = input.trim();
@@ -204,20 +224,20 @@ export default function ImportarCsvPage() {
     }
   }
 
-  if (loading) return <main className="p-4 text-sm text-zinc-600 dark:text-zinc-300">Cargando…</main>;
+  if (loading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
   if (role !== "admin") {
     return (
       <main className="mx-auto max-w-md p-4">
         <h1 className="text-xl font-semibold">Importar CSV (Admin)</h1>
-        <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">Acceso denegado.</p>
+        <p className="mt-2 text-sm text-slate-600">Acceso denegado.</p>
       </main>
     );
   }
 
   return (
-    <main className="mx-auto max-w-3xl p-4">
+    <main className="mx-auto max-w-3xl bg-slate-50 p-4 pb-28 text-slate-900">
       <h1 className="mb-2 text-xl font-semibold">Importar CSV</h1>
-      <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-300">
+      <p className="mb-4 text-sm text-slate-600">
         Formato esperado (cabecera obligatoria):{" "}
         <span className="font-mono">
           nombre,tipo,unidad,stock_actual,stock_minimo
@@ -225,38 +245,95 @@ export default function ImportarCsvPage() {
       </p>
 
       {err ? (
-        <p className="mb-3 rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
+        <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
           {err}
         </p>
       ) : null}
 
       {result ? (
-        <p className="mb-3 rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
+        <p className="mb-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
           {result}
         </p>
       ) : null}
 
-      <textarea
-        className="h-72 w-full rounded-2xl border border-zinc-200 bg-white p-3 font-mono text-sm dark:border-zinc-800 dark:bg-zinc-950"
-        value={csvText}
-        onChange={(e) => setCsvText(e.currentTarget.value)}
-      />
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div className="space-y-3 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-sm font-semibold text-slate-900">1) Sube tu CSV</p>
+          <div
+            className={[
+              "rounded-3xl border-2 border-dashed p-4 text-center transition",
+              drag ? "border-black bg-slate-50" : "border-slate-200 bg-white"
+            ].join(" ")}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDrag(true);
+            }}
+            onDragLeave={() => setDrag(false)}
+            onDrop={onDrop}
+          >
+            <p className="text-sm font-semibold text-slate-900">Arrastra aquí el archivo</p>
+            <p className="mt-1 text-xs text-slate-600">o pulsa para seleccionarlo</p>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={onPick}
+            />
+            <button
+              type="button"
+              className="mt-3 inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50"
+              onClick={() => fileRef.current?.click()}
+              disabled={busy}
+            >
+              Elegir archivo
+            </button>
+          </div>
 
-      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Button onClick={importar} disabled={busy}>
-            {busy ? "Importando…" : "Importar"}
-          </Button>
-          <Button onClick={downloadTemplate} disabled={busy} className="bg-zinc-700">
-            Descargar Plantilla Ejemplo
-          </Button>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Button onClick={importar} disabled={busy}>
+              {busy ? "Importando…" : "Importar"}
+            </Button>
+            <Button onClick={downloadTemplate} disabled={busy} className="bg-slate-800 hover:bg-slate-900">
+              Descargar Plantilla Ejemplo
+            </Button>
+          </div>
+
+          <p className="text-xs text-slate-600">
+            Consejo: si tu Excel exporta con “;”, exporta como CSV con comas.
+          </p>
         </div>
-        <div className="text-xs text-zinc-600 dark:text-zinc-300">
-          Vista previa: {preview.length ? preview.length : 0} filas
+
+        <div className="space-y-3 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-sm font-semibold text-slate-900">2) Vista previa</p>
+          {preview.length ? (
+            <div className="space-y-2">
+              {preview.map((r, i) => (
+                <div key={i} className="rounded-2xl border border-slate-200 bg-white p-3">
+                  <p className="text-sm font-semibold text-slate-900">{r.nombre}</p>
+                  <p className="mt-1 text-xs text-slate-600">
+                    {r.tipo} · {r.unidad} · stock {r.stock_actual} · mín {r.stock_minimo}
+                  </p>
+                </div>
+              ))}
+              <p className="text-xs text-slate-500">Mostrando {preview.length} filas (máx 5).</p>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-600">Aún no hay filas válidas para previsualizar.</p>
+          )}
         </div>
       </div>
 
-      <p className="mt-3 text-xs text-zinc-600 dark:text-zinc-300">
+      <details className="mt-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+        <summary className="cursor-pointer text-sm font-semibold text-slate-900">Editar CSV manualmente</summary>
+        <textarea
+          className="mt-3 h-64 w-full rounded-2xl border border-slate-200 bg-white p-3 font-mono text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-black/10"
+          value={csvText}
+          onChange={(e) => setCsvText(e.currentTarget.value)}
+        />
+      </details>
+
+      <p className="mt-4 text-xs text-slate-600">
         Valores permitidos:
         <br />
         tipo ={" "}
