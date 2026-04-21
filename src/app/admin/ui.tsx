@@ -19,47 +19,46 @@ type AdminCategory = {
 
 const CATEGORIES: AdminCategory[] = [
   {
-    title: "Institucional y Accesos",
-    emoji: "🏢",
-    links: [{ href: "/admin", title: "Panel Admin", subtitle: "Accesos y atajos" }]
-  },
-  {
-    title: "Establecimientos",
-    emoji: "🏪",
-    links: [{ href: "/admin/clientes", title: "Clientes", subtitle: "Gestión (Superadmin)" }],
-    superadminOnly: true
-  },
-  {
-    title: "Usuarios",
-    emoji: "👥",
-    links: [{ href: "/admin/users", title: "Usuarios", subtitle: "Altas y permisos (Superadmin)" }],
-    superadminOnly: true
-  },
-  {
-    title: "Roles",
-    emoji: "🔐",
-    links: [{ href: "/admin/users", title: "Roles y accesos", subtitle: "Gestiona permisos (Superadmin)" }],
-    superadminOnly: true
-  },
-  {
-    title: "Catálogo e Inventario",
+    title: "📦 Gestión de Stock",
     emoji: "📦",
     links: [
-      { href: "/admin/productos", title: "Productos", subtitle: "Gestiona catálogo completo" },
+      { href: "/admin/dashboard", title: "Dashboard operativo", subtitle: "Alertas y reposición" },
+      { href: "/admin/productos", title: "Gestión de Productos", subtitle: "Catálogo completo" },
       { href: "/admin/importar-csv", title: "Importar CSV", subtitle: "Alta/actualización masiva" },
-      { href: "/admin/escandallos", title: "Escandallos", subtitle: "Finanzas (si aplica en tu BD)" },
-      { href: "/admin/etiquetas", title: "Etiquetas", subtitle: "Clasificación y filtros" }
+      { href: "/admin/escandallos", title: "Escandallos", subtitle: "Finanzas (si aplica)" }
     ]
   },
   {
-    title: "Operaciones y Movimientos",
-    emoji: "🔄",
+    title: "🤝 Operaciones",
+    emoji: "🤝",
     links: [
-      { href: "/admin/pedido-rapido", title: "Pedidos", subtitle: "Pedido rápido por WhatsApp" },
-      { href: "/admin/proveedores", title: "Proveedores", subtitle: "Listado y edición" }
+      { href: "/admin/proveedores", title: "Gestionar Proveedores", subtitle: "Listado y edición" },
+      { href: "/admin/pedido-rapido", title: "Pedido Rápido", subtitle: "Pedir por WhatsApp" }
+    ]
+  },
+  {
+    title: "⚙️ Configuración",
+    emoji: "⚙️",
+    links: [
+      { href: "/admin/etiquetas", title: "Etiquetas", subtitle: "Clasificación y filtros" },
+      { href: "/admin/users", title: "Usuarios", subtitle: "Altas y permisos (Superadmin)" },
+      { href: "/admin/clientes", title: "Clientes", subtitle: "Gestión (Superadmin)" }
     ]
   }
 ];
+
+function iconColorFor(href: string): string {
+  if (href.includes("importar-csv")) return "bg-indigo-50 text-indigo-700 ring-indigo-100";
+  if (href.includes("productos")) return "bg-emerald-50 text-emerald-700 ring-emerald-100";
+  if (href.includes("escandallos")) return "bg-slate-50 text-slate-700 ring-slate-200";
+  if (href.includes("pedido-rapido")) return "bg-amber-50 text-amber-800 ring-amber-100";
+  if (href.includes("proveedores")) return "bg-cyan-50 text-cyan-700 ring-cyan-100";
+  if (href.includes("users")) return "bg-rose-50 text-rose-700 ring-rose-100";
+  if (href.includes("clientes")) return "bg-violet-50 text-violet-700 ring-violet-100";
+  if (href.includes("etiquetas")) return "bg-slate-50 text-slate-700 ring-slate-200";
+  if (href.includes("dashboard")) return "bg-blue-50 text-blue-700 ring-blue-100";
+  return "bg-slate-50 text-slate-700 ring-slate-200";
+}
 
 export function AdminHomeClient() {
   const { data, isLoading, error } = useMyRole();
@@ -86,14 +85,12 @@ export function AdminHomeClient() {
     return (
       <div className="space-y-4">
         <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-sm font-semibold text-slate-900">Panel de administración</p>
-          <p className="mt-1 text-sm text-slate-600">
-            Navegación agrupada por categorías para uso rápido en móvil.
-          </p>
+          <p className="text-sm font-semibold text-slate-900">Admin</p>
+          <p className="mt-1 text-sm text-slate-600">Accesos rápidos, agrupados por área.</p>
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {CATEGORIES.filter((c) => (c.superadminOnly ? !!data?.isSuperadmin : true)).map((cat) => (
+          {CATEGORIES.map((cat) => (
             <div key={cat.title} className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="mb-3 flex items-center gap-2">
                 <span className="text-lg" aria-hidden>
@@ -103,18 +100,33 @@ export function AdminHomeClient() {
               </div>
 
               <div className="space-y-2">
-                {cat.links.map((l) => (
+                {cat.links
+                  .filter((l) =>
+                    l.href === "/admin/users" || l.href === "/admin/clientes" ? !!data?.isSuperadmin : true
+                  )
+                  .map((l) => (
                   <a
                     key={l.href}
                     href={l.href}
-                    className="group block rounded-2xl border border-slate-200 bg-white p-3 transition shadow-sm hover:shadow-md hover:bg-slate-50"
+                    className="group block rounded-2xl border border-slate-200 bg-white p-3 shadow-sm transition duration-200 hover:bg-slate-50 hover:shadow-md hover:scale-[1.02] active:scale-[0.99]"
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <span
+                          className={[
+                            "grid h-9 w-9 shrink-0 place-items-center rounded-xl ring-1",
+                            iconColorFor(l.href)
+                          ].join(" ")}
+                          aria-hidden
+                        >
+                          →
+                        </span>
+                        <div className="min-w-0">
                         <p className="truncate text-sm font-semibold text-slate-900">{l.title}</p>
                         {l.subtitle ? (
                           <p className="mt-0.5 truncate text-xs text-slate-600">{l.subtitle}</p>
                         ) : null}
+                        </div>
                       </div>
                       <span className="text-slate-400 group-hover:text-slate-600">→</span>
                     </div>
