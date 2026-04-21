@@ -17,6 +17,7 @@ import {
   tituloUpsertOnConflict,
   tituloWritePayload
 } from "@/lib/productosTituloColumn";
+import { isOnConflictConstraintMissing, upsertProductosFilaPorFila } from "@/lib/productosUpsertFallback";
 
 const UNIDADES_PERMITIDAS = new Set(["caja", "barril", "botella", "lata", "unidad"]);
 
@@ -351,6 +352,7 @@ export default function ImportarCsvPage() {
 
       const total = filasUnicasImport.length;
       let okCount = 0;
+      let usedRowByRowFallback = false;
       setImportProgress(1);
 
       for (let i = 0; i < total; i += BATCH_SIZE) {
@@ -365,14 +367,23 @@ export default function ImportarCsvPage() {
           onConflict: tituloUpsertOnConflict(tituloCol)
         });
 
-        if (error) throw new Error(supabaseErrToString(error));
+        if (error && isOnConflictConstraintMissing(error)) {
+          usedRowByRowFallback = true;
+          await upsertProductosFilaPorFila(payload, tituloCol, activeEstablishmentId);
+        } else if (error) {
+          throw new Error(supabaseErrToString(error));
+        }
 
         okCount += slice.length;
         setImportProgress(Math.min(100, Math.round((okCount / total) * 100)));
       }
 
       setImportProgress(100);
-      setResult(`✅ ${okCount} productos importados correctamente (bloques de ${BATCH_SIZE}, upsert por artículo).`);
+      setResult(
+        usedRowByRowFallback
+          ? `✅ ${okCount} productos importados (modo compatible: sin índice único en la BD se aplicó fila a fila; puedes añadir un UNIQUE(establecimiento_id, ${tituloCol}) para acelerar).`
+          : `✅ ${okCount} productos importados correctamente (bloques de ${BATCH_SIZE}, upsert).`
+      );
       await cargarMapaNombres();
     } catch (e) {
       // eslint-disable-next-line no-console
