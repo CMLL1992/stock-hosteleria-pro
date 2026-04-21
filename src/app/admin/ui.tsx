@@ -45,10 +45,10 @@ const SECTIONS: AdminSection[] = [
       },
       {
         id: "roles",
-        href: "/admin/users",
+        href: "/superadmin/roles",
         emoji: "🔐",
         title: "Roles",
-        subtitle: "Configuración de permisos (admin / staff).",
+        subtitle: "Superadmin, Admin y Staff en un solo lugar.",
         superadminOnly: true
       }
     ]

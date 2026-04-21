@@ -1,0 +1,11 @@
+-- Notas de auditoría (no ejecutar a ciegas): RLS en public.usuarios
+--
+-- Estado en multitenant-establecimientos.sql:
+--   SELECT: is_superadmin() OR establecimiento_id = my_establecimiento_id()
+--   ALL write: is_superadmin()
+--
+-- Endurecimiento opcional si Staff no debe ver roles de compañeros:
+--   Reemplazar la política SELECT por: id = auth.uid() OR is_superadmin()
+--   (implica que admin/staff ya no listan usuarios vía SQL directo; valorar impacto.)
+--
+-- La UI /superadmin/roles usa API con SERVICE_ROLE; el gate es JWT + rol superadmin en servidor.

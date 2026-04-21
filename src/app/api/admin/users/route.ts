@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { assertSuperadminOrThrow } from "@/lib/admin/assertSuperadmin";
 import { adminError, adminServerError } from "@/lib/admin/apiResponse";
-import type { UsuarioListItem } from "@/types/ops";
+import type { UsuarioListItem, UsuarioRol } from "@/types/ops";
 
 const MIN_PASSWORD_LEN = 6;
 
@@ -13,6 +13,10 @@ type Body = {
 };
 
 type DeleteBody = { userId?: string };
+
+type PatchBody = { userId?: string; rol?: string; establecimiento_id?: string };
+
+const VALID_ROLES: UsuarioRol[] = ["superadmin", "admin", "staff"];
 
 /** Lista todos los usuarios (service role, sin RLS). */
 export async function GET(req: Request) {
@@ -28,6 +32,64 @@ export async function GET(req: Request) {
 
     if (error) return adminError(error.message, 400);
     return NextResponse.json({ items: (data as UsuarioListItem[]) ?? [] });
+  } catch (e) {
+    return adminServerError(e);
+  }
+}
+
+/** Cambia `usuarios.rol` (y opcionalmente `establecimiento_id`). Solo service role. */
+export async function PATCH(req: Request) {
+  try {
+    const gate = await assertSuperadminOrThrow(req);
+    if (!gate.ok) return gate.response;
+
+    const body = (await req.json()) as PatchBody;
+    const userId = typeof body.userId === "string" ? body.userId.trim() : "";
+    const rolRaw = typeof body.rol === "string" ? body.rol.trim().toLowerCase() : "";
+    const estReq =
+      typeof body.establecimiento_id === "string" ? body.establecimiento_id.trim() : undefined;
+
+    if (!userId) return adminError("Falta userId.", 400);
+    if (!VALID_ROLES.includes(rolRaw as UsuarioRol)) {
+      return adminError("El rol debe ser superadmin, admin o staff.", 400);
+    }
+    const rol = rolRaw as UsuarioRol;
+
+    if (userId === gate.userId) {
+      return adminError("No puedes cambiar tu propio rol desde aquí.", 400);
+    }
+
+    const { service } = gate;
+
+    const { data: target, error: targetErr } = await service
+      .from("usuarios")
+      .select("id,establecimiento_id")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (targetErr) return adminError(targetErr.message, 400);
+    if (!target) return adminError("Usuario no encontrado.", 404);
+
+    let establecimiento_id = String((target.establecimiento_id as string | null | undefined) ?? "").trim();
+    if (estReq) {
+      const { data: estOk } = await service.from("establecimientos").select("id").eq("id", estReq).maybeSingle();
+      if (!estOk) return adminError("Establecimiento no válido.", 400);
+      establecimiento_id = estReq;
+    }
+    if (!establecimiento_id) {
+      const { data: fe } = await service.from("establecimientos").select("id").limit(1).maybeSingle();
+      if (fe?.id) establecimiento_id = String(fe.id);
+    }
+    if (!establecimiento_id) {
+      return adminError("No hay establecimiento disponible para asignar al usuario.", 400);
+    }
+
+    const patch: Record<string, unknown> = { rol, establecimiento_id };
+
+    const { error: upErr } = await service.from("usuarios").update(patch).eq("id", userId);
+    if (upErr) return adminError(upErr.message, 400);
+
+    return NextResponse.json({ ok: true });
   } catch (e) {
     return adminServerError(e);
   }
