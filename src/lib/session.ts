@@ -24,9 +24,14 @@ export type AppRole = "superadmin" | "admin" | "staff";
 
 export async function fetchMyRole(): Promise<AppRole> {
   const uid = await requireUserId();
+  const s = await supabase().auth.getSession();
+  const email = (s.data.session?.user?.email ?? "").toLowerCase();
+  const superadminByEmail = email === "ximomitja1992@hotmail.com";
+
   const { data, error } = await supabase().from("usuarios").select("rol").eq("id", uid).maybeSingle();
-  // Si el perfil todavía no existe o hay lag de RLS/cache, no rompemos el flujo: tratamos como staff.
-  if (error) return "staff";
-  return (data?.rol as AppRole) ?? "staff";
+  // Si hay lag de RLS/cache, no bloqueamos el acceso del superadmin.
+  if (error) return superadminByEmail ? "superadmin" : "staff";
+  const role = (data?.rol as AppRole | undefined) ?? "staff";
+  return superadminByEmail ? "superadmin" : role;
 }
 
