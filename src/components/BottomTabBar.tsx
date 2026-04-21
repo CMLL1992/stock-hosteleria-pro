@@ -12,7 +12,7 @@ type Tab = {
 };
 
 const TABS: Tab[] = [
-  { href: "/", label: "Stock", icon: Boxes },
+  { href: "/", label: "Dashboard", icon: Boxes },
   { href: "/escanear", label: "Escanear", icon: Barcode },
   { href: "/admin", label: "Admin", icon: Shield, adminOnly: true },
   { href: "/mas", label: "Más", icon: MoreHorizontal }
@@ -32,7 +32,7 @@ export function BottomTabBar() {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-100 bg-white/90 backdrop-blur"
+      className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/90 backdrop-blur"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       aria-label="Navegación inferior"
     >
@@ -46,10 +46,10 @@ export function BottomTabBar() {
               href={t.href}
               className={[
                 "flex min-h-14 flex-1 flex-col items-center justify-center gap-1 rounded-2xl px-2",
-                active ? "bg-gray-50 text-gray-900" : "text-gray-500 hover:bg-gray-50"
+                active ? "bg-slate-50 text-slate-900" : "text-slate-500 hover:bg-slate-50"
               ].join(" ")}
             >
-              <Icon className={["h-5 w-5", active ? "text-gray-900" : "text-gray-500"].join(" ")} />
+              <Icon className={["h-5 w-5", active ? "text-slate-900" : "text-slate-500"].join(" ")} />
               <span className="text-[11px] font-medium leading-none">{t.label}</span>
             </a>
           );

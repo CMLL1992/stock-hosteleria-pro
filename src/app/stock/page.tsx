@@ -1,12 +1,12 @@
+import { ProductList } from "@/components/ProductList";
 import { MobileHeader } from "@/components/MobileHeader";
-import { DashboardClient } from "@/components/DashboardClient";
 
-export default function HomePage() {
+export default function StockPage() {
   return (
     <div className="min-h-dvh">
-      <MobileHeader title="Dashboard" />
+      <MobileHeader title="Stock" />
       <main className="mx-auto max-w-3xl p-4 pb-28">
-        <DashboardClient />
+        <ProductList />
       </main>
     </div>
   );

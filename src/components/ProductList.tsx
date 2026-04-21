@@ -101,7 +101,7 @@ export function ProductList() {
     return data.filter((p) => productTabKey(p) === tab);
   }, [data, tab]);
 
-  if (isLoading) return <p className="text-sm text-gray-600">Cargando stock…</p>;
+  if (isLoading) return <p className="text-sm text-slate-600">Cargando stock…</p>;
   if (error) {
     return (
       <p className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
@@ -111,7 +111,7 @@ export function ProductList() {
   }
 
   if (!data?.length) {
-    return <p className="text-sm text-gray-600">No hay productos todavía.</p>;
+    return <p className="text-sm text-slate-600">No hay productos todavía.</p>;
   }
 
   return (
@@ -126,7 +126,7 @@ export function ProductList() {
               onClick={() => setTab(t.key)}
               className={[
                 "min-h-11 whitespace-nowrap rounded-full px-4 text-sm font-semibold",
-                active ? "text-gray-900 shadow-sm" : "text-gray-700 border border-gray-100 bg-white"
+                active ? "text-slate-900 shadow-sm" : "text-slate-700 border border-slate-200 bg-white"
               ].join(" ")}
               style={
                 t.key === "todos"
@@ -159,7 +159,7 @@ export function ProductList() {
           return (
             <div
               key={p.id}
-              className="cursor-pointer rounded-3xl border border-gray-100 bg-white px-4 py-4 shadow-sm transition active:scale-[0.99]"
+              className="cursor-pointer rounded-3xl border border-slate-200 bg-white px-4 py-4 shadow-sm transition active:scale-[0.99]"
               role="link"
               tabIndex={0}
               onClick={() => {
@@ -180,7 +180,7 @@ export function ProductList() {
                       href={`/p/${encodeURIComponent(p.id)}`}
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <p className="truncate text-base font-semibold text-gray-900">{p.nombre}</p>
+                      <p className="truncate text-base font-semibold text-slate-900">{p.nombre}</p>
                     </a>
                     <span
                       className="inline-flex min-h-6 items-center rounded-full px-2 text-[11px] font-semibold text-gray-900"
@@ -189,7 +189,7 @@ export function ProductList() {
                       {key === "todos" ? "otros" : key}
                     </span>
                   </div>
-                  <p className="mt-1 text-sm text-gray-600">{p.unidad ?? "—"}</p>
+                  <p className="mt-1 text-sm text-slate-600">{p.unidad ?? "—"}</p>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -200,7 +200,7 @@ export function ProductList() {
                     {p.stock_actual}
                   </div>
                   <a
-                    className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-gray-100 bg-white px-3 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+                    className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
                     href={`/qr/${encodeURIComponent(p.id)}`}
                     onClick={(e) => e.stopPropagation()}
                   >
@@ -208,7 +208,7 @@ export function ProductList() {
                   </a>
                   {my?.isAdmin ? (
                     <a
-                      className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-gray-100 bg-white px-3 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+                      className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
                       href={`/admin/productos/${encodeURIComponent(p.id)}/editar`}
                       aria-label="Editar producto"
                       title="Editar"

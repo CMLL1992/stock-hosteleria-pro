@@ -37,7 +37,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="es">
       <body
         suppressHydrationWarning={true}
-        className={`${inter.className} min-h-dvh bg-gray-50 text-gray-900`}
+        className={`${inter.className} min-h-dvh bg-slate-50 text-slate-900`}
       >
         <Providers>{children}</Providers>
       </body>

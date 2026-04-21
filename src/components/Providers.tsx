@@ -39,7 +39,7 @@ export function Providers({ children }: { children: ReactNode }) {
       <AuthRefresh />
       <AuthBootstrap />
       <OfflineSync />
-      <div className="min-h-dvh bg-gray-50 pb-24">
+      <div className="min-h-dvh bg-slate-50 pb-24 text-slate-900">
         {children}
       </div>
       <BottomTabBar />

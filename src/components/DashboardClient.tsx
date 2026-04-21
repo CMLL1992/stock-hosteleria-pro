@@ -1,0 +1,238 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis
+} from "recharts";
+import { Button } from "@/components/ui/Button";
+import { supabase } from "@/lib/supabase";
+
+type RangeKey = "week" | "month" | "year";
+
+type Movimiento = {
+  producto_id: string;
+  tipo: "entrada" | "salida" | "pedido";
+  cantidad: number;
+  timestamp: string;
+  producto?: { nombre: string } | null;
+};
+
+type ProductoStock = {
+  id: string;
+  stock_actual: number;
+  stock_minimo: number | null;
+};
+
+function startOfTodayISO(): string {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+
+function sinceForRange(range: RangeKey): string {
+  const d = new Date();
+  if (range === "week") d.setDate(d.getDate() - 7);
+  if (range === "month") d.setMonth(d.getMonth() - 1);
+  if (range === "year") d.setFullYear(d.getFullYear() - 1);
+  return d.toISOString();
+}
+
+async function fetchTopProductosSalida(range: RangeKey) {
+  const since = sinceForRange(range);
+  const { data, error } = await supabase()
+    .from("movimientos")
+    .select("producto_id,tipo,cantidad,timestamp,producto:productos(nombre)")
+    .eq("tipo", "salida")
+    .gte("timestamp", since)
+    .order("timestamp", { ascending: false })
+    .limit(5000);
+  if (error) throw error;
+
+  const rows = (data as unknown as Movimiento[]) ?? [];
+  const byProduct = new Map<string, { name: string; total: number }>();
+  for (const r of rows) {
+    const name = r.producto?.nombre ?? "Producto";
+    const prev = byProduct.get(r.producto_id) ?? { name, total: 0 };
+    prev.total += Math.abs(Number(r.cantidad) || 0);
+    prev.name = name;
+    byProduct.set(r.producto_id, prev);
+  }
+
+  return Array.from(byProduct.values())
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 5)
+    .map((x) => ({ nombre: x.name, cantidad: x.total }));
+}
+
+async function fetchResumen(range: RangeKey) {
+  const since = sinceForRange(range);
+  const sinceToday = startOfTodayISO();
+
+  const [{ data: salidasHoy }, { data: prods }, { count: pedidosCount }] = await Promise.all([
+    supabase()
+      .from("movimientos")
+      .select("cantidad", { count: "exact" })
+      .eq("tipo", "salida")
+      .gte("timestamp", sinceToday),
+    supabase().from("productos").select("id,stock_actual,stock_minimo"),
+    supabase()
+      .from("movimientos")
+      .select("id", { count: "exact", head: true })
+      .eq("tipo", "pedido")
+      .gte("timestamp", since)
+  ]);
+
+  const totalGastadoHoy = ((salidasHoy as unknown as Array<{ cantidad: number }>) ?? []).reduce(
+    (acc, r) => acc + (Number(r.cantidad) || 0),
+    0
+  );
+
+  const productos = (prods as unknown as ProductoStock[]) ?? [];
+  const alertasStockBajo = productos.filter((p) => {
+    const min = typeof p.stock_minimo === "number" && Number.isFinite(p.stock_minimo) ? p.stock_minimo : null;
+    if (min == null) return false;
+    return (Number(p.stock_actual) || 0) < min;
+  }).length;
+
+  // No existe estado “pendiente” en esquema; contamos pedidos registrados en el rango como proxy.
+  const pedidosPendientes = pedidosCount ?? 0;
+
+  return { totalGastadoHoy, alertasStockBajo, pedidosPendientes };
+}
+
+export function DashboardClient() {
+  const [range, setRange] = useState<RangeKey>("week");
+
+  const topQuery = useQuery({
+    queryKey: ["dashboard", "topSalida", range],
+    queryFn: () => fetchTopProductosSalida(range),
+    staleTime: 30_000,
+    retry: 1
+  });
+
+  const resumenQuery = useQuery({
+    queryKey: ["dashboard", "resumen", range],
+    queryFn: () => fetchResumen(range),
+    staleTime: 20_000,
+    retry: 1
+  });
+
+  const data = topQuery.data ?? [];
+  const resumen = resumenQuery.data;
+
+  const pills = useMemo(
+    () => [
+      { key: "week" as const, label: "Semanal" },
+      { key: "month" as const, label: "Mensual" },
+      { key: "year" as const, label: "Anual" }
+    ],
+    []
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex gap-2">
+          {pills.map((p) => {
+            const active = range === p.key;
+            return (
+              <button
+                key={p.key}
+                onClick={() => setRange(p.key)}
+                className={[
+                  "min-h-11 rounded-full px-4 text-sm font-semibold",
+                  active ? "bg-black text-white" : "border border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
+                ].join(" ")}
+              >
+                {p.label}
+              </button>
+            );
+          })}
+        </div>
+        <a
+          href="/stock"
+          className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50"
+        >
+          Ver Stock
+        </a>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-semibold text-slate-500">Total gastado hoy</p>
+          <p className="mt-1 text-2xl font-extrabold tabular-nums text-slate-900">
+            {resumenQuery.isLoading ? "—" : resumen?.totalGastadoHoy ?? 0}
+          </p>
+        </div>
+        <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-semibold text-slate-500">Alertas de stock bajo</p>
+          <p className="mt-1 text-2xl font-extrabold tabular-nums text-slate-900">
+            {resumenQuery.isLoading ? "—" : resumen?.alertasStockBajo ?? 0}
+          </p>
+        </div>
+        <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-semibold text-slate-500">Pedidos pendientes</p>
+          <p className="mt-1 text-2xl font-extrabold tabular-nums text-slate-900">
+            {resumenQuery.isLoading ? "—" : resumen?.pedidosPendientes ?? 0}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">En el rango seleccionado</p>
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">Top productos (salidas)</p>
+            <p className="text-xs text-slate-600">5 productos más gastados según movimientos tipo “salida”.</p>
+          </div>
+          <Button
+            onClick={() => {
+              void topQuery.refetch();
+              void resumenQuery.refetch();
+            }}
+            className="min-h-11"
+          >
+            Actualizar
+          </Button>
+        </div>
+
+        {topQuery.isLoading ? (
+          <p className="text-sm text-slate-600">Cargando gráfico…</p>
+        ) : topQuery.error ? (
+          <p className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+            {(topQuery.error as Error).message}
+          </p>
+        ) : data.length ? (
+          <div className="h-72 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={data} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
+                <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" />
+                <XAxis dataKey="nombre" tick={{ fill: "#0F172A", fontSize: 12 }} interval={0} />
+                <YAxis tick={{ fill: "#64748B", fontSize: 12 }} />
+                <Tooltip
+                  contentStyle={{
+                    borderRadius: 16,
+                    border: "1px solid #E2E8F0",
+                    background: "white"
+                  }}
+                  labelStyle={{ color: "#0F172A", fontWeight: 600 }}
+                />
+                <Bar dataKey="cantidad" fill="#000000" radius={[12, 12, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-600">Aún no hay salidas en este rango.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
