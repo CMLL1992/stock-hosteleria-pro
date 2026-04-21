@@ -1,300 +1,197 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis
-} from "recharts";
-import { Button } from "@/components/ui/Button";
 import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 
-type RangeKey = "week" | "month" | "year";
-type MetricKey = "units";
-
-type Movimiento = {
-  producto_id: string;
-  tipo: "entrada" | "salida" | "pedido";
-  cantidad: number;
-  timestamp: string;
-  producto?: { articulo: string } | null;
-};
-
 type ProductoStock = {
   id: string;
+  articulo: string;
+  categoria: string | null;
   stock_actual: number;
   stock_minimo: number | null;
 };
 
-function startOfTodayISO(): string {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString();
-}
-
-function sinceForRange(range: RangeKey): string {
-  const d = new Date();
-  if (range === "week") d.setDate(d.getDate() - 7);
-  if (range === "month") d.setMonth(d.getMonth() - 1);
-  if (range === "year") d.setFullYear(d.getFullYear() - 1);
-  return d.toISOString();
-}
-
-async function fetchTopProductosSalida(range: RangeKey, establecimientoId: string | null) {
-  if (!establecimientoId) return { rows: [], totals: { units: 0, cost: 0, profit: 0 } };
-  const since = sinceForRange(range);
-  const { data, error } = await supabase()
-    .from("movimientos")
-    .select("producto_id,tipo,cantidad,timestamp,producto:productos(articulo)")
-    .eq("tipo", "salida")
-    .eq("establecimiento_id", establecimientoId)
-    .gte("timestamp", since)
-    .order("timestamp", { ascending: false })
-    .limit(5000);
-  if (error) throw error;
-
-  const rows = (data as unknown as Movimiento[]) ?? [];
-  const byProduct = new Map<string, { name: string; units: number }>();
-  for (const r of rows) {
-    const name = r.producto?.articulo ?? "Producto";
-    const units = Math.abs(Number(r.cantidad) || 0);
-    const prev = byProduct.get(r.producto_id) ?? { name, units: 0 };
-    prev.units += units;
-    prev.name = name;
-    byProduct.set(r.producto_id, prev);
-  }
-
-  return {
-    rows: Array.from(byProduct.values()),
-    totals: rows.reduce(
-      (acc, r) => {
-        const units = Math.abs(Number(r.cantidad) || 0);
-        acc.units += units;
-        return acc;
-      },
-      { units: 0, cost: 0, profit: 0 }
-    )
-  };
-}
-
-async function fetchResumen(range: RangeKey, establecimientoId: string | null) {
-  if (!establecimientoId) {
-    return { totalGastadoHoy: 0, costeHoy: 0, alertasStockBajo: 0, pedidosPendientes: 0, beneficioEstimado: 0 };
-  }
-  const since = sinceForRange(range);
-  const sinceToday = startOfTodayISO();
-
-  const [{ data: salidasHoy }, { data: prods }, { count: pedidosCount }] = await Promise.all([
-    supabase()
-      .from("movimientos")
-      .select("cantidad")
-      .eq("tipo", "salida")
-      .eq("establecimiento_id", establecimientoId)
-      .gte("timestamp", sinceToday),
-    supabase().from("productos").select("id,stock_actual,stock_minimo").eq("establecimiento_id", establecimientoId),
-    supabase()
-      .from("movimientos")
-      .select("id", { count: "exact", head: true })
-      .eq("tipo", "pedido")
-      .eq("establecimiento_id", establecimientoId)
-      .gte("timestamp", since)
-  ]);
-
-  const salidasHoyRows = (salidasHoy as unknown as Array<{ cantidad: number }>) ?? [];
-  const totalGastadoHoy = salidasHoyRows.reduce((acc, r) => acc + (Number(r.cantidad) || 0), 0);
-  const costeHoy = 0;
-
-  const productos = (prods as unknown as ProductoStock[]) ?? [];
-  const alertasStockBajo = productos.filter((p) => {
-    const min = typeof p.stock_minimo === "number" && Number.isFinite(p.stock_minimo) ? p.stock_minimo : null;
-    if (min == null) return false;
-    return (Number(p.stock_actual) || 0) < min;
-  }).length;
-
-  // No existe estado “pendiente” en esquema; contamos pedidos registrados en el rango como proxy.
-  const pedidosPendientes = pedidosCount ?? 0;
-
-  const beneficioEstimado = 0;
-
-  return { totalGastadoHoy, costeHoy, alertasStockBajo, pedidosPendientes, beneficioEstimado };
+function toInt(v: unknown, fallback = 0): number {
+  const n = typeof v === "number" ? v : Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.trunc(n);
 }
 
 export function DashboardClient() {
-  const [range, setRange] = useState<RangeKey>("week");
-  const [metric] = useState<MetricKey>("units");
-  const { me, activeEstablishmentId: establecimientoId, activeEstablishmentName } = useActiveEstablishment();
+  const { activeEstablishmentId: establecimientoId, activeEstablishmentName, me } = useActiveEstablishment();
 
-  const topQuery = useQuery({
-    queryKey: ["dashboard", "topSalida", range, establecimientoId],
-    queryFn: () => fetchTopProductosSalida(range, establecimientoId),
-    staleTime: 30_000,
+  const productosQuery = useQuery({
+    queryKey: ["dashboard", "productos", establecimientoId],
+    enabled: !!establecimientoId,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("productos")
+        .select("id,articulo,categoria,stock_actual,stock_minimo")
+        .eq("establecimiento_id", establecimientoId as string)
+        .order("articulo", { ascending: true });
+      if (error) throw error;
+      return (data as unknown as ProductoStock[]) ?? [];
+    },
+    staleTime: 15_000,
     retry: 1
   });
 
-  const resumenQuery = useQuery({
-    queryKey: ["dashboard", "resumen", range, establecimientoId],
-    queryFn: () => fetchResumen(range, establecimientoId),
-    staleTime: 20_000,
-    retry: 1
-  });
+  const productosData = productosQuery.data;
 
-  const raw = topQuery.data;
-  const totals = raw?.totals ?? { units: 0, cost: 0, profit: 0 };
+  const kpis = useMemo(() => {
+    const productos = productosData ?? [];
+    const totalReferencias = productos.length;
+    const unidadesEnAlmacen = productos.reduce((acc, p) => acc + toInt(p.stock_actual, 0), 0);
+    const criticos = productos
+      .map((p) => {
+        const min = p.stock_minimo;
+        if (typeof min !== "number" || !Number.isFinite(min)) return null;
+        const actual = toInt(p.stock_actual, 0);
+        const minimo = toInt(min, 0);
+        const deficit = minimo - actual;
+        if (actual > minimo) return null;
+        return { ...p, actual, minimo, deficit };
+      })
+      .filter(Boolean) as Array<
+      ProductoStock & {
+        actual: number;
+        minimo: number;
+        deficit: number;
+      }
+    >;
 
-  const data = useMemo(() => {
-    const topRows = raw?.rows ?? [];
-    const sorted = [...topRows].sort((a, b) => b.units - a.units);
-    return sorted.slice(0, 5).map((x) => ({
-      nombre: x.name,
-      cantidad: x.units
-    }));
-  }, [raw?.rows]);
-  const resumen = resumenQuery.data;
-
-  const pills = useMemo(
-    () => [
-      { key: "week" as const, label: "Semanal" },
-      { key: "month" as const, label: "Mensual" },
-      { key: "year" as const, label: "Anual" }
-    ],
-    []
-  );
+    criticos.sort((a, b) => b.deficit - a.deficit || a.articulo.localeCompare(b.articulo));
+    return {
+      totalReferencias,
+      unidadesEnAlmacen,
+      atencionRequerida: criticos.length,
+      criticos
+    };
+  }, [productosData]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6 bg-slate-50">
       {me?.isSuperadmin && activeEstablishmentName ? (
-        <div className="rounded-3xl border border-slate-200 bg-white p-3 text-sm text-slate-700 shadow-sm">
-          Cargando datos de <span className="font-semibold">{activeEstablishmentName}</span>…
+        <div className="rounded-2xl border border-slate-100 bg-white p-4 text-sm text-slate-700 shadow-sm">
+          Establecimiento activo: <span className="font-semibold">{activeEstablishmentName}</span>
         </div>
       ) : null}
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex gap-2">
-          {pills.map((p) => {
-            const active = range === p.key;
-            return (
-              <button
-                key={p.key}
-                onClick={() => setRange(p.key)}
-                className={[
-                  "min-h-11 rounded-full px-4 text-sm font-semibold",
-                  active ? "bg-black text-white" : "border border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
-                ].join(" ")}
-              >
-                {p.label}
-              </button>
-            );
-          })}
-        </div>
-        <a
-          href="/stock"
-          className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50"
-        >
-          Ver Stock
-        </a>
-      </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-3xl border border-slate-200 bg-white p-3 shadow-sm">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-slate-600">Gráfico</span>
-          <span className="min-h-10 rounded-full bg-black px-4 grid place-items-center text-sm font-semibold text-white">
-            Unidades gastadas
-          </span>
-        </div>
-        <p className="text-xs text-slate-500">
-          Total rango:{" "}
-          <span className="font-mono">
-            {`${Math.round(totals.units)} uds`}
-          </span>
+      {productosQuery.isLoading ? (
+        <p className="text-sm text-slate-600">Cargando stock…</p>
+      ) : productosQuery.error ? (
+        <p className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          {(productosQuery.error as Error).message}
         </p>
-      </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+            <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">Atención Requerida</p>
+                  <p className="mt-1 text-sm text-slate-500">Bajo mínimos o igual al mínimo</p>
+                </div>
+                <span className="text-xl" aria-hidden>
+                  ⚠️
+                </span>
+              </div>
+              <p className="mt-4 text-3xl font-semibold tabular-nums text-red-600">{kpis.atencionRequerida}</p>
+            </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold text-slate-500">Total gastado hoy</p>
-          <p className="mt-1 text-2xl font-extrabold tabular-nums text-slate-900">
-            {resumenQuery.isLoading ? "—" : resumen?.totalGastadoHoy ?? 0}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
-            Coste aprox.: <span className="font-mono">{resumenQuery.isLoading ? "—" : (resumen?.costeHoy ?? 0).toFixed(2)} €</span>
-          </p>
-        </div>
-        <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold text-slate-500">Alertas de stock bajo</p>
-          <p className="mt-1 text-2xl font-extrabold tabular-nums text-slate-900">
-            {resumenQuery.isLoading ? "—" : resumen?.alertasStockBajo ?? 0}
-          </p>
-        </div>
-        <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold text-slate-500">Pedidos pendientes</p>
-          <p className="mt-1 text-2xl font-extrabold tabular-nums text-slate-900">
-            {resumenQuery.isLoading ? "—" : resumen?.pedidosPendientes ?? 0}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">En el rango seleccionado</p>
-        </div>
-      </div>
+            <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">Total Referencias</p>
+                  <p className="mt-1 text-sm text-slate-500">Productos únicos</p>
+                </div>
+                <span className="text-xl" aria-hidden>
+                  📦
+                </span>
+              </div>
+              <p className="mt-4 text-3xl font-semibold tabular-nums text-slate-900">{kpis.totalReferencias}</p>
+            </div>
 
-      <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-        <p className="text-xs font-semibold text-slate-500">Beneficio estimado</p>
-        <p className="mt-1 text-2xl font-extrabold tabular-nums text-slate-900">
-          {resumenQuery.isLoading ? "—" : (resumen?.beneficioEstimado ?? 0).toFixed(2)} €
-        </p>
-        <p className="mt-1 text-xs text-slate-500">Basado en salidas del rango y escandallos (PVP/IVA - coste neto).</p>
-      </div>
-
-      <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold text-slate-900">Top productos (salidas)</p>
-            <p className="text-xs text-slate-600">
-              5 productos más gastados según movimientos tipo “salida” ({metric === "units" ? "unidades" : "€ coste"}).
-            </p>
+            <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">Unidades en Almacén</p>
+                  <p className="mt-1 text-sm text-slate-500">Suma total de stock actual</p>
+                </div>
+                <span className="text-xl" aria-hidden>
+                  📊
+                </span>
+              </div>
+              <p className="mt-4 text-3xl font-semibold tabular-nums text-slate-900">{kpis.unidadesEnAlmacen}</p>
+            </div>
           </div>
-          <Button
-            onClick={() => {
-              void topQuery.refetch();
-              void resumenQuery.refetch();
-            }}
-            className="min-h-11"
-          >
-            Actualizar
-          </Button>
-        </div>
 
-        {topQuery.isLoading ? (
-          <p className="text-sm text-slate-600">Cargando gráfico…</p>
-        ) : topQuery.error ? (
-          <p className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-            {(topQuery.error as Error).message}
-          </p>
-        ) : data.length ? (
-          <div className="h-72 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
-                <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" />
-                <XAxis dataKey="nombre" tick={{ fill: "#0F172A", fontSize: 12 }} interval={0} />
-                <YAxis tick={{ fill: "#64748B", fontSize: 12 }} />
-                <Tooltip
-                  contentStyle={{
-                    borderRadius: 16,
-                    border: "1px solid #E2E8F0",
-                    background: "white"
-                  }}
-                  labelStyle={{ color: "#0F172A", fontWeight: 600 }}
-                />
-                <Bar dataKey="cantidad" fill="#000000" radius={[12, 12, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+            <div className="mb-4 flex flex-col gap-1">
+              <p className="text-base font-semibold text-slate-800">Artículos a Reponer</p>
+              <p className="text-sm text-slate-500">Lista crítica (stock actual ≤ stock mínimo), ordenada por déficit.</p>
+            </div>
+
+            {!kpis.criticos.length ? (
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+                <div className="flex items-start gap-3">
+                  <span className="text-xl" aria-hidden>
+                    ✅
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold text-emerald-900">El stock está saneado.</p>
+                    <p className="mt-0.5 text-sm text-emerald-800">No hay alertas urgentes.</p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-2xl border border-slate-100">
+                <table className="w-full min-w-[860px] border-collapse text-left text-[13px]">
+                  <thead>
+                    <tr className="border-b border-slate-100 bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      <th className="px-4 py-3">Artículo</th>
+                      <th className="px-4 py-3">Categoría</th>
+                      <th className="px-4 py-3 text-right">Stock actual</th>
+                      <th className="px-4 py-3 text-right">Stock mínimo</th>
+                      <th className="px-4 py-3 text-right">Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {kpis.criticos.map((p) => {
+                      const badge =
+                        p.actual <= 0
+                          ? "bg-red-50 text-red-700 ring-1 ring-red-100"
+                          : "bg-amber-50 text-amber-800 ring-1 ring-amber-100";
+                      return (
+                        <tr key={p.id} className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50/50">
+                          <td className="px-4 py-3 font-semibold text-slate-900">{p.articulo}</td>
+                          <td className="px-4 py-3 text-slate-700">{p.categoria ?? "—"}</td>
+                          <td className="px-4 py-3 text-right">
+                            <span className={["inline-flex items-center rounded-full px-2.5 py-1 font-mono text-xs tabular-nums", badge].join(" ")}>
+                              {p.actual}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono text-xs tabular-nums text-slate-700">{p.minimo}</td>
+                          <td className="px-4 py-3 text-right">
+                            <a
+                              href="/admin/pedido-rapido"
+                              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+                            >
+                              Pedir →
+                            </a>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        ) : (
-          <p className="text-sm text-slate-600">Aún no hay salidas en este rango.</p>
-        )}
-      </div>
+        </>
+      )}
     </div>
   );
 }
