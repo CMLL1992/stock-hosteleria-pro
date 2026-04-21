@@ -25,6 +25,31 @@ type FilaVista = CsvRow & {
   duplicadaEnCsv?: boolean;
 };
 
+type DbKeyColumn = "articulo" | "nombre";
+type ProductoExistente = { id: string; qr_code_uid: string | null };
+
+function supabaseErrToString(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "object" && e) {
+    const anyErr = e as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown };
+    const msg = typeof anyErr.message === "string" ? anyErr.message : "";
+    const details = typeof anyErr.details === "string" ? anyErr.details : "";
+    const hint = typeof anyErr.hint === "string" ? anyErr.hint : "";
+    const code = typeof anyErr.code === "string" ? anyErr.code : "";
+    return [msg, details, hint, code].filter(Boolean).join(" · ") || "Error desconocido";
+  }
+  return String(e);
+}
+
+function looksLikeMissingColumn(err: unknown, column: string): boolean {
+  const msg =
+    (typeof err === "object" && err && "message" in err ? String((err as { message?: unknown }).message ?? "") : "")
+      .toLowerCase()
+      .trim();
+  const c = column.toLowerCase();
+  return msg.includes(c) && (msg.includes("could not find") || msg.includes("does not exist") || msg.includes("column"));
+}
+
 function splitSemiCsvLine(line: string): string[] {
   // CSV simple con ; (el archivo adjunto trae muchas columnas vacías al final: ;;;;)
   // Respetamos comillas por si las hubiera.
@@ -144,9 +169,8 @@ export default function ImportarCsvPage() {
   const [csvText, setCsvText] = useState("nombre;tipo;unidad;stock_actual;stock_minimo\n");
   const [parseErr, setParseErr] = useState<string | null>(null);
   const [rowsParsed, setRowsParsed] = useState<CsvRow[]>([]);
-  const [productosPorClave, setProductosPorClave] = useState<Map<string, { id: string; qr_code_uid: string | null }>>(
-    new Map()
-  );
+  const [dbKeyColumn, setDbKeyColumn] = useState<DbKeyColumn>("articulo");
+  const [productosPorClave, setProductosPorClave] = useState<Map<string, ProductoExistente>>(new Map());
   const [cargandoMapa, setCargandoMapa] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -194,29 +218,41 @@ export default function ImportarCsvPage() {
     if (!activeEstablishmentId) return;
     setCargandoMapa(true);
     try {
-      // Regla estricta: en BD la columna es ARTICULO.
-      const { data, error } = await supabase()
+      // Auto-detección de columna clave en BD: articulo (preferida) o nombre (fallback).
+      const tryArticulo = await supabase()
         .from("productos")
         .select("id,articulo,qr_code_uid")
         .eq("establecimiento_id", activeEstablishmentId);
-      if (error) throw error;
 
-      const m = new Map<string, { id: string; qr_code_uid: string | null }>();
-      for (const p of (data as unknown as Array<{ id: string; articulo: string; qr_code_uid: string | null }> | null) ?? []) {
-        const key = (p.articulo ?? "").trim();
+      let keyCol: DbKeyColumn = "articulo";
+      let data:
+        | Array<{ id: string; articulo?: string; nombre?: string; qr_code_uid: string | null }>
+        | null = (tryArticulo.data as unknown as Array<{ id: string; articulo?: string; qr_code_uid: string | null }> | null) ?? null;
+      let error = tryArticulo.error;
+
+      if (error && looksLikeMissingColumn(error, "articulo")) {
+        const tryNombre = await supabase()
+          .from("productos")
+          .select("id,nombre,qr_code_uid")
+          .eq("establecimiento_id", activeEstablishmentId);
+        keyCol = "nombre";
+        data = (tryNombre.data as unknown as Array<{ id: string; nombre?: string; qr_code_uid: string | null }> | null) ?? null;
+        error = tryNombre.error;
+      }
+
+      if (error) throw error;
+      setDbKeyColumn(keyCol);
+
+      const m = new Map<string, ProductoExistente>();
+      for (const p of data ?? []) {
+        const key = ((keyCol === "articulo" ? p.articulo : p.nombre) ?? "").trim();
         if (!key) continue;
         m.set(normalizeNombreClave(key), { id: p.id, qr_code_uid: p.qr_code_uid ?? null });
       }
       setProductosPorClave(m);
     } catch (e) {
       setProductosPorClave(new Map());
-      setErr(
-        e instanceof Error
-          ? e.message
-          : typeof e === "object" && e && "message" in e
-            ? String((e as { message?: unknown }).message)
-            : String(e)
-      );
+      setErr(supabaseErrToString(e));
     } finally {
       setCargandoMapa(false);
     }
@@ -288,7 +324,7 @@ export default function ImportarCsvPage() {
 
   function buildPayloadBase(r: CsvRow) {
     return {
-      articulo: r.nombre.trim(),
+      [dbKeyColumn]: r.nombre.trim(),
       // Compatibilidad con plantilla: "tipo" del CSV se guarda en "categoria" (o familia/categoria según esquema).
       categoria: r.tipo.trim() ? r.tipo.trim() : null,
       unidad: r.unidad.trim() ? r.unidad.trim().toLowerCase() : null,
@@ -320,7 +356,7 @@ export default function ImportarCsvPage() {
 
       const { error } = await supabase()
         .from("productos")
-        .upsert(payload, { onConflict: "articulo" });
+        .upsert(payload, { onConflict: dbKeyColumn });
       if (error) throw error;
 
       let creados = 0;
@@ -347,7 +383,7 @@ export default function ImportarCsvPage() {
         // eslint-disable-next-line no-console
         console.error("Supabase error.hint:", anyErr.hint);
       }
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(supabaseErrToString(e));
     } finally {
       setBusy(false);
     }
