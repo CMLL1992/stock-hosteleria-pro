@@ -101,28 +101,28 @@ export default function NuevoProductoPage() {
   }
 
   return (
-    <main className="mx-auto max-w-md p-4">
+    <main className="mx-auto max-w-md bg-slate-50 p-4 pb-28 text-slate-900">
       <h1 className="mb-3 text-xl font-semibold">Crear producto</h1>
       {err ? (
-        <p className="mb-3 rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
+        <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
           {err}
         </p>
       ) : null}
 
-      <div className="space-y-3 rounded-2xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="space-y-1">
-          <label className="text-sm font-medium">Nombre</label>
+          <label className="text-sm font-semibold text-slate-900">Nombre</label>
           <input
-            className="min-h-12 w-full rounded-xl border border-zinc-200 bg-white px-3 text-base dark:border-zinc-800 dark:bg-zinc-950"
+            className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-black/10"
             value={nombre}
             onChange={(e) => setNombre(e.currentTarget.value)}
           />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
-            <label className="text-sm font-medium">Tipo</label>
+            <label className="text-sm font-semibold text-slate-900">Tipo</label>
             <select
-              className="min-h-12 w-full rounded-xl border border-zinc-200 bg-white px-3 text-base dark:border-zinc-800 dark:bg-zinc-950"
+              className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
               value={tipo}
               onChange={(e) => setTipo(e.currentTarget.value as (typeof TIPOS)[number])}
             >
@@ -134,9 +134,9 @@ export default function NuevoProductoPage() {
             </select>
           </div>
           <div className="space-y-1">
-            <label className="text-sm font-medium">Unidad</label>
+            <label className="text-sm font-semibold text-slate-900">Unidad</label>
             <select
-              className="min-h-12 w-full rounded-xl border border-zinc-200 bg-white px-3 text-base dark:border-zinc-800 dark:bg-zinc-950"
+              className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
               value={unidad}
               onChange={(e) => setUnidad(e.currentTarget.value as (typeof UNIDADES)[number])}
             >
@@ -149,9 +149,9 @@ export default function NuevoProductoPage() {
           </div>
         </div>
         <div className="space-y-1">
-          <label className="text-sm font-medium">Stock mínimo</label>
+          <label className="text-sm font-semibold text-slate-900">Stock mínimo</label>
           <input
-            className="min-h-12 w-full rounded-xl border border-zinc-200 bg-white px-3 text-base dark:border-zinc-800 dark:bg-zinc-950"
+            className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
             type="number"
             min={0}
             value={stockMinimo}
@@ -159,21 +159,21 @@ export default function NuevoProductoPage() {
           />
         </div>
         <div className="space-y-1">
-          <label className="text-sm font-medium">Categoría (opcional)</label>
+          <label className="text-sm font-semibold text-slate-900">Categoría (opcional)</label>
           <input
-            className="min-h-12 w-full rounded-xl border border-zinc-200 bg-white px-3 text-base dark:border-zinc-800 dark:bg-zinc-950"
+            className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-black/10"
             placeholder="Ej: cervezas, licores…"
             value={categoria}
             onChange={(e) => setCategoria(e.currentTarget.value)}
           />
-          <p className="text-xs text-zinc-600 dark:text-zinc-300">
+          <p className="text-xs text-slate-600">
             Si lo dejas vacío, el filtro usará el campo <span className="font-mono">tipo</span>.
           </p>
         </div>
         <div className="space-y-1">
-          <label className="text-sm font-medium">Proveedor</label>
+          <label className="text-sm font-semibold text-slate-900">Proveedor</label>
           <select
-            className="min-h-12 w-full rounded-xl border border-zinc-200 bg-white px-3 text-base dark:border-zinc-800 dark:bg-zinc-950"
+            className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
             value={proveedorId}
             onChange={(e) => setProveedorId(e.currentTarget.value)}
           >

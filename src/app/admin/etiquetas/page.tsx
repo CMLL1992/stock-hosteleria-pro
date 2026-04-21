@@ -70,19 +70,19 @@ export default function AdminEtiquetasPage() {
 
   const origin = useMemo(() => getBaseUrl(), []);
 
-  if (loading) return <main className="p-4 text-sm text-zinc-600 dark:text-zinc-300">Cargando…</main>;
+  if (loading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
 
   if (role !== "admin") {
     return (
       <main className="mx-auto max-w-md p-4">
         <h1 className="text-xl font-semibold">Etiquetas (Admin)</h1>
-        <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">Acceso denegado.</p>
+        <p className="mt-2 text-sm text-slate-600">Acceso denegado.</p>
       </main>
     );
   }
 
   return (
-    <main className="mx-auto max-w-3xl p-4">
+    <main className="mx-auto max-w-3xl bg-slate-50 p-4 pb-28 text-slate-900">
       <style>{`
         @media print {
           .no-print { display: none !important; }
@@ -93,7 +93,7 @@ export default function AdminEtiquetasPage() {
       <div className="no-print mb-4 flex items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">Generación de etiquetas</h1>
-          <p className="text-sm text-zinc-600 dark:text-zinc-300">
+          <p className="text-sm text-slate-600">
             Imprime desde el navegador. Cada QR apunta a la ficha del producto.
           </p>
         </div>
@@ -101,7 +101,7 @@ export default function AdminEtiquetasPage() {
       </div>
 
       {err ? (
-        <p className="no-print mb-3 rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
+        <p className="no-print mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
           {err}
         </p>
       ) : null}
@@ -110,12 +110,12 @@ export default function AdminEtiquetasPage() {
         {items.map((p) => {
           const url = `${origin}/p/${encodeURIComponent(p.id)}`;
           return (
-            <div key={p.id} className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
+            <div key={p.id} className="rounded-3xl border border-slate-200 bg-white p-3 shadow-sm">
               <div className="flex items-center justify-center">
                     <QRCodeSVG value={url} width={160} height={160} includeMargin />
               </div>
-              <p className="mt-2 line-clamp-2 text-sm font-medium">{p.nombre}</p>
-              <p className="mt-1 break-all text-[10px] text-zinc-500">{p.id}</p>
+              <p className="mt-2 line-clamp-2 text-sm font-semibold text-slate-900">{p.nombre}</p>
+              <p className="mt-1 break-all text-[10px] text-slate-500">{p.id}</p>
             </div>
           );
         })}

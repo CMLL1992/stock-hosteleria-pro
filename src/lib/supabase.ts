@@ -18,11 +18,30 @@ export function supabase(): SupabaseClient {
     }
   }
 
+  // iOS/Safari/PWA: preferimos storage explícito para persistencia.
+  // Si localStorage no está disponible (modo privado extremo), caemos a memoria.
+  const safeStorage =
+    typeof window !== "undefined"
+      ? (() => {
+          try {
+            const s = window.localStorage;
+            const k = "__ops_ls_test__";
+            s.setItem(k, "1");
+            s.removeItem(k);
+            return s;
+          } catch {
+            return undefined;
+          }
+        })()
+      : undefined;
+
   _client = createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: true
+      detectSessionInUrl: true,
+      storage: safeStorage,
+      storageKey: "ops-auth"
     }
   });
   return _client;
