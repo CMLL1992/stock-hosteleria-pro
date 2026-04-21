@@ -131,7 +131,7 @@ export function AdminHomeClient() {
   return (
     <div className="min-h-dvh">
       <MobileHeader title="Admin" />
-      <main className="mx-auto max-w-3xl p-4 pb-28">{content}</main>
+      <main className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto p-4 pb-28">{content}</main>
     </div>
   );
 }
