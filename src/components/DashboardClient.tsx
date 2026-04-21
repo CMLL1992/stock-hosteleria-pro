@@ -26,13 +26,42 @@ export function DashboardClient() {
     queryKey: ["dashboard", "productos", establecimientoId],
     enabled: !!establecimientoId,
     queryFn: async () => {
-      const { data, error } = await supabase()
+      // Compatibilidad multi-entorno: algunas BDs usan `nombre` en vez de `articulo`.
+      const withArticulo = await supabase()
         .from("productos")
         .select("id,articulo,categoria,stock_actual,stock_minimo")
         .eq("establecimiento_id", establecimientoId as string)
         .order("articulo", { ascending: true });
-      if (error) throw error;
-      return (data as unknown as ProductoStock[]) ?? [];
+
+      if (!withArticulo.error) {
+        return (withArticulo.data as unknown as ProductoStock[]) ?? [];
+      }
+
+      const msg = (withArticulo.error as { message?: string }).message?.toLowerCase?.() ?? "";
+      const looksLikeMissingArticulo =
+        msg.includes("articulo") && (msg.includes("does not exist") || msg.includes("could not find") || msg.includes("column"));
+      if (!looksLikeMissingArticulo) throw withArticulo.error;
+
+      const withNombre = await supabase()
+        .from("productos")
+        .select("id,nombre,categoria,stock_actual,stock_minimo")
+        .eq("establecimiento_id", establecimientoId as string)
+        .order("nombre", { ascending: true });
+      if (withNombre.error) throw withNombre.error;
+
+      return ((withNombre.data ?? []) as unknown as Array<{
+        id: string;
+        nombre: string;
+        categoria: string | null;
+        stock_actual: number;
+        stock_minimo: number | null;
+      }>).map((p) => ({
+        id: p.id,
+        articulo: p.nombre,
+        categoria: p.categoria,
+        stock_actual: p.stock_actual,
+        stock_minimo: p.stock_minimo
+      })) as ProductoStock[];
     },
     staleTime: 15_000,
     retry: 1
