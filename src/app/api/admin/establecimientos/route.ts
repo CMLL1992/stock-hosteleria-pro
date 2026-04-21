@@ -1,8 +1,46 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { assertSuperadminOrThrow } from "@/lib/admin/assertSuperadmin";
 import type { EstablecimientoRow } from "@/types/ops";
 
 type Body = { nombre?: string; plan_suscripcion?: string; logo_url?: string | null };
+type DeleteBody = { id?: string };
+
+/**
+ * Orden: movimientos → productos → proveedores → usuarios (public) → auth por usuario → establecimiento.
+ * FKs en public suelen ser restrict al establecimiento; evitamos depender de ON DELETE CASCADE.
+ */
+async function deleteEstablecimientoCascade(
+  service: SupabaseClient,
+  establecimientoId: string
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const m = await service.from("movimientos").delete().eq("establecimiento_id", establecimientoId);
+  if (m.error) return { ok: false, message: m.error.message };
+
+  const p = await service.from("productos").delete().eq("establecimiento_id", establecimientoId);
+  if (p.error) return { ok: false, message: p.error.message };
+
+  const pr = await service.from("proveedores").delete().eq("establecimiento_id", establecimientoId);
+  if (pr.error) return { ok: false, message: pr.error.message };
+
+  const { data: uRows, error: uErr } = await service
+    .from("usuarios")
+    .select("id")
+    .eq("establecimiento_id", establecimientoId);
+  if (uErr) return { ok: false, message: uErr.message };
+  const userIds = (uRows as { id: string }[] | null)?.map((r) => r.id) ?? [];
+
+  const du = await service.from("usuarios").delete().eq("establecimiento_id", establecimientoId);
+  if (du.error) return { ok: false, message: du.error.message };
+
+  for (const uid of userIds) {
+    await service.auth.admin.deleteUser(uid);
+  }
+
+  const e = await service.from("establecimientos").delete().eq("id", establecimientoId);
+  if (e.error) return { ok: false, message: e.error.message };
+  return { ok: true };
+}
 
 /**
  * GET: lista todos los establecimientos (service role, bypass RLS).
@@ -75,6 +113,32 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ ok: true, id: (attempt.data as { id: string }).id });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const gate = await assertSuperadminOrThrow(req);
+    if (!gate.ok) return gate.response;
+
+    const { id: establecimientoId } = (await req.json()) as DeleteBody;
+    if (!establecimientoId) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+
+    if (gate.establecimientoId && establecimientoId === gate.establecimientoId) {
+      return NextResponse.json(
+        { error: "No puedes eliminar el establecimiento con el que estás vinculado" },
+        { status: 400 }
+      );
+    }
+
+    const { service } = gate;
+    const res = await deleteEstablecimientoCascade(service, establecimientoId);
+    if (!res.ok) {
+      return NextResponse.json({ error: res.message }, { status: 400 });
+    }
+    return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }

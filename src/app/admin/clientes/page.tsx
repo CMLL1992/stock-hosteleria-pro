@@ -4,6 +4,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { MobileHeader } from "@/components/MobileHeader";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
+import { deleteAdminEstablecimiento } from "@/lib/adminApi";
 import { fetchAdminEstablecimientosList } from "@/lib/fetchAdminEstablecimientos";
 import { supabase } from "@/lib/supabase";
 import { useMyRole } from "@/lib/useMyRole";
@@ -26,6 +28,7 @@ export default function AdminClientesPage() {
   const [userPassword, setUserPassword] = useState("");
   const [userRol, setUserRol] = useState<"admin" | "staff">("staff");
   const [establecimientoId, setEstablecimientoId] = useState<string>("");
+  const [confirmDeleteEst, setConfirmDeleteEst] = useState<EstRow | null>(null);
 
   const allowed = !!me?.isSuperadmin && me.profileReady;
 
@@ -37,7 +40,7 @@ export default function AdminClientesPage() {
       plan_suscripcion: x.plan_suscripcion ?? null
     }));
     setEsts(rows);
-    if (!establecimientoId && rows[0]?.id) setEstablecimientoId(rows[0].id);
+    setEstablecimientoId((prev) => (prev && rows.some((r) => r.id === prev) ? prev : rows[0]?.id ?? ""));
   }
 
   useEffect(() => {
@@ -74,6 +77,25 @@ export default function AdminClientesPage() {
       setLogoUrl("");
       await refreshEts();
       void queryClient.invalidateQueries({ queryKey: ["establecimientos"] });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function ejecutarBorrarEstablecimiento() {
+    if (!confirmDeleteEst) return;
+    setBusy(true);
+    setErr(null);
+    setOk(null);
+    try {
+      await deleteAdminEstablecimiento(confirmDeleteEst.id);
+      setOk("Establecimiento y datos asociados eliminados.");
+      setConfirmDeleteEst(null);
+      await refreshEts();
+      void queryClient.invalidateQueries({ queryKey: ["establecimientos"] });
+      void queryClient.invalidateQueries({ queryKey: ["myRole"] });
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -142,6 +164,34 @@ export default function AdminClientesPage() {
 
         {err ? <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{err}</p> : null}
         {ok ? <p className="mb-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{ok}</p> : null}
+
+        <div className="mb-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-sm font-semibold text-slate-900">Establecimientos</p>
+          <ul className="mt-3 divide-y divide-slate-100">
+            {ests.map((e) => (
+              <li
+                key={e.id}
+                className="flex flex-col gap-2 py-3 first:pt-0 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-slate-900">{e.nombre}</p>
+                  {e.plan_suscripcion ? (
+                    <p className="text-xs text-slate-500">Plan: {e.plan_suscripcion}</p>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  className="min-h-10 rounded-2xl border border-red-200 bg-red-50 px-4 text-sm font-semibold text-red-700 disabled:opacity-50"
+                  disabled={busy}
+                  onClick={() => setConfirmDeleteEst(e)}
+                >
+                  Eliminar establecimiento
+                </button>
+              </li>
+            ))}
+          </ul>
+          {ests.length === 0 ? <p className="text-sm text-slate-500">No hay establecimientos todavía.</p> : null}
+        </div>
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -240,6 +290,19 @@ export default function AdminClientesPage() {
           </div>
         </div>
       </main>
+
+      <ConfirmModal
+        open={!!confirmDeleteEst}
+        title="Eliminar establecimiento"
+        message={
+          "⚠️ ATENCIÓN: Se borrará el establecimiento y TODOS sus datos asociados (usuarios, productos, movimientos, proveedores). ¿Deseas continuar?"
+        }
+        confirmLabel="Sí, eliminar todo"
+        danger
+        busy={busy}
+        onCancel={() => setConfirmDeleteEst(null)}
+        onConfirm={ejecutarBorrarEstablecimiento}
+      />
     </div>
   );
 }

@@ -1,17 +1,24 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { MobileHeader } from "@/components/MobileHeader";
+import { deleteAdminUser, fetchAdminUsersList } from "@/lib/adminApi";
 import { fetchAdminEstablecimientosList } from "@/lib/fetchAdminEstablecimientos";
 import { supabase } from "@/lib/supabase";
 import { useMyRole } from "@/lib/useMyRole";
+import type { UsuarioListItem } from "@/types/ops";
 
 type EstRow = { id: string; nombre: string; plan_suscripcion?: string | null };
 
 export default function AdminUsersPage() {
+  const queryClient = useQueryClient();
   const { data: me, isLoading } = useMyRole();
   const [ests, setEsts] = useState<EstRow[]>([]);
+  const [usuarios, setUsuarios] = useState<UsuarioListItem[]>([]);
+  const [myId, setMyId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -21,27 +28,34 @@ export default function AdminUsersPage() {
   const [rol, setRol] = useState<"admin" | "staff">("staff");
   const [establecimientoId, setEstablecimientoId] = useState<string>("");
 
+  const [confirmDeleteUser, setConfirmDeleteUser] = useState<UsuarioListItem | null>(null);
+
   const allowed = !!me?.isSuperadmin && me.profileReady;
+
+  const estNombreById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const e of ests) m.set(e.id, e.nombre);
+    return m;
+  }, [ests]);
+
+  const loadAll = useCallback(async () => {
+    const s = await supabase().auth.getSession();
+    setMyId(s.data.session?.user?.id ?? null);
+    const list = await fetchAdminEstablecimientosList();
+    const rows: EstRow[] = list.map((x) => ({
+      id: x.id,
+      nombre: x.nombre,
+      plan_suscripcion: x.plan_suscripcion ?? null
+    }));
+    setEsts(rows);
+    setEstablecimientoId((prev) => (prev && rows.some((r) => r.id === prev) ? prev : rows[0]?.id ?? ""));
+    setUsuarios(await fetchAdminUsersList());
+  }, []);
 
   useEffect(() => {
     if (!allowed) return;
-    let cancelled = false;
-    (async () => {
-      const list = await fetchAdminEstablecimientosList();
-      if (cancelled) return;
-      const rows: EstRow[] = list.map((x) => ({
-        id: x.id,
-        nombre: x.nombre,
-        plan_suscripcion: x.plan_suscripcion ?? null
-      }));
-      setEsts(rows);
-      if (!establecimientoId && rows[0]?.id) setEstablecimientoId(rows[0].id);
-    })().catch((e) => setErr(e instanceof Error ? e.message : String(e)));
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allowed]);
+    loadAll().catch((e) => setErr(e instanceof Error ? e.message : String(e)));
+  }, [allowed, loadAll]);
 
   const canSubmit = useMemo(() => {
     return !!email.trim() && password.length >= 6 && !!establecimientoId && !busy;
@@ -67,6 +81,27 @@ export default function AdminUsersPage() {
       setEmail("");
       setPassword("");
       setRol("staff");
+      await loadAll();
+      void queryClient.invalidateQueries({ queryKey: ["myRole"] });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function ejecutarBorrarUsuario() {
+    if (!confirmDeleteUser) return;
+    setBusy(true);
+    setErr(null);
+    setOk(null);
+    try {
+      await deleteAdminUser(confirmDeleteUser.id);
+      setOk("Usuario eliminado.");
+      setConfirmDeleteUser(null);
+      await loadAll();
+      void queryClient.invalidateQueries({ queryKey: ["establecimientos"] });
+      void queryClient.invalidateQueries({ queryKey: ["myRole"] });
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -104,8 +139,41 @@ export default function AdminUsersPage() {
         {err ? <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{err}</p> : null}
         {ok ? <p className="mb-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{ok}</p> : null}
 
+        <div className="mb-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-sm font-semibold text-slate-900">Usuarios</p>
+          <p className="mt-1 text-xs text-slate-500">Mismo orden que en base de datos (email).</p>
+          <ul className="mt-3 divide-y divide-slate-100">
+            {usuarios.map((u) => {
+              const isSelf = myId !== null && u.id === myId;
+              return (
+                <li key={u.id} className="flex flex-col gap-2 py-3 first:pt-0 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-slate-900">{u.email ?? u.id}</p>
+                    <p className="text-xs text-slate-500">
+                      {u.rol} · {estNombreById.get(u.establecimiento_id) ?? u.establecimiento_id.slice(0, 8)}…
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="min-h-10 rounded-2xl border border-red-200 bg-red-50 px-4 text-sm font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={isSelf || busy}
+                    onClick={async () => {
+                      if (isSelf) return;
+                      setConfirmDeleteUser(u);
+                    }}
+                  >
+                    {isSelf ? "Tu cuenta" : "Borrar"}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          {usuarios.length === 0 ? <p className="text-sm text-slate-500">No hay usuarios.</p> : null}
+        </div>
+
         <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <p className="text-sm font-semibold text-slate-900">Crear usuario</p>
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
             <div className="space-y-1">
               <label className="text-sm font-semibold text-slate-900">Email</label>
               <input
@@ -161,7 +229,17 @@ export default function AdminUsersPage() {
           </div>
         </div>
       </main>
+
+      <ConfirmModal
+        open={!!confirmDeleteUser}
+        title="Eliminar usuario"
+        message="¿Estás seguro de que quieres eliminar a este usuario?"
+        confirmLabel="Eliminar"
+        danger
+        busy={busy}
+        onCancel={() => setConfirmDeleteUser(null)}
+        onConfirm={ejecutarBorrarUsuario}
+      />
     </div>
   );
 }
-

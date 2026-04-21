@@ -12,3 +12,11 @@ export type EstablecimientoRow = {
   logo_url?: string | null;
   created_at?: string;
 };
+
+/** Listado de usuarios (panel superadmin, API GET). */
+export type UsuarioListItem = {
+  id: string;
+  email: string | null;
+  rol: string;
+  establecimiento_id: string;
+};
