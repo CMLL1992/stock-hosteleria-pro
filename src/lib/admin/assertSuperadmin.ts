@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
+import { adminError } from "@/lib/admin/apiResponse";
 import type { UsuarioRol } from "@/types/ops";
 
 const SUPERADMIN_EMAIL = "ximomitja1992@hotmail.com".toLowerCase();
@@ -40,19 +41,13 @@ type Fail = { ok: false; response: NextResponse };
 export async function assertSuperadminOrThrow(req: Request): Promise<Ok | Fail> {
   const { supabaseUrl, anonKey, serviceKey, missing } = getSupabaseServerEnv();
   if (missing.length) {
-    return {
-      ok: false,
-      response: NextResponse.json(
-        { error: `Missing Supabase env: ${missing.join(", ")}` },
-        { status: 500 }
-      )
-    };
+    return { ok: false, response: adminError(`Missing Supabase env: ${missing.join(", ")}`, 500) };
   }
 
   const auth = req.headers.get("authorization") ?? "";
   const token = auth.startsWith("Bearer ") ? auth.slice("Bearer ".length) : "";
   if (!token) {
-    return { ok: false, response: NextResponse.json({ error: "Missing auth token" }, { status: 401 }) };
+    return { ok: false, response: adminError("Missing auth token", 401) };
   }
 
   const authUserClient = createClient(supabaseUrl, anonKey, {
@@ -62,7 +57,7 @@ export async function assertSuperadminOrThrow(req: Request): Promise<Ok | Fail> 
 
   const { data: userData, error: userErr } = await authUserClient.auth.getUser();
   if (userErr || !userData.user) {
-    return { ok: false, response: NextResponse.json({ error: "Not authenticated" }, { status: 401 }) };
+    return { ok: false, response: adminError("Not authenticated", 401) };
   }
 
   const userId = userData.user.id;
@@ -79,7 +74,7 @@ export async function assertSuperadminOrThrow(req: Request): Promise<Ok | Fail> 
     .maybeSingle();
 
   if (meErr) {
-    return { ok: false, response: NextResponse.json({ error: meErr.message }, { status: 500 }) };
+    return { ok: false, response: adminError(meErr.message, 500) };
   }
 
   const rawRol = String(meRow?.rol ?? "")
@@ -91,7 +86,7 @@ export async function assertSuperadminOrThrow(req: Request): Promise<Ok | Fail> 
 
   const isSuperadmin = rawRol === "superadmin" || email === SUPERADMIN_EMAIL;
   if (!isSuperadmin) {
-    return { ok: false, response: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
+    return { ok: false, response: adminError("Forbidden", 403) };
   }
 
   return { ok: true, userId, email, service, callerRol, establecimientoId };

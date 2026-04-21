@@ -63,7 +63,7 @@ async function createMovimientoOnline(input: {
 }
 
 export function ProductByUidClient({ uid }: { uid: string }) {
-  const { activeEstablishmentId } = useActiveEstablishment();
+  const { activeEstablishmentId, meLoading, isSuperadmin, establishmentsLoading } = useActiveEstablishment();
   const [producto, setProducto] = useState<Producto | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -76,29 +76,55 @@ export function ProductByUidClient({ uid }: { uid: string }) {
   const [pedidoOpen, setPedidoOpen] = useState(false);
   const [pedidoCantidad, setPedidoCantidad] = useState<number>(1);
 
-  useMemo(() => {
+  useEffect(() => {
     let cancelled = false;
+
+    if (meLoading) {
+      setLoading(true);
+      setErr(null);
+      return;
+    }
+
+    if (isSuperadmin && establishmentsLoading) {
+      setLoading(true);
+      setErr(null);
+      return;
+    }
+
+    if (!activeEstablishmentId) {
+      setLoading(false);
+      setProducto(null);
+      setErr("No hay establecimiento activo. Selecciona un establecimiento o revisa el perfil.");
+      return;
+    }
+
     setLoading(true);
     setErr(null);
-    fetchProducto(uid, activeEstablishmentId ?? null)
+    setProducto(null);
+    setMovOpen(false);
+
+    fetchProducto(uid, activeEstablishmentId)
       .then((p) => {
         if (cancelled) return;
         setProducto(p);
-        // Sensación "app": al abrir ficha para stock, mostramos el drawer automáticamente.
         if (p) setMovOpen(true);
+        else setMovOpen(false);
       })
       .catch((e) => {
         if (cancelled) return;
         setErr(e instanceof Error ? e.message : String(e));
+        setProducto(null);
+        setMovOpen(false);
       })
       .finally(() => {
         if (cancelled) return;
         setLoading(false);
       });
+
     return () => {
       cancelled = true;
     };
-  }, [activeEstablishmentId, uid]);
+  }, [activeEstablishmentId, establishmentsLoading, isSuperadmin, meLoading, uid]);
 
   useEffect(() => {
     if (loading) return;
