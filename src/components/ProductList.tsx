@@ -16,7 +16,8 @@ type Producto = {
   categoria: string | null;
 };
 
-async function fetchProductos(): Promise<Producto[]> {
+async function fetchProductos(establecimientoId: string | null): Promise<Producto[]> {
+  if (!establecimientoId) return [];
   // Si la BD todavía no tiene las columnas tipo/unidad (schema cache), esta query puede fallar.
   // Hacemos fallback a una selección mínima para no "vaciar" la lista de stock.
   const baseSelect = "id,nombre,stock_actual,stock_minimo,qr_code_uid";
@@ -25,6 +26,7 @@ async function fetchProductos(): Promise<Producto[]> {
   const { data, error } = await supabase()
     .from("productos")
     .select(extendedSelect)
+    .eq("establecimiento_id", establecimientoId)
     .order("nombre", { ascending: true });
 
   if (!error) return (data as unknown as Producto[]) ?? [];
@@ -41,6 +43,7 @@ async function fetchProductos(): Promise<Producto[]> {
   const fallback = await supabase()
     .from("productos")
     .select(baseSelect)
+    .eq("establecimiento_id", establecimientoId)
     .order("nombre", { ascending: true });
   if (fallback.error) throw fallback.error;
   return ((fallback.data ?? []) as unknown as Array<Omit<Producto, "tipo" | "unidad">>).map((p) => ({
@@ -84,15 +87,17 @@ function productTabKey(p: Producto): string {
 }
 
 export function ProductList() {
+  const { data: my } = useMyRole();
+  const establecimientoId = my?.establecimientoId ?? null;
+
   const { data, isLoading, error } = useQuery({
-    queryKey: ["productos"],
-    queryFn: fetchProductos,
+    queryKey: ["productos", establecimientoId],
+    queryFn: () => fetchProductos(establecimientoId),
     refetchOnMount: "always",
     refetchOnReconnect: true,
     refetchInterval: 4000
   });
 
-  const { data: my } = useMyRole();
   const [tab, setTab] = useState<string>("todos");
 
   const filtered = useMemo(() => {
@@ -101,6 +106,7 @@ export function ProductList() {
     return data.filter((p) => productTabKey(p) === tab);
   }, [data, tab]);
 
+  if (my?.role === null && !my?.profileReady) return <p className="text-sm text-slate-600">Cargando perfil…</p>;
   if (isLoading) return <p className="text-sm text-slate-600">Cargando stock…</p>;
   if (error) {
     return (

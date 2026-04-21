@@ -13,8 +13,7 @@ function parseAdminEmails(raw: string | undefined): string[] {
 export async function ensureUserRow(user: User) {
   const id = user.id;
   const email = user.email ?? null;
-  const adminByEmail =
-    !!email && parseAdminEmails(process.env.NEXT_PUBLIC_ADMIN_EMAILS).includes(email.toLowerCase());
+  const adminByEmail = !!email && parseAdminEmails(process.env.NEXT_PUBLIC_ADMIN_EMAILS).includes(email.toLowerCase());
 
   // 1) Si existe, no hacemos nada.
   const { data: existing, error: selectError } = await supabase()
@@ -25,23 +24,10 @@ export async function ensureUserRow(user: User) {
   if (selectError) throw selectError;
   if (existing?.id) return;
 
-  // 2) Si no existe, insertamos con rol por defecto (staff).
-  // Requiere la policy "usuarios_insert_own".
-  const insertPayload = adminByEmail ? ({ id, email, rol: "admin" } as const) : ({ id, email } as const);
-  const { error: insertError } = await supabase().from("usuarios").insert(insertPayload);
-  if (insertError) {
-    // Fallback: si RLS no permite setear `rol`, insertamos sin rol.
-    if (adminByEmail) {
-      const { error: fallbackErr } = await supabase().from("usuarios").insert({ id, email });
-      if (fallbackErr) throw fallbackErr;
-    } else {
-      throw insertError;
-    }
-  }
-
-  // Best-effort: si es admin por email e insertamos sin rol, intentamos promover.
-  if (adminByEmail) {
-    await supabase().from("usuarios").update({ rol: "admin" }).eq("id", id);
-  }
+  // SaaS: no auto-provisionamos usuarios. Un superadmin asigna el establecimiento y rol.
+  // Si no hay fila en `usuarios`, la cuenta se considera "no provisionada" (acceso restringido).
+  // Mantener el comportamiento best-effort solo para whitelists antiguas (adminByEmail) si existiese la policy,
+  // pero por defecto no hacemos inserts aquí para evitar cuentas huérfanas sin establecimiento_id.
+  if (adminByEmail) return;
 }
 

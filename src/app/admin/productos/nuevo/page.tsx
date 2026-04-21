@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import type { AppRole } from "@/lib/session";
 import { fetchMyRole } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
 
@@ -15,7 +16,7 @@ function newUid() {
 }
 
 export default function NuevoProductoPage() {
-  const [role, setRole] = useState<"admin" | "staff" | null>(null);
+  const [role, setRole] = useState<AppRole | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
@@ -49,7 +50,7 @@ export default function NuevoProductoPage() {
   }, []);
 
   useEffect(() => {
-    if (role !== "admin") return;
+    if (role !== "admin" && role !== "superadmin") return;
     let cancelled = false;
     (async () => {
       try {
@@ -91,7 +92,7 @@ export default function NuevoProductoPage() {
 
   if (loading) return <main className="p-4 text-sm text-zinc-600 dark:text-zinc-300">Cargando…</main>;
 
-  if (role !== "admin") {
+  if (role !== "admin" && role !== "superadmin") {
     return (
       <main className="mx-auto max-w-md p-4">
         <h1 className="text-xl font-semibold">Crear producto (Admin)</h1>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { AppRole } from "@/lib/session";
 import { fetchMyRole } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
 
@@ -11,7 +12,7 @@ type Proveedor = {
 };
 
 export default function ProveedoresPage() {
-  const [role, setRole] = useState<"admin" | "staff" | null>(null);
+  const [role, setRole] = useState<AppRole | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [items, setItems] = useState<Proveedor[]>([]);
@@ -39,7 +40,7 @@ export default function ProveedoresPage() {
   }, []);
 
   useEffect(() => {
-    if (role !== "admin") return;
+    if (role !== "admin" && role !== "superadmin") return;
     let cancelled = false;
     (async () => {
       try {
@@ -61,7 +62,7 @@ export default function ProveedoresPage() {
   }, [role]);
 
   if (loading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
-  if (role !== "admin") {
+  if (role !== "admin" && role !== "superadmin") {
     return (
       <main className="mx-auto max-w-md p-4">
         <h1 className="text-xl font-semibold">Proveedores (Admin)</h1>

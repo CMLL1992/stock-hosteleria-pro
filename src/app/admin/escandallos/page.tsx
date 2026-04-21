@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import type { AppRole } from "@/lib/session";
 import { fetchMyRole } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
 import { costeNeto, formatEUR, margenBeneficioPct, margenBrutoEUR, ventaNetaSinIva } from "@/lib/finance";
@@ -30,7 +31,7 @@ function clampNonNeg(x: number): number {
 }
 
 export default function EscandallosPage() {
-  const [role, setRole] = useState<"admin" | "staff" | null>(null);
+  const [role, setRole] = useState<AppRole | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
@@ -71,7 +72,7 @@ export default function EscandallosPage() {
   }
 
   useEffect(() => {
-    if (role !== "admin") return;
+    if (role !== "admin" && role !== "superadmin") return;
     load().catch((e) => setErr(e instanceof Error ? e.message : String(e)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role]);
@@ -110,7 +111,7 @@ export default function EscandallosPage() {
   }, [items]);
 
   if (loading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
-  if (role !== "admin") {
+  if (role !== "admin" && role !== "superadmin") {
     return (
       <main className="mx-auto max-w-md p-4">
         <h1 className="text-xl font-semibold">Escandallos (Admin)</h1>

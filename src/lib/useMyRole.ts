@@ -8,6 +8,9 @@ export type MyRoleResult = {
   role: AppRole | null;
   email: string | null;
   isAdmin: boolean;
+  isSuperadmin: boolean;
+  establecimientoId: string | null;
+  profileReady: boolean;
 };
 
 function parseAdminEmails(raw: string | undefined): string[] {
@@ -22,7 +25,7 @@ async function fetchMyRoleRobust(): Promise<MyRoleResult> {
   if (error) throw error;
 
   const user = data.session?.user ?? null;
-  if (!user) return { role: null, email: null, isAdmin: false };
+  if (!user) return { role: null, email: null, isAdmin: false, isSuperadmin: false, establecimientoId: null, profileReady: false };
 
   const email = (user.email ?? null)?.toLowerCase() ?? null;
   const adminEmails = parseAdminEmails(process.env.NEXT_PUBLIC_ADMIN_EMAILS);
@@ -31,24 +34,40 @@ async function fetchMyRoleRobust(): Promise<MyRoleResult> {
   // Intentamos primero `usuarios` (nuestro esquema original).
   // Si en prod se llama `perfiles`, hacemos fallback.
   let role: AppRole | null = null;
+  let establecimientoId: string | null = null;
   const tryTables: Array<{ table: "usuarios" | "perfiles"; column: string }> = [
     { table: "usuarios", column: "rol" },
     { table: "perfiles", column: "rol" }
   ];
 
   for (const t of tryTables) {
-    const res = await supabase().from(t.table).select(t.column).eq("id", user.id).maybeSingle();
+    const selectCols = t.table === "usuarios" ? `${t.column},establecimiento_id` : t.column;
+    const res = await supabase().from(t.table).select(selectCols).eq("id", user.id).maybeSingle();
     if (!res.error) {
       // @ts-expect-error: lectura dinámica por nombre de columna
       role = (res.data?.[t.column] as AppRole | undefined) ?? "staff";
+      // @ts-expect-error: columna opcional
+      establecimientoId = (res.data?.establecimiento_id as string | undefined) ?? null;
       break;
     }
   }
 
   // Si no hemos podido leer el rol por RLS/tabla, no bloqueamos UI.
-  if (!role) role = adminByEmail ? "admin" : "staff";
+  if (!role) {
+    return {
+      role: null,
+      email,
+      isAdmin: adminByEmail,
+      isSuperadmin: false,
+      establecimientoId,
+      profileReady: false
+    };
+  }
 
-  return { role, email, isAdmin: role === "admin" || adminByEmail };
+  const isSuperadmin = role === "superadmin";
+  const isAdmin = isSuperadmin || role === "admin" || adminByEmail;
+
+  return { role, email, isAdmin, isSuperadmin, establecimientoId, profileReady: true };
 }
 
 export function useMyRole() {

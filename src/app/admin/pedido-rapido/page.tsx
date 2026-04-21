@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import type { AppRole } from "@/lib/session";
 import { fetchMyRole, requireUserId } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
 
@@ -37,7 +38,7 @@ function waLink(p: Row, cantidad: number): string | null {
 }
 
 export default function PedidoRapidoPage() {
-  const [role, setRole] = useState<"admin" | "staff" | null>(null);
+  const [role, setRole] = useState<AppRole | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [items, setItems] = useState<Row[]>([]);
@@ -66,7 +67,7 @@ export default function PedidoRapidoPage() {
   }, []);
 
   useEffect(() => {
-    if (role !== "admin") return;
+    if (role !== "admin" && role !== "superadmin") return;
     let cancelled = false;
     fetchProductos()
       .then((rows) => {
@@ -116,7 +117,7 @@ export default function PedidoRapidoPage() {
     // sigue renderizando lista si hay items
   }
 
-  if (role !== "admin") {
+  if (role !== "admin" && role !== "superadmin") {
     return (
       <main className="mx-auto max-w-md p-4">
         <h1 className="text-xl font-semibold">Pedido rápido (Admin)</h1>

@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/Button";
 import { supabase } from "@/lib/supabase";
 import type { ProductoFinanzas } from "@/lib/finance";
 import { costeNeto, margenBrutoEUR } from "@/lib/finance";
+import { useMyRole } from "@/lib/useMyRole";
 
 type RangeKey = "week" | "month" | "year";
 type MetricKey = "units" | "cost";
@@ -49,7 +50,8 @@ function sinceForRange(range: RangeKey): string {
   return d.toISOString();
 }
 
-async function fetchTopProductosSalida(range: RangeKey) {
+async function fetchTopProductosSalida(range: RangeKey, establecimientoId: string | null) {
+  if (!establecimientoId) return { rows: [], totals: { units: 0, cost: 0, profit: 0 } };
   const since = sinceForRange(range);
   const { data, error } = await supabase()
     .from("movimientos")
@@ -57,6 +59,7 @@ async function fetchTopProductosSalida(range: RangeKey) {
       "producto_id,tipo,cantidad,timestamp,producto:productos(nombre,precio_tarifa,descuento_valor,descuento_tipo,iva_compra,pvp,iva_venta)"
     )
     .eq("tipo", "salida")
+    .eq("establecimiento_id", establecimientoId)
     .gte("timestamp", since)
     .order("timestamp", { ascending: false })
     .limit(5000);
@@ -94,7 +97,10 @@ async function fetchTopProductosSalida(range: RangeKey) {
   };
 }
 
-async function fetchResumen(range: RangeKey) {
+async function fetchResumen(range: RangeKey, establecimientoId: string | null) {
+  if (!establecimientoId) {
+    return { totalGastadoHoy: 0, costeHoy: 0, alertasStockBajo: 0, pedidosPendientes: 0, beneficioEstimado: 0 };
+  }
   const since = sinceForRange(range);
   const sinceToday = startOfTodayISO();
 
@@ -103,17 +109,20 @@ async function fetchResumen(range: RangeKey) {
       .from("movimientos")
       .select("cantidad,producto:productos(precio_tarifa,descuento_valor,descuento_tipo,iva_compra,pvp,iva_venta)")
       .eq("tipo", "salida")
+      .eq("establecimiento_id", establecimientoId)
       .gte("timestamp", sinceToday),
-    supabase().from("productos").select("id,stock_actual,stock_minimo"),
+    supabase().from("productos").select("id,stock_actual,stock_minimo").eq("establecimiento_id", establecimientoId),
     supabase()
       .from("movimientos")
       .select("id", { count: "exact", head: true })
       .eq("tipo", "pedido")
+      .eq("establecimiento_id", establecimientoId)
       .gte("timestamp", since),
     supabase()
       .from("movimientos")
       .select("cantidad,producto:productos(precio_tarifa,descuento_valor,descuento_tipo,iva_compra,pvp,iva_venta)")
       .eq("tipo", "salida")
+      .eq("establecimiento_id", establecimientoId)
       .gte("timestamp", since)
   ]);
 
@@ -150,17 +159,19 @@ async function fetchResumen(range: RangeKey) {
 export function DashboardClient() {
   const [range, setRange] = useState<RangeKey>("week");
   const [metric, setMetric] = useState<MetricKey>("units");
+  const { data: my } = useMyRole();
+  const establecimientoId = my?.establecimientoId ?? null;
 
   const topQuery = useQuery({
-    queryKey: ["dashboard", "topSalida", range],
-    queryFn: () => fetchTopProductosSalida(range),
+    queryKey: ["dashboard", "topSalida", range, establecimientoId],
+    queryFn: () => fetchTopProductosSalida(range, establecimientoId),
     staleTime: 30_000,
     retry: 1
   });
 
   const resumenQuery = useQuery({
-    queryKey: ["dashboard", "resumen", range],
-    queryFn: () => fetchResumen(range),
+    queryKey: ["dashboard", "resumen", range, establecimientoId],
+    queryFn: () => fetchResumen(range, establecimientoId),
     staleTime: 20_000,
     retry: 1
   });

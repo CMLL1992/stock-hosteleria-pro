@@ -20,7 +20,7 @@ export async function requireUserId(): Promise<string> {
   throw new Error("No hay sesión. Inicia sesión.");
 }
 
-export type AppRole = "admin" | "staff";
+export type AppRole = "superadmin" | "admin" | "staff";
 
 export async function fetchMyRole(): Promise<AppRole> {
   const uid = await requireUserId();

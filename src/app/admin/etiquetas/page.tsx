@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { Button } from "@/components/ui/Button";
+import type { AppRole } from "@/lib/session";
 import { fetchMyRole } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
 import { getBaseUrl } from "@/lib/baseUrl";
@@ -23,7 +24,7 @@ async function loadProductos(): Promise<ProductoRow[]> {
 }
 
 export default function AdminEtiquetasPage() {
-  const [role, setRole] = useState<"admin" | "staff" | null>(null);
+  const [role, setRole] = useState<AppRole | null>(null);
   const [items, setItems] = useState<ProductoRow[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -51,7 +52,7 @@ export default function AdminEtiquetasPage() {
   }, []);
 
   useEffect(() => {
-    if (role !== "admin") return;
+    if (role !== "admin" && role !== "superadmin") return;
     let cancelled = false;
     setErr(null);
     loadProductos()
@@ -72,7 +73,7 @@ export default function AdminEtiquetasPage() {
 
   if (loading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
 
-  if (role !== "admin") {
+  if (role !== "admin" && role !== "superadmin") {
     return (
       <main className="mx-auto max-w-md p-4">
         <h1 className="text-xl font-semibold">Etiquetas (Admin)</h1>

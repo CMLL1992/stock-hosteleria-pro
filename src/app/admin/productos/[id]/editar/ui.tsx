@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { MobileHeader } from "@/components/MobileHeader";
+import type { AppRole } from "@/lib/session";
 import { fetchMyRole } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
 
@@ -24,7 +25,7 @@ type Producto = {
 
 export function EditarProductoClient({ id }: { id: string }) {
   const router = useRouter();
-  const [role, setRole] = useState<"admin" | "staff" | null>(null);
+  const [role, setRole] = useState<AppRole | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
@@ -62,7 +63,7 @@ export function EditarProductoClient({ id }: { id: string }) {
   }, []);
 
   useEffect(() => {
-    if (role !== "admin") return;
+    if (role !== "admin" && role !== "superadmin") return;
     let cancelled = false;
     (async () => {
       try {
@@ -146,14 +147,14 @@ export function EditarProductoClient({ id }: { id: string }) {
           </p>
         ) : null}
 
-        {role !== "admin" && !loading ? (
+        {role !== "admin" && role !== "superadmin" && !loading ? (
           <div className="rounded-3xl border border-gray-100 bg-white p-4 shadow-sm">
             <p className="text-sm font-semibold text-gray-900">Acceso denegado.</p>
             <p className="mt-1 text-sm text-gray-600">Esta sección es solo para administradores.</p>
           </div>
         ) : null}
 
-        {role === "admin" ? (
+        {role === "admin" || role === "superadmin" ? (
           <div className="rounded-3xl border border-gray-100 bg-white p-4 shadow-sm">
             {!producto ? (
               <p className="text-sm text-gray-600">Cargando producto…</p>
