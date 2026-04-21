@@ -40,6 +40,9 @@ export function NavBar() {
             <LinkItem href="/admin/etiquetas" label="Gestión de Etiquetas" activeHref={activeHref} />
           ) : null}
           {data?.isAdmin ? (
+            <LinkItem href="/admin/productos" label="Gestionar Productos" activeHref={activeHref} />
+          ) : null}
+          {data?.isAdmin ? (
             <LinkItem href="/admin/productos/nuevo" label="Crear Productos" activeHref={activeHref} />
           ) : null}
           {data?.isAdmin ? (

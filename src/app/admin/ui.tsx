@@ -13,6 +13,7 @@ type AdminLink = {
 const LINKS: AdminLink[] = [
   { href: "/admin/proveedores", title: "Gestionar proveedores" },
   { href: "/admin/proveedores/nuevo", title: "Crear proveedor" },
+  { href: "/admin/productos", title: "Gestionar productos" },
   { href: "/admin/productos/nuevo", title: "Crear producto" },
   { href: "/admin/escandallos", title: "Escandallos (Finanzas)" },
   { href: "/admin/clientes", title: "Clientes (Superadmin)" },

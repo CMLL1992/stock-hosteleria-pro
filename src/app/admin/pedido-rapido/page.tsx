@@ -46,6 +46,7 @@ export default function PedidoRapidoPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [items, setItems] = useState<Row[]>([]);
+  const [loadingItems, setLoadingItems] = useState(false);
   const [qty, setQty] = useState<Record<string, number>>({});
   const { activeEstablishmentId } = useActiveEstablishment();
 
@@ -74,6 +75,7 @@ export default function PedidoRapidoPage() {
   useEffect(() => {
     if (role !== "admin" && role !== "superadmin") return;
     let cancelled = false;
+    setLoadingItems(true);
     fetchProductos(activeEstablishmentId ?? null)
       .then((rows) => {
         if (cancelled) return;
@@ -82,6 +84,10 @@ export default function PedidoRapidoPage() {
       .catch((e) => {
         if (cancelled) return;
         setErr(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setLoadingItems(false);
       });
     return () => {
       cancelled = true;
@@ -91,35 +97,39 @@ export default function PedidoRapidoPage() {
   const totals = useMemo(() => items.length, [items.length]);
 
   async function pedir(p: Row) {
-    setErr(null);
-    if (!activeEstablishmentId) {
-      setErr("No hay establecimiento activo.");
-      return;
-    }
-    const cantidad = qty[p.id] ?? 0;
-    if (!cantidad || cantidad < 1) return;
-    const link = waLink(p, cantidad);
-    if (!link) {
-      setErr(`El proveedor de "${p.nombre}" no tiene teléfono WhatsApp.`);
-      return;
-    }
+    try {
+      setErr(null);
+      if (!activeEstablishmentId) {
+        setErr("No hay establecimiento activo.");
+        return;
+      }
+      const cantidad = qty[p.id] ?? 0;
+      if (!cantidad || cantidad < 1) return;
+      const link = waLink(p, cantidad);
+      if (!link) {
+        setErr(`El proveedor de "${p.nombre}" no tiene teléfono WhatsApp.`);
+        return;
+      }
 
-    // Registrar movimiento "pedido"
-    const usuario_id = await requireUserId();
-    const { error } = await supabase().from("movimientos").insert({
-      producto_id: p.id,
-      establecimiento_id: activeEstablishmentId,
-      tipo: "pedido",
-      cantidad,
-      usuario_id,
-      timestamp: new Date().toISOString()
-    });
-    if (error) {
-      setErr(error.message);
-      return;
-    }
+      // Registrar movimiento "pedido"
+      const usuario_id = await requireUserId();
+      const { error } = await supabase().from("movimientos").insert({
+        producto_id: p.id,
+        establecimiento_id: activeEstablishmentId,
+        tipo: "pedido",
+        cantidad,
+        usuario_id,
+        timestamp: new Date().toISOString()
+      });
+      if (error) {
+        setErr(error.message);
+        return;
+      }
 
-    window.open(link, "_blank", "noreferrer");
+      window.open(link, "_blank", "noreferrer");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
   }
 
   if (loading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
@@ -152,6 +162,14 @@ export default function PedidoRapidoPage() {
           {err}
         </p>
       ) : null}
+
+      {!activeEstablishmentId ? (
+        <p className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          No hay establecimiento activo. Selecciona uno para cargar productos.
+        </p>
+      ) : null}
+
+      {loadingItems ? <p className="mb-3 text-sm text-slate-600">Cargando productos…</p> : null}
 
       <div className="space-y-2">
         {items.map((p) => {
@@ -199,7 +217,11 @@ export default function PedidoRapidoPage() {
                     type="number"
                     min={0}
                     value={qty[p.id] ?? 0}
-                    onChange={(e) => setQty((prev) => ({ ...prev, [p.id]: Number(e.currentTarget.value) }))}
+                    onChange={(e) => {
+                      const raw = e.currentTarget.value;
+                      const next = raw === "" ? 0 : Number(raw);
+                      setQty((prev) => ({ ...prev, [p.id]: Number.isFinite(next) ? next : 0 }));
+                    }}
                   />
                   <Button
                     onClick={() => pedir(p)}
