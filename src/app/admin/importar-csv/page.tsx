@@ -10,6 +10,13 @@ import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { MobileHeader } from "@/components/MobileHeader";
 import { normalizeNombreClave } from "@/lib/csvProductImport";
+import type { ProductoTituloCol } from "@/lib/productosTituloColumn";
+import {
+  resolveProductoTituloColumn,
+  tituloColSql,
+  tituloUpsertOnConflict,
+  tituloWritePayload
+} from "@/lib/productosTituloColumn";
 
 const UNIDADES_PERMITIDAS = new Set(["caja", "barril", "botella", "lata", "unidad"]);
 
@@ -190,17 +197,22 @@ export default function ImportarCsvPage() {
     if (!activeEstablishmentId) return;
     setCargandoMapa(true);
     try {
+      const col = await resolveProductoTituloColumn(activeEstablishmentId);
+      const t = tituloColSql(col);
       const { data, error } = await supabase()
         .from("productos")
-        .select("id,articulo,qr_code_uid")
+        .select(`id,${t},qr_code_uid` as "*")
         .eq("establecimiento_id", activeEstablishmentId);
       if (error) throw error;
 
       const m = new Map<string, ProductoExistente>();
-      for (const p of (data as unknown as Array<{ id: string; articulo: string; qr_code_uid: string | null }> | null) ?? []) {
-        const key = (p.articulo ?? "").trim();
-        if (!key) continue;
-        m.set(normalizeNombreClave(key), { id: p.id, qr_code_uid: p.qr_code_uid ?? null });
+      for (const p of (data as unknown as Array<Record<string, unknown>> | null) ?? []) {
+        const label = String(p.articulo ?? p.nombre ?? "").trim();
+        if (!label) continue;
+        m.set(normalizeNombreClave(label), {
+          id: String(p.id ?? ""),
+          qr_code_uid: p.qr_code_uid != null ? String(p.qr_code_uid) : null
+        });
       }
       setProductosPorClave(m);
     } catch (e) {
@@ -307,13 +319,14 @@ export default function ImportarCsvPage() {
   function buildPayloadFromCsvRow(
     r: CsvRow,
     ex: ProductoExistente | undefined,
-    activeId: string
+    activeId: string,
+    col: ProductoTituloCol
   ): Record<string, unknown> {
-    const articulo = (r.articulo || "").trim();
+    const articuloVal = (r.articulo || "").trim();
     const categoria = (r.tipo || "General").trim() || "General";
     const unidad = coerceUnidad((r.unidad || "uds").trim());
     return {
-      articulo,
+      ...tituloWritePayload(col, articuloVal),
       categoria,
       unidad,
       stock_actual: parseFloat(String(r.stock_actual)) || 0,
@@ -334,6 +347,8 @@ export default function ImportarCsvPage() {
       if (!analizado || !filasUnicasImport.length) throw new Error("Primero analiza el archivo con datos válidos.");
       if (!activeEstablishmentId) throw new Error("No hay establecimiento activo.");
 
+      const tituloCol = await resolveProductoTituloColumn(activeEstablishmentId);
+
       const total = filasUnicasImport.length;
       let okCount = 0;
       setImportProgress(1);
@@ -343,11 +358,11 @@ export default function ImportarCsvPage() {
         const payload = slice.map((r) => {
           const k = normalizeNombreClave(r.articulo);
           const ex = productosPorClave.get(k);
-          return buildPayloadFromCsvRow(r, ex, activeEstablishmentId);
+          return buildPayloadFromCsvRow(r, ex, activeEstablishmentId, tituloCol);
         });
 
         const { error } = await supabase().from("productos").upsert(payload, {
-          onConflict: "establecimiento_id,articulo"
+          onConflict: tituloUpsertOnConflict(tituloCol)
         });
 
         if (error) throw new Error(supabaseErrToString(error));

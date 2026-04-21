@@ -7,6 +7,7 @@ import { fetchMyRole } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { MobileHeader } from "@/components/MobileHeader";
+import { resolveProductoTituloColumn, tituloWritePayload } from "@/lib/productosTituloColumn";
 
 type Proveedor = { id: string; nombre: string; telefono_whatsapp: string | null };
 
@@ -110,8 +111,9 @@ export default function NuevoProductoPage() {
     const categoriaFinal = (categoria.trim() || tipo).trim() || "General";
     const sa = Math.trunc(parseStockField(stockActual)) || 0;
     const sm = Math.trunc(parseStockField(stockMinimo)) || 0;
+    const col = await resolveProductoTituloColumn(activeEstablishmentId);
     const { error } = await supabase().from("productos").insert({
-      articulo: articulo.trim(),
+      ...tituloWritePayload(col, articulo.trim()),
       unidad,
       categoria: categoriaFinal,
       stock_actual: sa,

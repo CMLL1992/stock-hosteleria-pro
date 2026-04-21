@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { stockSemaforo } from "@/lib/stockSemaforo";
 import { waUrlProductoPedido } from "@/lib/whatsappPedido";
+import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 
 type Producto = {
   id: string;
@@ -24,16 +25,30 @@ type Producto = {
 
 async function fetchProductos(establecimientoId: string | null): Promise<Producto[]> {
   if (!establecimientoId) return [];
-  const baseSelect = "id,articulo,stock_actual,stock_minimo,qr_code_uid";
+  const col = await resolveProductoTituloColumn(establecimientoId);
+  const t = tituloColSql(col);
+  const baseSelect = `id,${t},stock_actual,stock_minimo,qr_code_uid`;
   const extendedSelect = `${baseSelect},tipo,unidad,categoria,proveedor:proveedores(nombre,telefono_whatsapp)`;
 
   const { data, error } = await supabase()
     .from("productos")
-    .select(extendedSelect)
+    .select(extendedSelect as "*")
     .eq("establecimiento_id", establecimientoId)
-    .order("articulo", { ascending: true });
+    .order(t, { ascending: true });
 
-  if (!error) return (data as unknown as Producto[]) ?? [];
+  if (!error) {
+    return ((data ?? []) as unknown as Record<string, unknown>[]).map((row) => ({
+      id: String(row.id ?? ""),
+      articulo: String(row.articulo ?? row.nombre ?? "").trim() || "—",
+      stock_actual: Number(row.stock_actual ?? 0) || 0,
+      stock_minimo: row.stock_minimo != null ? Number(row.stock_minimo) : null,
+      qr_code_uid: String(row.qr_code_uid ?? ""),
+      tipo: row.tipo != null ? String(row.tipo) : null,
+      unidad: row.unidad != null ? String(row.unidad) : null,
+      categoria: row.categoria != null ? String(row.categoria) : null,
+      proveedor: row.proveedor as Producto["proveedor"]
+    }));
+  }
 
   const msg = (error as { message?: string }).message ?? "";
   const m = msg.toLowerCase();
@@ -47,17 +62,21 @@ async function fetchProductos(establecimientoId: string | null): Promise<Product
 
   const fallback = await supabase()
     .from("productos")
-    .select(baseSelect)
+    .select(baseSelect as "*")
     .eq("establecimiento_id", establecimientoId)
-    .order("articulo", { ascending: true });
+    .order(t, { ascending: true });
   if (fallback.error) throw fallback.error;
-  return ((fallback.data ?? []) as unknown as Array<Omit<Producto, "tipo" | "unidad" | "proveedor">>).map((p) => ({
-    ...p,
+  return ((fallback.data ?? []) as unknown as Record<string, unknown>[]).map((row) => ({
+    id: String(row.id ?? ""),
+    articulo: String(row.articulo ?? row.nombre ?? "").trim() || "—",
+    stock_actual: Number(row.stock_actual ?? 0) || 0,
+    stock_minimo: row.stock_minimo != null ? Number(row.stock_minimo) : null,
+    qr_code_uid: String(row.qr_code_uid ?? ""),
     tipo: null,
     unidad: null,
     categoria: null,
     proveedor: null
-  })) as Producto[];
+  }));
 }
 
 const TAB_ORDER = [

@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 import { getBaseUrl } from "@/lib/baseUrl";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { MobileHeader } from "@/components/MobileHeader";
+import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 
 type ProductoRow = {
   id: string;
@@ -18,13 +19,21 @@ type ProductoRow = {
 
 async function loadProductos(establecimientoId: string | null): Promise<ProductoRow[]> {
   if (!establecimientoId) return [];
+  const col = await resolveProductoTituloColumn(establecimientoId);
+  const t = tituloColSql(col);
   const { data, error } = await supabase()
     .from("productos")
-    .select("id,articulo,proveedor_id")
+    .select(`id,${t},proveedor_id` as "*")
     .eq("establecimiento_id", establecimientoId)
-    .order("articulo", { ascending: true });
+    .order(t, { ascending: true });
   if (error) throw error;
-  return (data as unknown as ProductoRow[]) ?? [];
+  return (
+    ((data ?? []) as unknown as Record<string, unknown>[]).map((r) => ({
+      id: String(r.id ?? ""),
+      articulo: String(r.articulo ?? r.nombre ?? "").trim() || "—",
+      proveedor_id: r.proveedor_id != null ? String(r.proveedor_id) : null
+    })) ?? []
+  );
 }
 
 export default function AdminEtiquetasPage() {

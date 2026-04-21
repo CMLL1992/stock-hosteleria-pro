@@ -9,6 +9,7 @@ import { enqueueMovimiento } from "@/lib/offlineQueue";
 import { requireUserId } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
+import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 
 type Producto = {
   id: string;
@@ -38,16 +39,26 @@ function isUuid(value: string): boolean {
 }
 
 async function fetchProducto(idOrUid: string, establecimientoId: string | null): Promise<Producto | null> {
+  if (!establecimientoId) return null;
+  const col = await resolveProductoTituloColumn(establecimientoId);
+  const t = tituloColSql(col);
   const { data, error } = await supabase()
     .from("productos")
-    .select(
-      "id,articulo,stock_actual,stock_minimo,qr_code_uid,proveedor:proveedores(id,nombre,telefono_whatsapp)"
-    )
+    .select(`id,${t},stock_actual,stock_minimo,qr_code_uid,proveedor:proveedores(id,nombre,telefono_whatsapp)` as "*")
     .eq(isUuid(idOrUid) ? "id" : "qr_code_uid", idOrUid)
-    .eq("establecimiento_id", establecimientoId ?? "")
+    .eq("establecimiento_id", establecimientoId)
     .maybeSingle();
   if (error) throw error;
-  return (data as unknown as Producto) ?? null;
+  const raw = data as unknown as Record<string, unknown> | null;
+  if (!raw) return null;
+  return {
+    id: String(raw.id ?? ""),
+    articulo: String(raw.articulo ?? raw.nombre ?? "").trim() || "—",
+    stock_actual: Number(raw.stock_actual ?? 0) || 0,
+    stock_minimo: raw.stock_minimo != null ? Number(raw.stock_minimo) : null,
+    qr_code_uid: String(raw.qr_code_uid ?? ""),
+    proveedor: raw.proveedor as Producto["proveedor"]
+  };
 }
 
 async function createMovimientoOnline(input: {

@@ -6,8 +6,9 @@ import { MobileHeader } from "@/components/MobileHeader";
 import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { useMyRole } from "@/lib/useMyRole";
+import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 
-type ProdEmbed = { articulo?: string | null };
+type ProdEmbed = { articulo?: string | null; nombre?: string | null };
 
 type MovRow = {
   id: string;
@@ -52,9 +53,11 @@ export default function AdminMovimientosPage() {
     setLoading(true);
     setErr(null);
     try {
+      const col = await resolveProductoTituloColumn(activeEstablishmentId);
+      const t = tituloColSql(col);
       const resArticulo = await supabase()
         .from("movimientos")
-        .select("id,tipo,cantidad,timestamp,productos(articulo)")
+        .select(`id,tipo,cantidad,timestamp,productos(${t})` as "*")
         .eq("establecimiento_id", activeEstablishmentId)
         .order("timestamp", { ascending: false })
         .limit(150);
@@ -120,7 +123,9 @@ export default function AdminMovimientosPage() {
                 {rows.map((r) => {
                   const raw = r.productos;
                   const prod = Array.isArray(raw) ? raw[0] ?? null : raw;
-                  const articuloEtiqueta = (prod?.articulo && String(prod.articulo).trim()) || "—";
+                  const articuloEtiqueta =
+                    String(prod?.articulo ?? prod?.nombre ?? "")
+                      .trim() || "—";
                   const ts = new Date(r.timestamp);
                   return (
                     <tr key={r.id} className="border-b border-slate-100 last:border-b-0">

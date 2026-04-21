@@ -8,6 +8,7 @@ import type { AppRole } from "@/lib/session";
 import { fetchMyRole } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
+import { resolveProductoTituloColumn, tituloColSql, tituloWritePayload } from "@/lib/productosTituloColumn";
 
 type Proveedor = { id: string; nombre: string };
 
@@ -72,9 +73,11 @@ export function EditarProductoClient({ id }: { id: string }) {
       try {
         setErr(null);
 
+        const col = await resolveProductoTituloColumn(activeEstablishmentId);
+        const t = tituloColSql(col);
         const { data: p, error: pErr } = await supabase()
           .from("productos")
-          .select("id,articulo,unidad,categoria,stock_minimo,proveedor_id")
+          .select(`id,${t},unidad,categoria,stock_minimo,proveedor_id` as "*")
           .eq("id", id)
           .eq("establecimiento_id", activeEstablishmentId)
           .maybeSingle();
@@ -85,7 +88,15 @@ export function EditarProductoClient({ id }: { id: string }) {
           return;
         }
 
-        const prod = p as unknown as Producto;
+        const raw = p as unknown as Record<string, unknown>;
+        const prod: Producto = {
+          id: String(raw.id ?? ""),
+          articulo: String(raw.articulo ?? raw.nombre ?? "").trim() || "—",
+          unidad: raw.unidad != null ? String(raw.unidad) : null,
+          categoria: raw.categoria != null ? String(raw.categoria) : null,
+          stock_minimo: raw.stock_minimo != null ? Number(raw.stock_minimo) : null,
+          proveedor_id: raw.proveedor_id != null ? String(raw.proveedor_id) : null
+        };
         setProducto(prod);
         setArticulo(prod.articulo ?? "");
         setTipo(((prod.categoria ?? "otros") as (typeof TIPOS)[number]) ?? "otros");
@@ -121,10 +132,11 @@ export function EditarProductoClient({ id }: { id: string }) {
     setErr(null);
     setOk(null);
     const categoriaFinal = (categoria.trim() || tipo).trim();
+    const col = await resolveProductoTituloColumn(activeEstablishmentId);
     const { error } = await supabase()
       .from("productos")
       .update({
-        articulo: articulo.trim(),
+        ...tituloWritePayload(col, articulo.trim()),
         unidad,
         categoria: categoriaFinal ? categoriaFinal : null,
         stock_minimo: Number.isFinite(stockMinimo) ? stockMinimo : 0,

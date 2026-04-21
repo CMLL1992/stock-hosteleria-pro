@@ -9,6 +9,7 @@ import { MobileHeader } from "@/components/MobileHeader";
 import { IconWhatsApp } from "@/components/IconWhatsApp";
 import { waUrlProductoPedido } from "@/lib/whatsappPedido";
 import { clasesBordeSemaforo, clasesFondoSemaforo, stockSemaforo } from "@/lib/stockSemaforo";
+import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 
 type Row = {
   id: string;
@@ -26,13 +27,25 @@ type Row = {
 
 async function fetchProductos(establecimientoId: string | null): Promise<Row[]> {
   if (!establecimientoId) return [];
+  const col = await resolveProductoTituloColumn(establecimientoId);
+  const t = tituloColSql(col);
   const { data, error } = await supabase()
     .from("productos")
-    .select("id,articulo,stock_actual,stock_minimo,categoria,unidad,proveedor:proveedores(id,nombre,telefono_whatsapp)")
+    .select(`id,${t},stock_actual,stock_minimo,categoria,unidad,proveedor:proveedores(id,nombre,telefono_whatsapp)` as "*")
     .eq("establecimiento_id", establecimientoId)
-    .order("articulo", { ascending: true });
+    .order(t, { ascending: true });
   if (error) throw error;
-  return (data as unknown as Row[]) ?? [];
+  return (
+    ((data ?? []) as unknown as Record<string, unknown>[]).map((r) => ({
+      id: String(r.id ?? ""),
+      articulo: String(r.articulo ?? r.nombre ?? "").trim() || "—",
+      stock_actual: Number(r.stock_actual ?? 0) || 0,
+      stock_minimo: r.stock_minimo != null ? Number(r.stock_minimo) : null,
+      categoria: r.categoria != null ? String(r.categoria) : null,
+      unidad: r.unidad != null ? String(r.unidad) : null,
+      proveedor: r.proveedor as Row["proveedor"]
+    })) ?? []
+  );
 }
 
 export default function PedidoRapidoPage() {

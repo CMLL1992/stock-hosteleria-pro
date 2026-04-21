@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { stockSemaforo, type StockSemaforo } from "@/lib/stockSemaforo";
+import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 
 export type DashboardProveedor = { nombre: string; telefono_whatsapp: string | null };
 
@@ -33,7 +34,7 @@ function normalizeProveedor(raw: unknown): DashboardProveedor | null {
 export function normalizeProductoRow(raw: Record<string, unknown>): DashboardProducto {
   return {
     id: String(raw.id ?? ""),
-    articulo: String(raw.articulo ?? "").trim() || "—",
+    articulo: String(raw.articulo ?? raw.nombre ?? "").trim() || "—",
     categoria: raw.categoria != null && String(raw.categoria).trim() !== "" ? String(raw.categoria).trim() : null,
     stock_actual: toIntStock(raw.stock_actual, 0),
     stock_minimo: toIntStock(raw.stock_minimo, 0),
@@ -42,18 +43,19 @@ export function normalizeProductoRow(raw: Record<string, unknown>): DashboardPro
   };
 }
 
-/** Catálogo con `articulo`, sin `nombre`; incluye proveedor para pedidos WhatsApp. */
+/** Catálogo unificado como `articulo` en UI; la columna en BD puede ser `articulo` o `nombre`. */
 export async function fetchDashboardProductos(establecimientoId: string): Promise<DashboardProducto[]> {
-  const full =
-    "id,articulo,categoria,stock_actual,stock_minimo,unidad,proveedor:proveedores(nombre,telefono_whatsapp)";
+  const col = await resolveProductoTituloColumn(establecimientoId);
+  const t = tituloColSql(col);
+  const full = `id,${t},categoria,stock_actual,stock_minimo,unidad,proveedor:proveedores(nombre,telefono_whatsapp)`;
   const { data, error } = await supabase()
     .from("productos")
-    .select(full)
+    .select(full as "*")
     .eq("establecimiento_id", establecimientoId)
-    .order("articulo", { ascending: true });
+    .order(t, { ascending: true });
 
   if (!error) {
-    return ((data ?? []) as Record<string, unknown>[]).map(normalizeProductoRow);
+    return ((data ?? []) as unknown as Record<string, unknown>[]).map(normalizeProductoRow);
   }
 
   const msg = (error as { message?: string }).message?.toLowerCase?.() ?? "";
@@ -67,11 +69,11 @@ export async function fetchDashboardProductos(establecimientoId: string): Promis
 
   const lite = await supabase()
     .from("productos")
-    .select("id,articulo,categoria,stock_actual,stock_minimo")
+    .select(`id,${t},categoria,stock_actual,stock_minimo` as "*")
     .eq("establecimiento_id", establecimientoId)
-    .order("articulo", { ascending: true });
+    .order(t, { ascending: true });
   if (lite.error) throw lite.error;
-  return ((lite.data ?? []) as Record<string, unknown>[]).map((r) =>
+  return ((lite.data ?? []) as unknown as Record<string, unknown>[]).map((r) =>
     normalizeProductoRow({ ...r, unidad: null, proveedor: null })
   );
 }

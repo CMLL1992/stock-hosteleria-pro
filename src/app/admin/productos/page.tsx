@@ -5,6 +5,7 @@ import { MobileHeader } from "@/components/MobileHeader";
 import { Button } from "@/components/ui/Button";
 import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
+import { resolveProductoTituloColumn, tituloColSql, tituloWritePayload } from "@/lib/productosTituloColumn";
 
 type ProductoRow = {
   id: string;
@@ -56,6 +57,20 @@ function parseCategoriaTipo(p: ProductoRow): string {
   if (c) return c;
   const t = normalizeKey(p.tipo);
   return t || "otros";
+}
+
+function mapProductoQueryRow(r: Record<string, unknown>): ProductoRow {
+  return {
+    id: String(r.id ?? ""),
+    articulo: String(r.articulo ?? r.nombre ?? "").trim() || "—",
+    categoria: r.categoria != null ? String(r.categoria) : null,
+    tipo: r.tipo != null ? String(r.tipo) : null,
+    unidad: r.unidad != null ? String(r.unidad) : null,
+    precio_tarifa: r.precio_tarifa != null && Number.isFinite(Number(r.precio_tarifa)) ? Number(r.precio_tarifa) : null,
+    stock_actual: Math.trunc(toNumberOrZero(r.stock_actual)),
+    stock_minimo:
+      r.stock_minimo === null || r.stock_minimo === undefined ? null : Math.trunc(toNumberOrZero(r.stock_minimo))
+  };
 }
 
 function ToastView({ toast, onClose }: { toast: Toast; onClose: () => void }) {
@@ -253,16 +268,18 @@ export default function AdminProductosPage() {
       try {
         setErr(null);
         setLoading(true);
+        const col = await resolveProductoTituloColumn(activeEstablishmentId);
+        const t = tituloColSql(col);
         const full = await supabase()
           .from("productos")
-          .select("id,articulo,categoria,tipo,unidad,precio_tarifa,stock_actual,stock_minimo")
+          .select(`id,${t},categoria,tipo,unidad,precio_tarifa,stock_actual,stock_minimo` as "*")
           .eq("establecimiento_id", activeEstablishmentId)
-          .order("articulo", { ascending: true });
+          .order(t, { ascending: true });
 
         if (!full.error) {
           if (cancelled) return;
           setHasPrecioTarifa(true);
-          setItems((full.data as unknown as ProductoRow[]) ?? []);
+          setItems(((full.data ?? []) as unknown as Record<string, unknown>[]).map(mapProductoQueryRow));
           return;
         }
 
@@ -272,17 +289,17 @@ export default function AdminProductosPage() {
 
         const lite = await supabase()
           .from("productos")
-          .select("id,articulo,categoria,tipo,unidad,stock_actual,stock_minimo")
+          .select(`id,${t},categoria,tipo,unidad,stock_actual,stock_minimo` as "*")
           .eq("establecimiento_id", activeEstablishmentId)
-          .order("articulo", { ascending: true });
+          .order(t, { ascending: true });
         if (lite.error) throw lite.error;
         if (cancelled) return;
         setHasPrecioTarifa(false);
         setItems(
-          ((lite.data ?? []) as unknown as Array<Omit<ProductoRow, "precio_tarifa">>).map((p) => ({
-            ...(p as unknown as Omit<ProductoRow, "precio_tarifa">),
+          ((lite.data ?? []) as unknown as Record<string, unknown>[]).map((r) => ({
+            ...mapProductoQueryRow(r),
             precio_tarifa: null
-          })) as ProductoRow[]
+          }))
         );
       } catch (e) {
         if (cancelled) return;
@@ -314,14 +331,16 @@ export default function AdminProductosPage() {
 
   async function refetch() {
     if (!activeEstablishmentId) return;
+    const col = await resolveProductoTituloColumn(activeEstablishmentId);
+    const t = tituloColSql(col);
     const full = await supabase()
       .from("productos")
-      .select("id,articulo,categoria,tipo,unidad,precio_tarifa,stock_actual,stock_minimo")
+      .select(`id,${t},categoria,tipo,unidad,precio_tarifa,stock_actual,stock_minimo` as "*")
       .eq("establecimiento_id", activeEstablishmentId)
-      .order("articulo", { ascending: true });
+      .order(t, { ascending: true });
     if (!full.error) {
       setHasPrecioTarifa(true);
-      setItems((full.data as unknown as ProductoRow[]) ?? []);
+      setItems(((full.data ?? []) as unknown as Record<string, unknown>[]).map(mapProductoQueryRow));
       return;
     }
     const msg = (full.error as { message?: string }).message?.toLowerCase?.() ?? "";
@@ -330,16 +349,16 @@ export default function AdminProductosPage() {
 
     const lite = await supabase()
       .from("productos")
-      .select("id,articulo,categoria,tipo,unidad,stock_actual,stock_minimo")
+      .select(`id,${t},categoria,tipo,unidad,stock_actual,stock_minimo` as "*")
       .eq("establecimiento_id", activeEstablishmentId)
-      .order("articulo", { ascending: true });
+      .order(t, { ascending: true });
     if (lite.error) throw lite.error;
     setHasPrecioTarifa(false);
     setItems(
-      ((lite.data ?? []) as unknown as Array<Omit<ProductoRow, "precio_tarifa">>).map((p) => ({
-        ...(p as unknown as Omit<ProductoRow, "precio_tarifa">),
+      ((lite.data ?? []) as unknown as Record<string, unknown>[]).map((r) => ({
+        ...mapProductoQueryRow(r),
         precio_tarifa: null
-      })) as ProductoRow[]
+      }))
     );
   }
 
@@ -347,8 +366,9 @@ export default function AdminProductosPage() {
     if (!editing || !activeEstablishmentId) return;
     try {
       setErr(null);
+      const col = await resolveProductoTituloColumn(activeEstablishmentId);
       const updatePayload: Record<string, unknown> = {
-        articulo: patch.articulo,
+        ...tituloWritePayload(col, String(patch.articulo ?? "").trim()),
         categoria: patch.categoria ?? null,
         unidad: patch.unidad ?? null,
         stock_actual: patch.stock_actual ?? 0,

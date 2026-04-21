@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { costeNeto, formatEUR, margenBeneficioPct, margenBrutoEUR, ventaNetaSinIva } from "@/lib/finance";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { MobileHeader } from "@/components/MobileHeader";
+import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 
 type ProductoRow = {
   id: string;
@@ -66,13 +67,27 @@ export default function EscandallosPage() {
 
   async function load() {
     setErr(null);
+    if (!activeEstablishmentId) return;
+    const col = await resolveProductoTituloColumn(activeEstablishmentId);
+    const t = tituloColSql(col);
     const { data, error } = await supabase()
       .from("productos")
-    .select("id,articulo,precio_tarifa,descuento_valor,descuento_tipo,iva_compra,pvp,iva_venta")
+      .select(`id,${t},precio_tarifa,descuento_valor,descuento_tipo,iva_compra,pvp,iva_venta` as "*")
       .eq("establecimiento_id", activeEstablishmentId)
-    .order("articulo", { ascending: true });
+      .order(t, { ascending: true });
     if (error) throw error;
-    setItems((data as unknown as ProductoRow[]) ?? []);
+    setItems(
+      ((data ?? []) as unknown as Record<string, unknown>[]).map((r) => ({
+        id: String(r.id ?? ""),
+        articulo: String(r.articulo ?? r.nombre ?? "").trim() || "—",
+        precio_tarifa: r.precio_tarifa != null ? Number(r.precio_tarifa) : null,
+        descuento_valor: r.descuento_valor != null ? Number(r.descuento_valor) : null,
+        descuento_tipo: (r.descuento_tipo as ProductoRow["descuento_tipo"]) ?? null,
+        iva_compra: r.iva_compra != null ? Number(r.iva_compra) : null,
+        pvp: r.pvp != null ? Number(r.pvp) : null,
+        iva_venta: r.iva_venta != null ? Number(r.iva_venta) : null
+      }))
+    );
   }
 
   useEffect(() => {
