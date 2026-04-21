@@ -66,23 +66,28 @@ begin
   alter table public.proveedores alter column establecimiento_id set not null;
 end $$;
 
--- 5) Helpers para RLS
+-- 5) Helpers para RLS (SECURITY DEFINER evita recursión: la lectura de usuarios no aplica
+--    otra evaluación de RLS vía is_superadmin/my_establecimiento_id).
 create or replace function public.is_superadmin()
 returns boolean
 language sql
+security definer
+set search_path = public
 stable
 as $$
   select exists (
     select 1
     from public.usuarios u
     where u.id = auth.uid()
-      and u.rol = 'superadmin'
+      and coalesce(u.rol::text, '') = 'superadmin'
   );
 $$;
 
 create or replace function public.my_establecimiento_id()
 returns uuid
 language sql
+security definer
+set search_path = public
 stable
 as $$
   select u.establecimiento_id

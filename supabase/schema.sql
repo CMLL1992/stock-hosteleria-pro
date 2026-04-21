@@ -90,17 +90,19 @@ create table if not exists public.movimientos (
 
 create index if not exists movimientos_producto_ts_idx on public.movimientos(producto_id, timestamp desc);
 
--- Helper: es admin?
+-- Helper: es admin? (SECURITY DEFINER: evita recursión con RLS en public.usuarios)
 create or replace function public.is_admin()
 returns boolean
 language sql
+security definer
+set search_path = public
 stable
 as $$
   select exists (
     select 1
     from public.usuarios u
     where u.id = auth.uid()
-      and u.rol = 'admin'
+      and coalesce(u.rol::text, '') = 'admin'
   );
 $$;
 
