@@ -57,13 +57,13 @@ export default function NuevoProveedorPage() {
     window.location.href = "/admin";
   }
 
-  if (loading) return <main className="p-4 text-sm text-zinc-600 dark:text-zinc-300">Cargando…</main>;
+  if (loading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
 
   if (role !== "admin") {
     return (
       <main className="mx-auto max-w-md p-4">
         <h1 className="text-xl font-semibold">Crear proveedor (Admin)</h1>
-        <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">Acceso denegado.</p>
+        <p className="mt-2 text-sm text-slate-600">Acceso denegado.</p>
       </main>
     );
   }

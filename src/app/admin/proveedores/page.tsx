@@ -60,12 +60,12 @@ export default function ProveedoresPage() {
     };
   }, [role]);
 
-  if (loading) return <main className="p-4 text-sm text-zinc-700">Cargando…</main>;
+  if (loading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
   if (role !== "admin") {
     return (
       <main className="mx-auto max-w-md p-4">
         <h1 className="text-xl font-semibold">Proveedores (Admin)</h1>
-        <p className="mt-2 text-sm text-zinc-700">Acceso denegado.</p>
+        <p className="mt-2 text-sm text-slate-600">Acceso denegado.</p>
       </main>
     );
   }
