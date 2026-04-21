@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { AppRole } from "@/lib/session";
 import { fetchMyRole } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
+import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 
 type Proveedor = {
   id: string;
@@ -16,6 +17,7 @@ export default function ProveedoresPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [items, setItems] = useState<Proveedor[]>([]);
+  const { activeEstablishmentId } = useActiveEstablishment();
 
   useEffect(() => {
     let cancelled = false;
@@ -41,12 +43,14 @@ export default function ProveedoresPage() {
 
   useEffect(() => {
     if (role !== "admin" && role !== "superadmin") return;
+    if (!activeEstablishmentId) return;
     let cancelled = false;
     (async () => {
       try {
         const { data, error } = await supabase()
           .from("proveedores")
           .select("id,nombre,telefono_whatsapp")
+          .eq("establecimiento_id", activeEstablishmentId)
           .order("nombre", { ascending: true });
         if (error) throw error;
         if (cancelled) return;
@@ -59,7 +63,7 @@ export default function ProveedoresPage() {
     return () => {
       cancelled = true;
     };
-  }, [role]);
+  }, [activeEstablishmentId, role]);
 
   if (loading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
   if (role !== "admin" && role !== "superadmin") {

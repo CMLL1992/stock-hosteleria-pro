@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
-import { useMyRole } from "@/lib/useMyRole";
+import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 
 type Producto = {
   id: string;
@@ -87,8 +87,7 @@ function productTabKey(p: Producto): string {
 }
 
 export function ProductList() {
-  const { data: my } = useMyRole();
-  const establecimientoId = my?.establecimientoId ?? null;
+  const { me, activeEstablishmentId: establecimientoId } = useActiveEstablishment();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["productos", establecimientoId],
@@ -106,7 +105,7 @@ export function ProductList() {
     return data.filter((p) => productTabKey(p) === tab);
   }, [data, tab]);
 
-  if (my?.role === null && !my?.profileReady) return <p className="text-sm text-slate-600">Cargando perfil…</p>;
+  if (me?.role === null && !me?.profileReady) return <p className="text-sm text-slate-600">Cargando perfil…</p>;
   if (isLoading) return <p className="text-sm text-slate-600">Cargando stock…</p>;
   if (error) {
     return (
@@ -212,7 +211,7 @@ export function ProductList() {
                   >
                     QR
                   </a>
-                  {my?.isAdmin ? (
+                  {me?.isAdmin ? (
                     <a
                       className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
                       href={`/admin/productos/${encodeURIComponent(p.id)}/editar`}

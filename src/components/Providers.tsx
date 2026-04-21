@@ -9,6 +9,9 @@ import { AuthBootstrap } from "@/components/AuthBootstrap";
 import { OfflineSync } from "@/components/OfflineSync";
 import { BottomTabBar } from "@/components/BottomTabBar";
 import { createIdbPersister } from "@/lib/queryPersist";
+import { Footer } from "@/components/Footer";
+import { CookieBanner } from "@/components/CookieBanner";
+import { SessionGuard } from "@/components/SessionGuard";
 
 export function Providers({ children }: { children: ReactNode }) {
   const [persister] = useState(() => createIdbPersister());
@@ -38,10 +41,13 @@ export function Providers({ children }: { children: ReactNode }) {
     >
       <AuthRefresh />
       <AuthBootstrap />
+      <SessionGuard />
       <OfflineSync />
       <div className="min-h-dvh bg-slate-50 pb-24 text-slate-900">
         {children}
+        <Footer />
       </div>
+      <CookieBanner />
       <BottomTabBar />
     </PersistQueryClientProvider>
   );

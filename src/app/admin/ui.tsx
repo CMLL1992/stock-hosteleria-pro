@@ -15,6 +15,7 @@ const LINKS: AdminLink[] = [
   { href: "/admin/proveedores/nuevo", title: "Crear proveedor" },
   { href: "/admin/productos/nuevo", title: "Crear producto" },
   { href: "/admin/escandallos", title: "Escandallos (Finanzas)" },
+  { href: "/admin/clientes", title: "Clientes (Superadmin)" },
   { href: "/admin/users", title: "Usuarios (Superadmin)" },
   { href: "/admin/etiquetas", title: "Gestión de etiquetas" },
   { href: "/admin/importar-csv", title: "Importar CSV" },
@@ -44,7 +45,9 @@ export function AdminHomeClient() {
     }
     return (
       <div className="space-y-2">
-        {LINKS.filter((l) => (l.href === "/admin/users" ? !!data?.isSuperadmin : true)).map((l) => (
+        {LINKS.filter((l) =>
+          l.href === "/admin/users" || l.href === "/admin/clientes" ? !!data?.isSuperadmin : true
+        ).map((l) => (
           <a
             key={l.href}
             className="flex min-h-14 items-center justify-between rounded-3xl border border-slate-200 bg-white px-4 shadow-sm hover:bg-slate-50"

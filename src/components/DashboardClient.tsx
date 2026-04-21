@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/Button";
 import { supabase } from "@/lib/supabase";
 import type { ProductoFinanzas } from "@/lib/finance";
 import { costeNeto, margenBrutoEUR } from "@/lib/finance";
-import { useMyRole } from "@/lib/useMyRole";
+import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 
 type RangeKey = "week" | "month" | "year";
 type MetricKey = "units" | "cost";
@@ -159,8 +159,7 @@ async function fetchResumen(range: RangeKey, establecimientoId: string | null) {
 export function DashboardClient() {
   const [range, setRange] = useState<RangeKey>("week");
   const [metric, setMetric] = useState<MetricKey>("units");
-  const { data: my } = useMyRole();
-  const establecimientoId = my?.establecimientoId ?? null;
+  const { me, activeEstablishmentId: establecimientoId, activeEstablishmentName } = useActiveEstablishment();
 
   const topQuery = useQuery({
     queryKey: ["dashboard", "topSalida", range, establecimientoId],
@@ -200,6 +199,11 @@ export function DashboardClient() {
 
   return (
     <div className="space-y-4">
+      {me?.isSuperadmin && activeEstablishmentName ? (
+        <div className="rounded-3xl border border-slate-200 bg-white p-3 text-sm text-slate-700 shadow-sm">
+          Cargando datos de <span className="font-semibold">{activeEstablishmentName}</span>…
+        </div>
+      ) : null}
       <div className="flex items-center justify-between gap-3">
         <div className="flex gap-2">
           {pills.map((p) => {
