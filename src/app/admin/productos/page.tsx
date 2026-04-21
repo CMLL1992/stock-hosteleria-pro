@@ -19,6 +19,19 @@ type ProductoRow = {
 
 type Toast = { kind: "ok" | "error"; message: string } | null;
 
+function supabaseErrToString(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "object" && e) {
+    const anyErr = e as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown };
+    const msg = typeof anyErr.message === "string" ? anyErr.message : "";
+    const details = typeof anyErr.details === "string" ? anyErr.details : "";
+    const hint = typeof anyErr.hint === "string" ? anyErr.hint : "";
+    const code = typeof anyErr.code === "string" ? anyErr.code : "";
+    return [msg, details, hint, code].filter(Boolean).join(" · ") || "Error desconocido";
+  }
+  return String(e);
+}
+
 function normalizeKey(s: string | null | undefined): string {
   return (s ?? "").trim().toLowerCase();
 }
@@ -69,12 +82,14 @@ function EditModal({
   open,
   producto,
   onClose,
-  onSave
+  onSave,
+  hasPrecioTarifa
 }: {
   open: boolean;
   producto: ProductoRow | null;
   onClose: () => void;
   onSave: (patch: Partial<ProductoRow>) => Promise<void>;
+  hasPrecioTarifa: boolean;
 }) {
   const [articulo, setArticulo] = useState("");
   const [categoria, setCategoria] = useState("");
@@ -138,12 +153,18 @@ function EditModal({
           </div>
           <div className="space-y-1">
             <label className="text-sm font-semibold text-slate-900">Precio tarifa</label>
-            <input
-              className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 font-mono text-base text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-black/10"
-              value={precioTarifa}
-              onChange={(e) => setPrecioTarifa(e.currentTarget.value)}
-              inputMode="decimal"
-            />
+            {hasPrecioTarifa ? (
+              <input
+                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 font-mono text-base text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-black/10"
+                value={precioTarifa}
+                onChange={(e) => setPrecioTarifa(e.currentTarget.value)}
+                inputMode="decimal"
+              />
+            ) : (
+              <p className="min-h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                No disponible (la BD no tiene la columna <span className="font-mono">precio_tarifa</span>).
+              </p>
+            )}
           </div>
           <div className="space-y-1">
             <label className="text-sm font-semibold text-slate-900">Stock actual</label>
@@ -205,6 +226,7 @@ export default function AdminProductosPage() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast>(null);
+  const [hasPrecioTarifa, setHasPrecioTarifa] = useState(true);
 
   const [items, setItems] = useState<ProductoRow[]>([]);
   const [q, setQ] = useState("");
@@ -222,17 +244,40 @@ export default function AdminProductosPage() {
       try {
         setErr(null);
         setLoading(true);
-        const { data, error } = await supabase()
+        const full = await supabase()
           .from("productos")
           .select("id,articulo,categoria,tipo,unidad,precio_tarifa,stock_actual,stock_minimo")
           .eq("establecimiento_id", activeEstablishmentId)
           .order("articulo", { ascending: true });
+
+        if (!full.error) {
+          if (cancelled) return;
+          setHasPrecioTarifa(true);
+          setItems((full.data as unknown as ProductoRow[]) ?? []);
+          return;
+        }
+
+        const msg = (full.error as { message?: string }).message?.toLowerCase?.() ?? "";
+        const looksLikeMissingPrecioTarifa = msg.includes("precio_tarifa") && (msg.includes("does not exist") || msg.includes("could not find"));
+        if (!looksLikeMissingPrecioTarifa) throw full.error;
+
+        const lite = await supabase()
+          .from("productos")
+          .select("id,articulo,categoria,tipo,unidad,stock_actual,stock_minimo")
+          .eq("establecimiento_id", activeEstablishmentId)
+          .order("articulo", { ascending: true });
+        if (lite.error) throw lite.error;
         if (cancelled) return;
-        if (error) throw error;
-        setItems((data as unknown as ProductoRow[]) ?? []);
+        setHasPrecioTarifa(false);
+        setItems(
+          ((lite.data ?? []) as unknown as Array<Omit<ProductoRow, "precio_tarifa">>).map((p) => ({
+            ...(p as unknown as Omit<ProductoRow, "precio_tarifa">),
+            precio_tarifa: null
+          })) as ProductoRow[]
+        );
       } catch (e) {
         if (cancelled) return;
-        setErr(e instanceof Error ? e.message : String(e));
+        setErr(supabaseErrToString(e));
       } finally {
         if (cancelled) return;
         setLoading(false);
@@ -260,29 +305,50 @@ export default function AdminProductosPage() {
 
   async function refetch() {
     if (!activeEstablishmentId) return;
-    const { data, error } = await supabase()
+    const full = await supabase()
       .from("productos")
       .select("id,articulo,categoria,tipo,unidad,precio_tarifa,stock_actual,stock_minimo")
       .eq("establecimiento_id", activeEstablishmentId)
       .order("articulo", { ascending: true });
-    if (error) throw error;
-    setItems((data as unknown as ProductoRow[]) ?? []);
+    if (!full.error) {
+      setHasPrecioTarifa(true);
+      setItems((full.data as unknown as ProductoRow[]) ?? []);
+      return;
+    }
+    const msg = (full.error as { message?: string }).message?.toLowerCase?.() ?? "";
+    const looksLikeMissingPrecioTarifa = msg.includes("precio_tarifa") && (msg.includes("does not exist") || msg.includes("could not find"));
+    if (!looksLikeMissingPrecioTarifa) throw full.error;
+
+    const lite = await supabase()
+      .from("productos")
+      .select("id,articulo,categoria,tipo,unidad,stock_actual,stock_minimo")
+      .eq("establecimiento_id", activeEstablishmentId)
+      .order("articulo", { ascending: true });
+    if (lite.error) throw lite.error;
+    setHasPrecioTarifa(false);
+    setItems(
+      ((lite.data ?? []) as unknown as Array<Omit<ProductoRow, "precio_tarifa">>).map((p) => ({
+        ...(p as unknown as Omit<ProductoRow, "precio_tarifa">),
+        precio_tarifa: null
+      })) as ProductoRow[]
+    );
   }
 
   async function onSave(patch: Partial<ProductoRow>) {
     if (!editing || !activeEstablishmentId) return;
     try {
       setErr(null);
+      const updatePayload: Record<string, unknown> = {
+        articulo: patch.articulo,
+        categoria: patch.categoria ?? null,
+        unidad: patch.unidad ?? null,
+        stock_actual: patch.stock_actual ?? 0,
+        stock_minimo: patch.stock_minimo ?? 0
+      };
+      if (hasPrecioTarifa) updatePayload.precio_tarifa = patch.precio_tarifa ?? 0;
       const { error } = await supabase()
         .from("productos")
-        .update({
-          articulo: patch.articulo,
-          categoria: patch.categoria ?? null,
-          unidad: patch.unidad ?? null,
-          precio_tarifa: patch.precio_tarifa ?? 0,
-          stock_actual: patch.stock_actual ?? 0,
-          stock_minimo: patch.stock_minimo ?? 0
-        })
+        .update(updatePayload)
         .eq("id", editing.id)
         .eq("establecimiento_id", activeEstablishmentId);
       if (error) throw error;
@@ -291,7 +357,7 @@ export default function AdminProductosPage() {
       setEditOpen(false);
       setEditing(null);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(supabaseErrToString(e));
       setToast({ kind: "error", message: "No se pudo guardar el producto." });
     }
   }
@@ -307,7 +373,7 @@ export default function AdminProductosPage() {
       await refetch();
       setToast({ kind: "ok", message: "Producto eliminado." });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(supabaseErrToString(e));
       setToast({ kind: "error", message: "No se pudo eliminar el producto." });
     }
   }
@@ -348,7 +414,7 @@ export default function AdminProductosPage() {
                   await refetch();
                   setToast({ kind: "ok", message: "Listado actualizado." });
                 } catch (e) {
-                  setErr(e instanceof Error ? e.message : String(e));
+                  setErr(supabaseErrToString(e));
                   setToast({ kind: "error", message: "No se pudo actualizar el listado." });
                 } finally {
                   setLoading(false);
@@ -422,7 +488,9 @@ export default function AdminProductosPage() {
                     <td className="border-r border-slate-200 px-3 py-2 text-slate-800">{parseCategoriaTipo(p)}</td>
                     <td className="border-r border-slate-200 px-3 py-2 text-slate-800">{p.unidad ?? "—"}</td>
                     <td className="border-r border-slate-200 px-3 py-2 text-right font-mono tabular-nums text-slate-900">
-                      {precio.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €
+                      {hasPrecioTarifa
+                        ? `${precio.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
+                        : "—"}
                     </td>
                     <td className="border-r border-slate-200 px-3 py-2 text-right font-mono tabular-nums text-slate-900">
                       {p.stock_actual}
@@ -471,6 +539,7 @@ export default function AdminProductosPage() {
       <EditModal
         open={editOpen}
         producto={editing}
+        hasPrecioTarifa={hasPrecioTarifa}
         onClose={() => {
           setEditOpen(false);
           setEditing(null);
