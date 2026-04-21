@@ -18,10 +18,10 @@ function parseAdminEmails(raw: string | undefined): string[] {
 }
 
 async function fetchMyRoleRobust(): Promise<MyRoleResult> {
-  const { data, error } = await supabase().auth.getUser();
+  const { data, error } = await supabase().auth.getSession();
   if (error) throw error;
 
-  const user = data.user;
+  const user = data.session?.user ?? null;
   if (!user) return { role: null, email: null, isAdmin: false };
 
   const email = (user.email ?? null)?.toLowerCase() ?? null;

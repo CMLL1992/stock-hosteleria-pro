@@ -1,11 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useMemo } from "react";
 import { MobileHeader } from "@/components/MobileHeader";
-import { fetchMyRole } from "@/lib/session";
-
-type AppRole = "admin" | "staff";
+import { useMyRole } from "@/lib/useMyRole";
 
 type AdminLink = {
   href: string;
@@ -23,49 +20,18 @@ const LINKS: AdminLink[] = [
 ];
 
 export function AdminHomeClient() {
-  const router = useRouter();
-  const [role, setRole] = useState<AppRole | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setErr(null);
-    fetchMyRole()
-      .then((r) => {
-        if (cancelled) return;
-        setRole(r);
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        const msg = e instanceof Error ? e.message : String(e);
-        // Si no hay sesión, mandamos a login (evita estados raros + 500 percibidos).
-        if (msg.toLowerCase().includes("no hay sesión")) {
-          router.replace("/login");
-          return;
-        }
-        setErr(msg);
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [router]);
+  const { data, isLoading, error } = useMyRole();
 
   const content = useMemo(() => {
-    if (loading) return <p className="text-sm text-gray-600">Cargando…</p>;
-    if (err) {
+    if (isLoading) return <p className="text-sm text-gray-600">Cargando…</p>;
+    if (error) {
       return (
         <p className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-          {err}
+          {(error as Error).message}
         </p>
       );
     }
-    if (role !== "admin") {
+    if (!data?.isAdmin) {
       return (
         <div className="rounded-3xl border border-gray-100 bg-white p-4 shadow-sm">
           <p className="text-sm font-semibold text-gray-900">Acceso denegado.</p>
@@ -87,7 +53,7 @@ export function AdminHomeClient() {
         ))}
       </div>
     );
-  }, [err, loading, role]);
+  }, [data?.isAdmin, error, isLoading]);
 
   return (
     <div className="min-h-dvh">

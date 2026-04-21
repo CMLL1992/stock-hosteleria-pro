@@ -4,6 +4,7 @@ import type { ChangeEvent } from "react";
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/Button";
+import { ensureUserRow } from "@/lib/ensureUserRow";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -17,6 +18,8 @@ export default function LoginPage() {
     try {
       const { error } = await supabase().auth.signInWithPassword({ email, password });
       if (error) throw error;
+      const u = await supabase().auth.getUser();
+      if (u.data.user) await ensureUserRow(u.data.user);
       window.location.href = "/";
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -31,6 +34,8 @@ export default function LoginPage() {
     try {
       const { error } = await supabase().auth.signUp({ email, password });
       if (error) throw error;
+      const u = await supabase().auth.getUser();
+      if (u.data.user) await ensureUserRow(u.data.user);
       window.location.href = "/";
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
