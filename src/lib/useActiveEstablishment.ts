@@ -8,7 +8,7 @@ import { useMyRole } from "@/lib/useMyRole";
 export type Establecimiento = {
   id: string;
   nombre: string;
-  plan_suscripcion: string;
+  plan_suscripcion?: string | null;
   logo_url?: string | null;
 };
 
@@ -38,8 +38,21 @@ async function fetchEstablecimientos(): Promise<Establecimiento[]> {
     .from("establecimientos")
     .select("id,nombre,plan_suscripcion,logo_url")
     .order("nombre", { ascending: true });
-  if (error) throw error;
-  return (data as unknown as Establecimiento[]) ?? [];
+  if (!error) return (data as unknown as Establecimiento[]) ?? [];
+
+  const msg = (error as { message?: string }).message?.toLowerCase() ?? "";
+  const missingPlan = msg.includes("plan_suscripcion") && msg.includes("could not find");
+  if (!missingPlan) throw error;
+
+  const fallback = await supabase()
+    .from("establecimientos")
+    .select("id,nombre,logo_url")
+    .order("nombre", { ascending: true });
+  if (fallback.error) throw fallback.error;
+  return ((fallback.data as unknown as Array<Omit<Establecimiento, "plan_suscripcion">>) ?? []).map((x) => ({
+    ...x,
+    plan_suscripcion: null
+  }));
 }
 
 async function fetchEstablecimiento(id: string): Promise<Establecimiento | null> {
@@ -48,8 +61,20 @@ async function fetchEstablecimiento(id: string): Promise<Establecimiento | null>
     .select("id,nombre,plan_suscripcion,logo_url")
     .eq("id", id)
     .maybeSingle();
-  if (error) throw error;
-  return (data as unknown as Establecimiento) ?? null;
+  if (!error) return (data as unknown as Establecimiento) ?? null;
+
+  const msg = (error as { message?: string }).message?.toLowerCase() ?? "";
+  const missingPlan = msg.includes("plan_suscripcion") && msg.includes("could not find");
+  if (!missingPlan) throw error;
+
+  const fallback = await supabase()
+    .from("establecimientos")
+    .select("id,nombre,logo_url")
+    .eq("id", id)
+    .maybeSingle();
+  if (fallback.error) throw fallback.error;
+  if (!fallback.data) return null;
+  return { ...(fallback.data as unknown as Omit<Establecimiento, "plan_suscripcion">), plan_suscripcion: null };
 }
 
 export function useActiveEstablishment() {

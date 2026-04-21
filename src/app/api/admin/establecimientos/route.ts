@@ -50,14 +50,28 @@ export async function POST(req: Request) {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
     });
 
-    const { data, error } = await adminClient
+    const attempt = await adminClient
       .from("establecimientos")
       .insert({ nombre, plan_suscripcion, logo_url: logo_url || null })
       .select("id")
       .single();
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
-    return NextResponse.json({ ok: true, id: (data as { id: string }).id });
+    if (attempt.error) {
+      const msg = attempt.error.message.toLowerCase();
+      const missingPlan = msg.includes("plan_suscripcion") && msg.includes("could not find");
+      if (!missingPlan) return NextResponse.json({ error: attempt.error.message }, { status: 400 });
+
+      // Fallback si la columna aún no está en caché/esquema
+      const fb = await adminClient
+        .from("establecimientos")
+        .insert({ nombre, logo_url: logo_url || null })
+        .select("id")
+        .single();
+      if (fb.error) return NextResponse.json({ error: fb.error.message }, { status: 400 });
+      return NextResponse.json({ ok: true, id: (fb.data as { id: string }).id });
+    }
+
+    return NextResponse.json({ ok: true, id: (attempt.data as { id: string }).id });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }

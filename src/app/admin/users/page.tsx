@@ -6,7 +6,7 @@ import { MobileHeader } from "@/components/MobileHeader";
 import { supabase } from "@/lib/supabase";
 import { useMyRole } from "@/lib/useMyRole";
 
-type EstRow = { id: string; nombre: string; plan_suscripcion: string };
+type EstRow = { id: string; nombre: string; plan_suscripcion?: string | null };
 
 export default function AdminUsersPage() {
   const { data: me, isLoading } = useMyRole();
@@ -31,8 +31,23 @@ export default function AdminUsersPage() {
         .select("id,nombre,plan_suscripcion")
         .order("created_at", { ascending: true });
       if (cancelled) return;
-      if (error) throw error;
-      const rows = (data as unknown as EstRow[]) ?? [];
+      if (!error) {
+        const rows = (data as unknown as EstRow[]) ?? [];
+        setEsts(rows);
+        if (!establecimientoId && rows[0]?.id) setEstablecimientoId(rows[0].id);
+        return;
+      }
+
+      const msg = (error as { message?: string }).message?.toLowerCase() ?? "";
+      const missingPlan = msg.includes("plan_suscripcion") && msg.includes("could not find");
+      if (!missingPlan) throw error;
+
+      const fb = await supabase().from("establecimientos").select("id,nombre").order("created_at", { ascending: true });
+      if (fb.error) throw fb.error;
+      const rows = ((fb.data as unknown as Array<{ id: string; nombre: string }>) ?? []).map((r) => ({
+        ...r,
+        plan_suscripcion: null
+      }));
       setEsts(rows);
       if (!establecimientoId && rows[0]?.id) setEstablecimientoId(rows[0].id);
     })().catch((e) => setErr(e instanceof Error ? e.message : String(e)));
@@ -145,7 +160,8 @@ export default function AdminUsersPage() {
               >
                 {ests.map((x) => (
                   <option key={x.id} value={x.id}>
-                    {x.nombre} ({x.plan_suscripcion})
+                    {x.nombre}
+                    {x.plan_suscripcion ? ` (${x.plan_suscripcion})` : ""}
                   </option>
                 ))}
               </select>
