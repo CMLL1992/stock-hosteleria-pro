@@ -33,8 +33,44 @@ create table if not exists public.productos (
   stock_minimo integer,
   proveedor_id uuid references public.proveedores(id) on delete set null,
   qr_code_uid text not null unique,
+  -- Finanzas / Escandallos
+  precio_tarifa numeric(12,2) not null default 0,
+  descuento_valor numeric(12,2) not null default 0,
+  descuento_tipo text not null default '%',
+  iva_compra integer not null default 10,
+  pvp numeric(12,2) not null default 0,
+  iva_venta integer not null default 10,
   created_at timestamptz not null default now()
 );
+
+do $$
+begin
+  begin
+    alter table public.productos
+      add constraint productos_descuento_tipo_chk check (descuento_tipo in ('%','€'));
+  exception when duplicate_object then null;
+  end;
+
+  begin
+    alter table public.productos
+      add constraint productos_iva_compra_chk check (iva_compra in (4,10,21));
+  exception when duplicate_object then null;
+  end;
+
+  begin
+    alter table public.productos
+      add constraint productos_iva_venta_chk check (iva_venta in (4,10,21));
+  exception when duplicate_object then null;
+  end;
+
+  begin
+    alter table public.productos
+      add constraint productos_precios_nonneg_chk check (
+        precio_tarifa >= 0 and descuento_valor >= 0 and pvp >= 0
+      );
+  exception when duplicate_object then null;
+  end;
+end $$;
 
 do $$
 begin

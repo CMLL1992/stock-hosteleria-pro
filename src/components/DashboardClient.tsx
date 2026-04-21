@@ -13,15 +13,20 @@ import {
 } from "recharts";
 import { Button } from "@/components/ui/Button";
 import { supabase } from "@/lib/supabase";
+import type { ProductoFinanzas } from "@/lib/finance";
+import { costeNeto, margenBrutoEUR } from "@/lib/finance";
 
 type RangeKey = "week" | "month" | "year";
+type MetricKey = "units" | "cost";
+
+type ProductoFinanceFields = ProductoFinanzas & { nombre: string };
 
 type Movimiento = {
   producto_id: string;
   tipo: "entrada" | "salida" | "pedido";
   cantidad: number;
   timestamp: string;
-  producto?: { nombre: string } | null;
+  producto?: ProductoFinanceFields | null;
 };
 
 type ProductoStock = {
@@ -48,7 +53,9 @@ async function fetchTopProductosSalida(range: RangeKey) {
   const since = sinceForRange(range);
   const { data, error } = await supabase()
     .from("movimientos")
-    .select("producto_id,tipo,cantidad,timestamp,producto:productos(nombre)")
+    .select(
+      "producto_id,tipo,cantidad,timestamp,producto:productos(nombre,precio_tarifa,descuento_valor,descuento_tipo,iva_compra,pvp,iva_venta)"
+    )
     .eq("tipo", "salida")
     .gte("timestamp", since)
     .order("timestamp", { ascending: false })
@@ -56,29 +63,45 @@ async function fetchTopProductosSalida(range: RangeKey) {
   if (error) throw error;
 
   const rows = (data as unknown as Movimiento[]) ?? [];
-  const byProduct = new Map<string, { name: string; total: number }>();
+  const byProduct = new Map<string, { name: string; units: number; cost: number; profit: number }>();
   for (const r of rows) {
     const name = r.producto?.nombre ?? "Producto";
-    const prev = byProduct.get(r.producto_id) ?? { name, total: 0 };
-    prev.total += Math.abs(Number(r.cantidad) || 0);
+    const units = Math.abs(Number(r.cantidad) || 0);
+    const cn = r.producto ? costeNeto(r.producto) : 0;
+    const mb = r.producto ? margenBrutoEUR(r.producto) : 0; // margen por unidad (neto)
+    const prev = byProduct.get(r.producto_id) ?? { name, units: 0, cost: 0, profit: 0 };
+    prev.units += units;
+    prev.cost += units * cn;
+    prev.profit += units * mb;
     prev.name = name;
     byProduct.set(r.producto_id, prev);
   }
 
-  return Array.from(byProduct.values())
-    .sort((a, b) => b.total - a.total)
-    .slice(0, 5)
-    .map((x) => ({ nombre: x.name, cantidad: x.total }));
+  return {
+    rows: Array.from(byProduct.values()),
+    totals: rows.reduce(
+      (acc, r) => {
+        const units = Math.abs(Number(r.cantidad) || 0);
+        const cn = r.producto ? costeNeto(r.producto) : 0;
+        const mb = r.producto ? margenBrutoEUR(r.producto) : 0;
+        acc.units += units;
+        acc.cost += units * cn;
+        acc.profit += units * mb;
+        return acc;
+      },
+      { units: 0, cost: 0, profit: 0 }
+    )
+  };
 }
 
 async function fetchResumen(range: RangeKey) {
   const since = sinceForRange(range);
   const sinceToday = startOfTodayISO();
 
-  const [{ data: salidasHoy }, { data: prods }, { count: pedidosCount }] = await Promise.all([
+  const [{ data: salidasHoy }, { data: prods }, { count: pedidosCount }, { data: salidasRango }] = await Promise.all([
     supabase()
       .from("movimientos")
-      .select("cantidad", { count: "exact" })
+      .select("cantidad,producto:productos(precio_tarifa,descuento_valor,descuento_tipo,iva_compra,pvp,iva_venta)")
       .eq("tipo", "salida")
       .gte("timestamp", sinceToday),
     supabase().from("productos").select("id,stock_actual,stock_minimo"),
@@ -86,13 +109,22 @@ async function fetchResumen(range: RangeKey) {
       .from("movimientos")
       .select("id", { count: "exact", head: true })
       .eq("tipo", "pedido")
+      .gte("timestamp", since),
+    supabase()
+      .from("movimientos")
+      .select("cantidad,producto:productos(precio_tarifa,descuento_valor,descuento_tipo,iva_compra,pvp,iva_venta)")
+      .eq("tipo", "salida")
       .gte("timestamp", since)
   ]);
 
-  const totalGastadoHoy = ((salidasHoy as unknown as Array<{ cantidad: number }>) ?? []).reduce(
-    (acc, r) => acc + (Number(r.cantidad) || 0),
-    0
-  );
+  const salidasHoyRows =
+    (salidasHoy as unknown as Array<{ cantidad: number; producto: ProductoFinanzas | null }>) ?? [];
+  const totalGastadoHoy = salidasHoyRows.reduce((acc, r) => acc + (Number(r.cantidad) || 0), 0);
+  const costeHoy = salidasHoyRows.reduce((acc, r) => {
+    const units = Math.abs(Number(r.cantidad) || 0);
+    const cn = r.producto ? costeNeto(r.producto) : 0;
+    return acc + units * cn;
+  }, 0);
 
   const productos = (prods as unknown as ProductoStock[]) ?? [];
   const alertasStockBajo = productos.filter((p) => {
@@ -104,11 +136,20 @@ async function fetchResumen(range: RangeKey) {
   // No existe estado “pendiente” en esquema; contamos pedidos registrados en el rango como proxy.
   const pedidosPendientes = pedidosCount ?? 0;
 
-  return { totalGastadoHoy, alertasStockBajo, pedidosPendientes };
+  const salidasRangoRows =
+    (salidasRango as unknown as Array<{ cantidad: number; producto: ProductoFinanzas | null }>) ?? [];
+  const beneficioEstimado = salidasRangoRows.reduce((acc, r) => {
+    const units = Math.abs(Number(r.cantidad) || 0);
+    const mb = r.producto ? margenBrutoEUR(r.producto) : 0;
+    return acc + units * mb;
+  }, 0);
+
+  return { totalGastadoHoy, costeHoy, alertasStockBajo, pedidosPendientes, beneficioEstimado };
 }
 
 export function DashboardClient() {
   const [range, setRange] = useState<RangeKey>("week");
+  const [metric, setMetric] = useState<MetricKey>("units");
 
   const topQuery = useQuery({
     queryKey: ["dashboard", "topSalida", range],
@@ -124,7 +165,17 @@ export function DashboardClient() {
     retry: 1
   });
 
-  const data = topQuery.data ?? [];
+  const raw = topQuery.data;
+  const totals = raw?.totals ?? { units: 0, cost: 0, profit: 0 };
+
+  const data = useMemo(() => {
+    const topRows = raw?.rows ?? [];
+    const sorted = [...topRows].sort((a, b) => (metric === "units" ? b.units - a.units : b.cost - a.cost));
+    return sorted.slice(0, 5).map((x) => ({
+      nombre: x.name,
+      cantidad: metric === "units" ? x.units : Math.round((x.cost + Number.EPSILON) * 100) / 100
+    }));
+  }, [metric, raw?.rows]);
   const resumen = resumenQuery.data;
 
   const pills = useMemo(
@@ -164,11 +215,46 @@ export function DashboardClient() {
         </a>
       </div>
 
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-3xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-slate-600">Gráfico</span>
+          <button
+            className={[
+              "min-h-10 rounded-full px-4 text-sm font-semibold",
+              metric === "units" ? "bg-black text-white" : "border border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
+            ].join(" ")}
+            onClick={() => setMetric("units")}
+          >
+            Unidades gastadas
+          </button>
+          <button
+            className={[
+              "min-h-10 rounded-full px-4 text-sm font-semibold",
+              metric === "cost" ? "bg-black text-white" : "border border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
+            ].join(" ")}
+            onClick={() => setMetric("cost")}
+          >
+            Valor € (coste)
+          </button>
+        </div>
+        <p className="text-xs text-slate-500">
+          Total rango:{" "}
+          <span className="font-mono">
+            {metric === "units"
+              ? `${Math.round(totals.units)} uds`
+              : `${Math.round((totals.cost + Number.EPSILON) * 100) / 100} €`}
+          </span>
+        </p>
+      </div>
+
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs font-semibold text-slate-500">Total gastado hoy</p>
           <p className="mt-1 text-2xl font-extrabold tabular-nums text-slate-900">
             {resumenQuery.isLoading ? "—" : resumen?.totalGastadoHoy ?? 0}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            Coste aprox.: <span className="font-mono">{resumenQuery.isLoading ? "—" : (resumen?.costeHoy ?? 0).toFixed(2)} €</span>
           </p>
         </div>
         <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -187,10 +273,20 @@ export function DashboardClient() {
       </div>
 
       <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+        <p className="text-xs font-semibold text-slate-500">Beneficio estimado</p>
+        <p className="mt-1 text-2xl font-extrabold tabular-nums text-slate-900">
+          {resumenQuery.isLoading ? "—" : (resumen?.beneficioEstimado ?? 0).toFixed(2)} €
+        </p>
+        <p className="mt-1 text-xs text-slate-500">Basado en salidas del rango y escandallos (PVP/IVA - coste neto).</p>
+      </div>
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="mb-2 flex items-center justify-between gap-3">
           <div>
             <p className="text-sm font-semibold text-slate-900">Top productos (salidas)</p>
-            <p className="text-xs text-slate-600">5 productos más gastados según movimientos tipo “salida”.</p>
+            <p className="text-xs text-slate-600">
+              5 productos más gastados según movimientos tipo “salida” ({metric === "units" ? "unidades" : "€ coste"}).
+            </p>
           </div>
           <Button
             onClick={() => {

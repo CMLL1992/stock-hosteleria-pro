@@ -14,6 +14,7 @@ const LINKS: AdminLink[] = [
   { href: "/admin/proveedores", title: "Gestionar proveedores" },
   { href: "/admin/proveedores/nuevo", title: "Crear proveedor" },
   { href: "/admin/productos/nuevo", title: "Crear producto" },
+  { href: "/admin/escandallos", title: "Escandallos (Finanzas)" },
   { href: "/admin/etiquetas", title: "Gestión de etiquetas" },
   { href: "/admin/importar-csv", title: "Importar CSV" },
   { href: "/admin/pedido-rapido", title: "Pedido rápido" }
