@@ -40,21 +40,38 @@ export function DashboardClient() {
 
   const rows = useMemo(() => productosQuery.data ?? [], [productosQuery.data]);
 
+  type EscandalloPrecioRow = {
+    producto_id: string;
+    precio_tarifa: number;
+    descuento_valor: number;
+    descuento_tipo: "%" | "€";
+    rappel_valor: number;
+  };
+
   const escandallosPrecioQuery = useQuery({
     queryKey: ["dashboard", "escandallos-precio", establecimientoId],
     enabled: !!establecimientoId && !!(me?.isAdmin || me?.isSuperadmin),
     queryFn: async () => {
       const { data, error } = await supabase()
         .from("escandallos")
-        .select("producto_id,precio_tarifa")
+        .select("producto_id,precio_tarifa,descuento_valor,descuento_tipo,rappel_valor")
         .eq("establecimiento_id", establecimientoId as string);
       if (error) throw error;
-      const map = new Map<string, number>();
-      for (const r of ((data ?? []) as unknown as Array<{ producto_id: unknown; precio_tarifa: unknown }>)) {
+      const map = new Map<string, EscandalloPrecioRow>();
+      for (const r of ((data ?? []) as unknown as Array<Record<string, unknown>>)) {
         const pid = String(r.producto_id ?? "").trim();
         if (!pid) continue;
-        const n = Number(r.precio_tarifa ?? 0);
-        map.set(pid, Number.isFinite(n) ? n : 0);
+        const precio = Number(r.precio_tarifa ?? 0);
+        const descVal = Number(r.descuento_valor ?? 0);
+        const rappel = Number(r.rappel_valor ?? 0);
+        const descTipo = String(r.descuento_tipo ?? "%") === "€" ? "€" : "%";
+        map.set(pid, {
+          producto_id: pid,
+          precio_tarifa: Number.isFinite(precio) ? precio : 0,
+          descuento_valor: Number.isFinite(descVal) ? descVal : 0,
+          descuento_tipo: descTipo,
+          rappel_valor: Number.isFinite(rappel) ? rappel : 0
+        });
       }
       return map;
     },
@@ -115,13 +132,20 @@ export function DashboardClient() {
   }, [rows]);
 
   const valorStock = useMemo(() => {
-    // Valor del stock actual a coste (usa escandallos.precio_tarifa por producto).
+    // Valor del stock actual a coste neto SIN IVA:
+    // coste = tarifa - descuento (%,€) - rappel
     let total = 0;
-    const priceById = escandallosPrecioQuery.data ?? new Map<string, number>();
+    const escById = escandallosPrecioQuery.data ?? new Map<string, EscandalloPrecioRow>();
     for (const p of rows) {
-      const price = Math.max(0, priceById.get(p.id) ?? 0);
+      const esc = escById.get(p.id) ?? null;
+      const tarifa = Math.max(0, esc?.precio_tarifa ?? 0);
+      const descVal = Math.max(0, esc?.descuento_valor ?? 0);
+      const rappel = Math.max(0, esc?.rappel_valor ?? 0);
+      const descTipo = esc?.descuento_tipo ?? "%";
+      const afterDesc = descTipo === "%" ? tarifa * (1 - descVal / 100) : tarifa - descVal;
+      const coste = Math.max(0, afterDesc - rappel);
       const qty = Math.max(0, Number(p.stock_actual ?? 0) || 0);
-      total += qty * price;
+      total += qty * coste;
     }
     return total;
   }, [escandallosPrecioQuery.data, rows]);
