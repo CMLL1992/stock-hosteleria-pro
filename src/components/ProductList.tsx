@@ -9,8 +9,9 @@ import { IconWhatsApp } from "@/components/IconWhatsApp";
 import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { stockSemaforo } from "@/lib/stockSemaforo";
-import { enqueueMovimiento } from "@/lib/offlineQueue";
+import { enqueueMovimiento, newClientUuid } from "@/lib/offlineQueue";
 import { requireUserId } from "@/lib/session";
+import { useProductosRealtime } from "@/lib/useProductosRealtime";
 import {
   cantidadSugeridaPedido,
   waUrlPedidoCestaProveedor
@@ -168,7 +169,16 @@ export function ProductList() {
     queryFn: () => fetchProductos(establecimientoId),
     refetchOnMount: "always",
     refetchOnReconnect: true,
-    refetchInterval: 4000
+    refetchInterval: false
+  });
+
+  useProductosRealtime({
+    establecimientoId,
+    queryClient,
+    queryKeys: [
+      ["productos", establecimientoId],
+      ["dashboard", "productos", establecimientoId]
+    ]
   });
 
   useEffect(() => {
@@ -295,6 +305,7 @@ export function ProductList() {
     try {
       const usuario_id = await requireUserId();
       const payload: {
+        client_uuid: string;
         producto_id: string;
         establecimiento_id: string;
         tipo: QuickMovimientoTipo;
@@ -303,6 +314,7 @@ export function ProductList() {
         timestamp: string;
         genera_vacio?: boolean;
       } = {
+        client_uuid: newClientUuid(),
         producto_id: movProd.id,
         establecimiento_id: establecimientoId,
         tipo: movTipo,
@@ -313,7 +325,9 @@ export function ProductList() {
       if (movTipo === "salida_barra") payload.genera_vacio = true;
 
       if (typeof navigator !== "undefined" && navigator.onLine) {
-        const { error } = await supabase().from("movimientos").insert(payload);
+        const { error } = await supabase()
+          .from("movimientos")
+          .upsert(payload, { onConflict: "client_uuid", ignoreDuplicates: true });
         if (error) throw error;
       } else {
         await enqueueMovimiento(payload);

@@ -16,7 +16,9 @@ export function OfflineSync() {
         const queued = await listQueuedMovimientos();
         for (const item of queued) {
           const { id, ...payload } = item;
-          const { error } = await supabase().from("movimientos").insert(payload);
+          const { error } = await supabase()
+            .from("movimientos")
+            .upsert(payload, { onConflict: "client_uuid", ignoreDuplicates: true });
           if (error) throw error;
           await deleteQueuedMovimiento(id);
         }

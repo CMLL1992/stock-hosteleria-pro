@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { useMyRole } from "@/lib/useMyRole";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
-import { enqueueMovimiento } from "@/lib/offlineQueue";
+import { enqueueMovimiento, newClientUuid } from "@/lib/offlineQueue";
 import { requireUserId } from "@/lib/session";
 
 type ProveedorRow = { id: string; nombre: string };
@@ -171,6 +171,7 @@ export default function RecepcionPage() {
         for (const it of items as RecepcionItem[]) {
           if (it.recibido > 0) {
             await enqueueMovimiento({
+              client_uuid: newClientUuid(),
               producto_id: it.producto_id,
               establecimiento_id: activeEstablishmentId,
               tipo: "entrada_compra",
@@ -182,6 +183,7 @@ export default function RecepcionPage() {
           }
           if (it.vacios > 0) {
             await enqueueMovimiento({
+              client_uuid: newClientUuid(),
               producto_id: it.producto_id,
               establecimiento_id: activeEstablishmentId,
               tipo: "devolucion_proveedor",

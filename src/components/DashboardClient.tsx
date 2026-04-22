@@ -3,11 +3,22 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchDashboardProductos } from "@/lib/adminDashboardData";
+import { useProductosRealtime } from "@/lib/useProductosRealtime";
 
 export function DashboardClient() {
   const { activeEstablishmentId: establecimientoId, activeEstablishmentName, me } = useActiveEstablishment();
+  const queryClient = useQueryClient();
+
+  useProductosRealtime({
+    establecimientoId,
+    queryClient,
+    queryKeys: [
+      ["dashboard", "productos", establecimientoId],
+      ["productos", establecimientoId]
+    ]
+  });
 
   const productosQuery = useQuery({
     queryKey: ["dashboard", "productos", establecimientoId],

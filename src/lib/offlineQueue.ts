@@ -10,6 +10,7 @@ export type MovimientoTipo =
   | "entrada_compra";
 
 export type MovimientoDraft = {
+  client_uuid: string;
   producto_id: string;
   establecimiento_id: string;
   tipo: MovimientoTipo;
@@ -19,6 +20,20 @@ export type MovimientoDraft = {
   genera_vacio?: boolean;
   proveedor_id?: string;
 };
+
+function fallbackUuid(): string {
+  // Formato UUID v4-like (no perfecto, pero suficiente para deduplicación best-effort)
+  const s4 = () => Math.floor((1 + Math.random()) * 0x10000).toString(16).slice(1);
+  return `${s4()}${s4()}-${s4()}-${s4()}-${s4()}-${s4()}${s4()}${s4()}`;
+}
+
+export function newClientUuid(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (crypto as any).randomUUID() as string;
+  }
+  return fallbackUuid();
+}
 
 const DB_NAME = "stock_hosteleria";
 const DB_VERSION = 1;

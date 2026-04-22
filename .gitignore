@@ -4,8 +4,7 @@ node_modules
 # next
 .next
 out
-public/sw.js
-public/workbox-*.js
+public/sw*
 
 # env
 .env.local

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
 import { MobileHeader } from "@/components/MobileHeader";
 import { enqueueMovimiento } from "@/lib/offlineQueue";
+import { newClientUuid } from "@/lib/offlineQueue";
 import { requireUserId } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
@@ -64,6 +65,7 @@ async function fetchProducto(idOrUid: string, establecimientoId: string | null):
 }
 
 async function createMovimientoOnline(input: {
+  client_uuid: string;
   producto_id: string;
   establecimiento_id: string;
   tipo: "entrada" | "salida" | "pedido" | "salida_barra" | "entrada_vacio" | "devolucion_proveedor";
@@ -72,7 +74,7 @@ async function createMovimientoOnline(input: {
   timestamp: string;
   genera_vacio?: boolean;
 }) {
-  const { error } = await supabase().from("movimientos").insert(input);
+  const { error } = await supabase().from("movimientos").upsert(input, { onConflict: "client_uuid", ignoreDuplicates: true });
   if (error) throw error;
 }
 
@@ -175,6 +177,7 @@ export function ProductByUidClient({ uid }: { uid: string }) {
     }
     const usuario_id = await requireUserId();
     const payload = {
+      client_uuid: newClientUuid(),
       producto_id: producto.id,
       establecimiento_id: activeEstablishmentId,
       tipo,
