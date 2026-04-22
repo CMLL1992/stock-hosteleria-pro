@@ -15,6 +15,7 @@ type Producto = {
   id: string;
   articulo: string;
   stock_actual: number;
+  stock_vacios?: number;
   stock_minimo: number | null;
   qr_code_uid: string;
   proveedor: null | {
@@ -44,7 +45,7 @@ async function fetchProducto(idOrUid: string, establecimientoId: string | null):
   const t = tituloColSql(col);
   const { data, error } = await supabase()
     .from("productos")
-    .select(`id,${t},stock_actual,stock_minimo,qr_code_uid,proveedor:proveedores(id,nombre,telefono_whatsapp)` as "*")
+    .select(`id,${t},stock_actual,stock_vacios,stock_minimo,qr_code_uid,proveedor:proveedores(id,nombre,telefono_whatsapp)` as "*")
     .eq(isUuid(idOrUid) ? "id" : "qr_code_uid", idOrUid)
     .eq("establecimiento_id", establecimientoId)
     .maybeSingle();
@@ -55,6 +56,7 @@ async function fetchProducto(idOrUid: string, establecimientoId: string | null):
     id: String(raw.id ?? ""),
     articulo: String(raw.articulo ?? raw.nombre ?? "").trim() || "—",
     stock_actual: Number(raw.stock_actual ?? 0) || 0,
+    stock_vacios: Number(raw.stock_vacios ?? 0) || 0,
     stock_minimo: raw.stock_minimo != null ? Number(raw.stock_minimo) : null,
     qr_code_uid: String(raw.qr_code_uid ?? ""),
     proveedor: raw.proveedor as Producto["proveedor"]
@@ -64,10 +66,11 @@ async function fetchProducto(idOrUid: string, establecimientoId: string | null):
 async function createMovimientoOnline(input: {
   producto_id: string;
   establecimiento_id: string;
-  tipo: "entrada" | "salida" | "pedido";
+  tipo: "entrada" | "salida" | "pedido" | "salida_barra" | "entrada_vacio" | "devolucion_proveedor";
   cantidad: number;
   usuario_id: string;
   timestamp: string;
+  genera_vacio?: boolean;
 }) {
   const { error } = await supabase().from("movimientos").insert(input);
   if (error) throw error;
@@ -78,7 +81,7 @@ export function ProductByUidClient({ uid }: { uid: string }) {
   const [producto, setProducto] = useState<Producto | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
-  const [modo, setModo] = useState<"entrada" | "salida" | "ajuste">("entrada");
+  const [modo, setModo] = useState<"entrada" | "salida" | "entrada_vacio" | "devolucion_proveedor">("entrada");
   const [cantidad, setCantidad] = useState<number>(0);
   const qtyRef = useRef<HTMLInputElement | null>(null);
   const [saved, setSaved] = useState(false);
@@ -86,6 +89,7 @@ export function ProductByUidClient({ uid }: { uid: string }) {
   const [movOpen, setMovOpen] = useState(false);
   const [pedidoOpen, setPedidoOpen] = useState(false);
   const [pedidoCantidad, setPedidoCantidad] = useState<number>(1);
+  const [generaVacio, setGeneraVacio] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -160,7 +164,11 @@ export function ProductByUidClient({ uid }: { uid: string }) {
     return `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
   }, [pedidoCantidad, producto?.articulo, producto?.proveedor?.nombre, producto?.proveedor?.telefono_whatsapp]);
 
-  async function registrar(tipo: "entrada" | "salida" | "pedido", cantidadMovimiento: number) {
+  async function registrar(
+    tipo: "entrada" | "salida" | "pedido" | "salida_barra" | "entrada_vacio" | "devolucion_proveedor",
+    cantidadMovimiento: number,
+    opts?: { genera_vacio?: boolean }
+  ) {
     if (!producto) return;
     if (!activeEstablishmentId) {
       setErr("No hay establecimiento activo.");
@@ -173,7 +181,8 @@ export function ProductByUidClient({ uid }: { uid: string }) {
       tipo,
       cantidad: cantidadMovimiento,
       usuario_id,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      ...(opts?.genera_vacio !== undefined ? { genera_vacio: opts.genera_vacio } : {})
     };
     try {
       if (typeof navigator !== "undefined" && navigator.onLine) {
@@ -215,10 +224,14 @@ export function ProductByUidClient({ uid }: { uid: string }) {
             <p className="text-lg font-semibold text-gray-900">{producto.articulo}</p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div className="rounded-2xl bg-gray-50 p-3">
               <p className="text-xs font-medium text-gray-500">Stock actual</p>
               <p className="text-2xl font-semibold tabular-nums text-gray-900">{producto.stock_actual}</p>
+            </div>
+            <div className="rounded-2xl bg-gray-50 p-3">
+              <p className="text-xs font-medium text-gray-500">Vacíos</p>
+              <p className="text-2xl font-semibold tabular-nums text-gray-900">{producto.stock_vacios ?? 0}</p>
             </div>
             <div className="rounded-2xl bg-gray-50 p-3">
               <p className="text-xs font-medium text-gray-500">Mínimo</p>
@@ -229,6 +242,33 @@ export function ProductByUidClient({ uid }: { uid: string }) {
           </div>
 
           <div className="grid grid-cols-1 gap-2">
+            <div className="grid grid-cols-3 gap-2">
+              <Button onClick={() => { setModo("entrada"); setMovOpen(true); }} className="bg-slate-900 hover:bg-slate-950">
+                📥 Entrada
+              </Button>
+              <Button
+                onClick={() => {
+                  setModo("salida");
+                  setGeneraVacio(true);
+                  setMovOpen(true);
+                }}
+                className="bg-amber-600 hover:bg-amber-700 active:bg-amber-800"
+              >
+                🍺 A barra
+              </Button>
+              <Button
+                onClick={async () => {
+                  setErr(null);
+                  setCantidad(1);
+                  setSaved(false);
+                  setModo("devolucion_proveedor");
+                  setMovOpen(true);
+                }}
+                className="bg-sky-700 hover:bg-sky-800 active:bg-sky-900"
+              >
+                🚛 Devolver vacío
+              </Button>
+            </div>
             <Button
               onClick={() => setMovOpen(true)}
             >
@@ -277,26 +317,26 @@ export function ProductByUidClient({ uid }: { uid: string }) {
               ].join(" ")}
               onClick={() => setModo("salida")}
             >
-              Salida
+              A barra
             </button>
             <button
               className={[
                 "min-h-12 rounded-2xl border px-3 text-sm font-semibold",
-                modo === "ajuste" ? "border-gray-900 bg-gray-900 text-white" : "border-gray-100 bg-white text-gray-700"
+                modo === "devolucion_proveedor" ? "border-gray-900 bg-gray-900 text-white" : "border-gray-100 bg-white text-gray-700"
               ].join(" ")}
-              onClick={() => setModo("ajuste")}
+              onClick={() => setModo("devolucion_proveedor")}
             >
-              Ajuste
+              Devolver vacío
             </button>
           </div>
 
           <div className="space-y-2">
             <label className="text-sm font-semibold text-gray-900">
-              Cantidad {modo === "ajuste" ? "(puede ser negativa)" : ""}
+              Cantidad
             </label>
             <input
               className="min-h-12 w-full rounded-2xl border border-gray-100 bg-gray-50 px-4 text-base"
-              inputMode="decimal"
+              inputMode="numeric"
               type="number"
               step={1}
               value={cantidad}
@@ -305,6 +345,28 @@ export function ProductByUidClient({ uid }: { uid: string }) {
               ref={qtyRef}
             />
           </div>
+
+          {modo === "salida" ? (
+            <label className="flex min-h-12 items-center gap-3 rounded-2xl border border-gray-100 bg-white px-4 text-sm font-semibold text-gray-900">
+              <input
+                type="checkbox"
+                className="h-5 w-5"
+                checked={generaVacio}
+                onChange={(e) => setGeneraVacio(e.currentTarget.checked)}
+              />
+              Genera envase vacío
+            </label>
+          ) : null}
+
+          {modo === "devolucion_proveedor" ? (
+            <button
+              type="button"
+              className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+              onClick={() => setModo("entrada_vacio")}
+            >
+              + Entrada de vacío (en vez de devolver)
+            </button>
+          ) : null}
 
           <div className="grid grid-cols-1 gap-2">
             <Button
@@ -319,13 +381,16 @@ export function ProductByUidClient({ uid }: { uid: string }) {
                   return;
                 }
                 if (modo === "salida") {
-                  await registrar("salida", Math.abs(n));
+                  await registrar("salida_barra", Math.abs(n), { genera_vacio: generaVacio });
                   setSaved(true);
                   window.setTimeout(() => setSaved(false), 1200);
                   return;
                 }
-                if (n > 0) await registrar("entrada", n);
-                else await registrar("salida", Math.abs(n));
+                if (modo === "entrada_vacio") {
+                  await registrar("entrada_vacio", Math.abs(n));
+                } else {
+                  await registrar("devolucion_proveedor", Math.abs(n));
+                }
                 setSaved(true);
                 window.setTimeout(() => setSaved(false), 1200);
               }}

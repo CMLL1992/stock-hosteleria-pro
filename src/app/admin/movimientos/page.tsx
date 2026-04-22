@@ -9,12 +9,15 @@ import { useMyRole } from "@/lib/useMyRole";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 
 type ProdEmbed = { articulo?: string | null; nombre?: string | null };
+type UsuarioEmbed = { email?: string | null };
 
 type MovRow = {
   id: string;
   tipo: string;
   cantidad: number;
   timestamp: string;
+  genera_vacio?: boolean | null;
+  usuarios?: UsuarioEmbed | UsuarioEmbed[] | null;
   productos: ProdEmbed | ProdEmbed[] | null;
 };
 
@@ -34,6 +37,9 @@ function labelTipo(t: string): string {
   if (t === "entrada") return "Entrada";
   if (t === "salida") return "Salida";
   if (t === "pedido") return "Pedido";
+  if (t === "salida_barra") return "Salida a barra";
+  if (t === "entrada_vacio") return "Entrada de vacío";
+  if (t === "devolucion_proveedor") return "Devolución a proveedor";
   return t;
 }
 
@@ -57,7 +63,7 @@ export default function AdminMovimientosPage() {
       const t = tituloColSql(col);
       const resArticulo = await supabase()
         .from("movimientos")
-        .select(`id,tipo,cantidad,timestamp,productos(${t})` as "*")
+        .select(`id,tipo,cantidad,timestamp,genera_vacio,productos(${t}),usuarios(email)` as "*")
         .eq("establecimiento_id", activeEstablishmentId)
         .order("timestamp", { ascending: false })
         .limit(150);
@@ -116,6 +122,9 @@ export default function AdminMovimientosPage() {
               const articuloEtiqueta =
                 String(prod?.articulo ?? prod?.nombre ?? "")
                   .trim() || "—";
+              const rawU = r.usuarios ?? null;
+              const u = Array.isArray(rawU) ? rawU[0] ?? null : rawU;
+              const email = String(u?.email ?? "").trim();
               const ts = new Date(r.timestamp);
               return (
                 <li
@@ -126,6 +135,8 @@ export default function AdminMovimientosPage() {
                     <p className="font-semibold leading-snug text-slate-900">{articuloEtiqueta}</p>
                     <p className="mt-1 text-xs text-slate-500">
                       {ts.toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" })} · {labelTipo(r.tipo)}
+                      {r.tipo === "salida_barra" && r.genera_vacio ? " · genera vacío" : ""}
+                      {email ? ` · ${email}` : ""}
                     </p>
                   </div>
                   <p className="shrink-0 text-lg font-bold tabular-nums text-slate-900">{r.cantidad}</p>

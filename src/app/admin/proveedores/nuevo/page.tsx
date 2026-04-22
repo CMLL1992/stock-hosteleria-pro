@@ -23,6 +23,8 @@ export default function NuevoProveedorPage() {
 
   const [nombre, setNombre] = useState("");
   const [telefono, setTelefono] = useState("");
+  const [categoria, setCategoria] = useState("");
+  const [notas, setNotas] = useState("");
   const { activeEstablishmentId } = useActiveEstablishment();
 
   useEffect(() => {
@@ -55,8 +57,10 @@ export default function NuevoProveedorPage() {
     }
     const telefono_whatsapp = telefono ? normalizeWhatsappPhone(telefono) : null;
     const { error } = await supabase().from("proveedores").insert({
-      nombre,
+      nombre: nombre.trim(),
       telefono_whatsapp,
+      categoria: categoria.trim() || null,
+      notas: notas.trim() || null,
       establecimiento_id: activeEstablishmentId
     });
     if (error) {
@@ -99,6 +103,16 @@ export default function NuevoProveedorPage() {
         </div>
 
         <div className="space-y-1">
+          <label className="text-sm font-semibold text-slate-900">Categoría</label>
+          <input
+            className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-black/10"
+            placeholder="Cervezas, Licores, Refrescos…"
+            value={categoria}
+            onChange={(e) => setCategoria(e.currentTarget.value)}
+          />
+        </div>
+
+        <div className="space-y-1">
           <label className="text-sm font-semibold text-slate-900">Teléfono WhatsApp (formato internacional)</label>
           <input
             className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-black/10"
@@ -110,6 +124,16 @@ export default function NuevoProveedorPage() {
           <p className="text-xs text-slate-600">
             Ejemplo: <span className="font-mono">+34600111222</span>
           </p>
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-sm font-semibold text-slate-900">Notas</label>
+          <textarea
+            className="min-h-24 w-full resize-y rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-black/10"
+            placeholder="Horario de reparto, condiciones, días de pedido…"
+            value={notas}
+            onChange={(e) => setNotas(e.currentTarget.value)}
+          />
         </div>
 
         <Button onClick={crear} disabled={!nombre.trim()}>

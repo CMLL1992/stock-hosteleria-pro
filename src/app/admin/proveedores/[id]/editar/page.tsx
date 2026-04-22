@@ -19,6 +19,8 @@ type Proveedor = {
   id: string;
   nombre: string;
   telefono_whatsapp: string | null;
+  categoria?: string | null;
+  notas?: string | null;
 };
 
 export default function EditarProveedorPage({ params }: { params: { id: string } }) {
@@ -30,6 +32,8 @@ export default function EditarProveedorPage({ params }: { params: { id: string }
   const [prov, setProv] = useState<Proveedor | null>(null);
   const [nombre, setNombre] = useState("");
   const [telefono, setTelefono] = useState("");
+  const [categoria, setCategoria] = useState("");
+  const [notas, setNotas] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -61,7 +65,7 @@ export default function EditarProveedorPage({ params }: { params: { id: string }
       try {
         const { data, error } = await supabase()
           .from("proveedores")
-          .select("id,nombre,telefono_whatsapp")
+          .select("id,nombre,telefono_whatsapp,categoria,notas")
           .eq("id", params.id)
           .eq("establecimiento_id", activeEstablishmentId)
           .single();
@@ -71,6 +75,8 @@ export default function EditarProveedorPage({ params }: { params: { id: string }
         setProv(p);
         setNombre(p.nombre ?? "");
         setTelefono(p.telefono_whatsapp ?? "");
+        setCategoria(String(p.categoria ?? ""));
+        setNotas(String(p.notas ?? ""));
       } catch (e) {
         if (cancelled) return;
         setErr(e instanceof Error ? e.message : String(e));
@@ -91,7 +97,33 @@ export default function EditarProveedorPage({ params }: { params: { id: string }
     const telefono_whatsapp = telefono.trim() ? normalizeWhatsappPhone(telefono) : null;
     const { error } = await supabase()
       .from("proveedores")
-      .update({ nombre: nombre.trim(), telefono_whatsapp })
+      .update({
+        nombre: nombre.trim(),
+        telefono_whatsapp,
+        categoria: categoria.trim() || null,
+        notas: notas.trim() || null
+      })
+      .eq("id", prov.id)
+      .eq("establecimiento_id", activeEstablishmentId);
+    if (error) {
+      setErr(error.message);
+      return;
+    }
+    window.location.href = "/admin/proveedores";
+  }
+
+  async function borrar() {
+    if (!prov) return;
+    if (!activeEstablishmentId) {
+      setErr("No hay establecimiento activo.");
+      return;
+    }
+    const ok = window.confirm(`¿Eliminar el proveedor "${prov.nombre}"?`);
+    if (!ok) return;
+    setErr(null);
+    const { error } = await supabase()
+      .from("proveedores")
+      .delete()
       .eq("id", prov.id)
       .eq("establecimiento_id", activeEstablishmentId);
     if (error) {
@@ -133,6 +165,15 @@ export default function EditarProveedorPage({ params }: { params: { id: string }
           />
         </div>
         <div className="space-y-1">
+          <label className="text-sm font-semibold text-slate-900">Categoría</label>
+          <input
+            className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-black/10"
+            placeholder="Cervezas, Licores, etc."
+            value={categoria}
+            onChange={(e) => setCategoria(e.currentTarget.value)}
+          />
+        </div>
+        <div className="space-y-1">
           <label className="text-sm font-semibold text-slate-900">Teléfono WhatsApp</label>
           <input
             className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-black/10"
@@ -143,9 +184,28 @@ export default function EditarProveedorPage({ params }: { params: { id: string }
           />
         </div>
 
+        <div className="space-y-1">
+          <label className="text-sm font-semibold text-slate-900">Notas</label>
+          <textarea
+            className="min-h-24 w-full resize-y rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-black/10"
+            value={notas}
+            onChange={(e) => setNotas(e.currentTarget.value)}
+          />
+        </div>
+
         <Button onClick={guardar} disabled={!nombre.trim()}>
           Guardar cambios
         </Button>
+
+        <button
+          type="button"
+          className="min-h-12 w-full rounded-2xl border border-red-200 bg-red-50 px-4 text-sm font-semibold text-red-800 hover:bg-red-100"
+          onClick={() => {
+            void borrar();
+          }}
+        >
+          Eliminar proveedor…
+        </button>
       </div>
       </main>
     </div>

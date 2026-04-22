@@ -1,6 +1,12 @@
 import { openDB } from "idb";
 
-export type MovimientoTipo = "entrada" | "salida" | "pedido";
+export type MovimientoTipo =
+  | "entrada"
+  | "salida"
+  | "pedido"
+  | "salida_barra"
+  | "entrada_vacio"
+  | "devolucion_proveedor";
 
 export type MovimientoDraft = {
   producto_id: string;
@@ -9,6 +15,7 @@ export type MovimientoDraft = {
   cantidad: number;
   usuario_id: string;
   timestamp: string;
+  genera_vacio?: boolean;
 };
 
 const DB_NAME = "stock_hosteleria";

@@ -31,6 +31,21 @@ export function DashboardClient() {
 
   const bajoMinimos = useMemo(() => rows.filter((p) => p.stock_actual <= p.stock_minimo), [rows]);
 
+  const vacios = useMemo(() => {
+    const out = { cajas: 0, barriles: 0, gas: 0 };
+    for (const p of rows) {
+      const n = Number(p.stock_vacios ?? 0) || 0;
+      if (n <= 0) continue;
+      const unidad = (p.unidad ?? "").trim().toLowerCase();
+      const cat = (p.categoria ?? "").trim().toLowerCase();
+      const art = (p.articulo ?? "").trim().toLowerCase();
+      if (unidad === "caja") out.cajas += n;
+      else if (unidad === "barril") out.barriles += n;
+      else if (cat.includes("gas") || art.includes("gas")) out.gas += n;
+    }
+    return out;
+  }, [rows]);
+
   const pedidoGlobalUrl = useMemo(() => waUrlPedidoGlobal(bajoMinimos), [bajoMinimos]);
 
   const urgentes = useMemo(() => {
@@ -171,10 +186,23 @@ export function DashboardClient() {
           <p className="mt-4 text-center text-5xl font-black tabular-nums tracking-tight text-red-600">{bajoMinimos.length}</p>
         </div>
         <div className="rounded-3xl border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm">
-          <p className="font-semibold text-slate-900">Resumen</p>
-          <p className="mt-2 leading-relaxed">
-            Toca el botón inferior para preparar pedidos por WhatsApp con el texto profesional ya definido.
-          </p>
+          <p className="font-semibold text-slate-900">Envases para devolver</p>
+          <p className="mt-2 text-sm text-slate-600">Total en stock de vacíos (solo positivos).</p>
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            <div className="rounded-2xl bg-slate-50 p-3 text-center">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Cajas</p>
+              <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{vacios.cajas}</p>
+            </div>
+            <div className="rounded-2xl bg-slate-50 p-3 text-center">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Barriles</p>
+              <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{vacios.barriles}</p>
+            </div>
+            <div className="rounded-2xl bg-slate-50 p-3 text-center">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Gas</p>
+              <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{vacios.gas}</p>
+            </div>
+          </div>
+          <p className="mt-3 text-xs text-slate-500">Gas: detectado por “gas” en categoría o nombre.</p>
         </div>
       </div>
 

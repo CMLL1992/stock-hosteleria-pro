@@ -11,6 +11,7 @@ type Proveedor = {
   id: string;
   nombre: string;
   telefono_whatsapp: string | null;
+  categoria?: string | null;
 };
 
 export default function ProveedoresPage() {
@@ -50,7 +51,7 @@ export default function ProveedoresPage() {
       try {
         const { data, error } = await supabase()
           .from("proveedores")
-          .select("id,nombre,telefono_whatsapp")
+          .select("id,nombre,telefono_whatsapp,categoria")
           .eq("establecimiento_id", activeEstablishmentId)
           .order("nombre", { ascending: true });
         if (error) throw error;
@@ -80,9 +81,17 @@ export default function ProveedoresPage() {
     <div className="min-h-dvh">
       <MobileHeader title="Proveedores" showBack backHref="/admin" />
       <main className="mx-auto max-w-3xl bg-slate-50 p-4 pb-28 text-slate-900">
-        <div className="mb-3">
-          <h1 className="text-xl font-semibold">Proveedores</h1>
-          <p className="text-sm text-slate-600">{items.length} proveedores</p>
+        <div className="mb-3 flex items-end justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-semibold">Proveedores</h1>
+            <p className="text-sm text-slate-600">{items.length} proveedores</p>
+          </div>
+          <a
+            className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-black px-4 text-sm font-semibold text-white hover:bg-slate-900 active:bg-slate-950"
+            href="/admin/proveedores/nuevo"
+          >
+            Crear
+          </a>
         </div>
 
       {err ? (
@@ -99,7 +108,10 @@ export default function ProveedoresPage() {
           >
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold">{p.nombre}</p>
-              <p className="mt-1 text-xs text-slate-600">{p.telefono_whatsapp ?? "—"}</p>
+              <p className="mt-1 text-xs text-slate-600">
+                {p.telefono_whatsapp ?? "—"}
+                {p.categoria ? <span> · {p.categoria}</span> : null}
+              </p>
             </div>
             <a
               className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50"
