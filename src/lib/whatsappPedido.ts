@@ -17,14 +17,23 @@ function unidadLegible(u: string | null | undefined): string {
   return (u ?? "uds").trim().toLowerCase() || "uds";
 }
 
+const pluralizar = (cantidad: number, unidad: string) => {
+  if (cantidad === 1) return `${cantidad} ${unidad}`;
+  // Lógica simple de plural en español
+  if (unidad.endsWith("l") || unidad.endsWith("r") || unidad.endsWith("n")) {
+    return `${cantidad} ${unidad}es`;
+  }
+  return `${cantidad} ${unidad}s`;
+};
+
 function pluralizaUnidad(unidad: string | null | undefined, cantidad: number): string {
   const u = unidadLegible(unidad);
   const n = Math.trunc(Number(cantidad));
-  if (!Number.isFinite(n) || n === 1) return u;
-  if (u === "ud" || u === "uds") return "uds";
-  if (u.endsWith("s")) return u; // gas, etc.
-  if (u.endsWith("l") || u.endsWith("r") || u.endsWith("n")) return `${u}es`; // barril -> barriles
-  return `${u}s`; // caja -> cajas, botella -> botellas
+  if (!Number.isFinite(n)) return u;
+  // Conserva "uds" como unidad especial.
+  const base = u === "ud" ? "uds" : u;
+  if (base === "uds") return n === 1 ? "ud" : "uds";
+  return pluralizar(n, base).split(" ").slice(1).join(" ");
 }
 
 /**
@@ -120,8 +129,9 @@ export function mensajePedidoCestaPorProveedor(opts: {
   const est = opts.nombreEstablecimiento.trim() || "mi local";
   const prov = opts.nombreProveedor.trim() || "Proveedor";
   const body = opts.lineas.map((l) => {
-    const u = pluralizaUnidad(l.unidad, l.cantidad);
-    return `- ${l.cantidad} ${u} de ${l.articulo}`;
+    const unidad = unidadLegible(l.unidad);
+    const lineaPedido = `- ${pluralizar(l.cantidad, unidad)} de ${l.articulo}`;
+    return lineaPedido;
   });
   return [`Hola ${prov}, pedido de ${est}:`, "", ...body].join("\n");
 }

@@ -1,15 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
-import { Search } from "lucide-react";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { useQuery } from "@tanstack/react-query";
 import { fetchDashboardProductos } from "@/lib/adminDashboardData";
 
 export function DashboardClient() {
   const { activeEstablishmentId: establecimientoId, activeEstablishmentName, me } = useActiveEstablishment();
-  const [search, setSearch] = useState("");
 
   const productosQuery = useQuery({
     queryKey: ["dashboard", "productos", establecimientoId],
@@ -37,17 +35,6 @@ export function DashboardClient() {
     }
     return out;
   }, [rows]);
-
-  const urgentes = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const base = bajoMinimos;
-    if (!q) return base;
-    return base.filter((p) => {
-      const a = p.articulo.toLowerCase();
-      const c = (p.categoria ?? "").toLowerCase();
-      return a.includes(q) || c.includes(q);
-    });
-  }, [bajoMinimos, search]);
 
   if (productosQuery.isLoading) {
     return <p className="text-base text-slate-500">Cargando stock…</p>;
@@ -104,51 +91,6 @@ export function DashboardClient() {
       >
         Ver lista de compra en inventario
       </Link>
-
-      <div className="relative w-full">
-        <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-        <input
-          type="search"
-          value={search}
-          onChange={(e) => setSearch(e.currentTarget.value)}
-          placeholder="Buscar en alertas…"
-          className="min-h-12 w-full rounded-3xl border border-slate-200 bg-white py-3 pl-12 pr-4 text-base text-slate-900 shadow-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-          aria-label="Buscar en alertas"
-        />
-      </div>
-
-      <section className="space-y-3">
-        <div>
-          <h2 className="text-lg font-bold text-slate-900">Alertas rápidas</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            {urgentes.length} producto{urgentes.length === 1 ? "" : "s"}
-            {search.trim() ? " (filtrado)" : ""}
-          </p>
-        </div>
-
-        {urgentes.length === 0 ? (
-          <div className="rounded-3xl border border-slate-200 bg-white p-6 text-center text-base text-slate-600 shadow-sm">
-            {bajoMinimos.length === 0
-              ? "Todo en orden: no hay productos por debajo del mínimo."
-              : "Ninguna alerta coincide con la búsqueda."}
-          </div>
-        ) : (
-          <ul className="flex flex-col gap-3">
-            {urgentes.map((p) => (
-              <li
-                key={p.id}
-                className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-100"
-              >
-                <p className="text-base font-bold leading-snug text-slate-900">{p.articulo}</p>
-                <p className="mt-1 text-sm text-slate-600">
-                  Stock{" "}
-                  <span className="font-mono font-semibold tabular-nums text-slate-900">{p.stock_actual}</span>
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
     </div>
   );
 }

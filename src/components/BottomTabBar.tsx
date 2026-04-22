@@ -23,6 +23,9 @@ function tabActive(pathname: string, href: string): boolean {
   if (href === "/admin/proveedores") {
     return pathname === "/admin/proveedores" || pathname.startsWith("/admin/proveedores/");
   }
+  if (href === "/admin") {
+    return pathname === "/admin" || pathname.startsWith("/admin/");
+  }
   if (href.startsWith("/stock?")) {
     return pathname === "/stock" || pathname.startsWith("/stock/");
   }
@@ -45,7 +48,8 @@ export function BottomTabBar() {
       { href: "/", label: "INICIO" },
       { href: "/stock", label: "STOCK" },
       { href: "/admin/pedidos", label: "PEDIDOS" },
-      { href: "/admin/proveedores", label: "PROVEEDORES" }
+      { href: "/admin/proveedores", label: "PROVEEDORES" },
+      { href: "/admin", label: "PANEL" }
     ];
   }, [isAdmin]);
 
