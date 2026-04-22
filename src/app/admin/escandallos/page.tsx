@@ -211,7 +211,16 @@ export default function EscandallosPage() {
 
   // Selector de consulta (evita lista infinita)
   const [verId, setVerId] = useState<string>("");
-  const [verDraft, setVerDraft] = useState<Record<string, string>>({});
+  // Edición (misma filosofía que "Nuevo": estado string mientras se teclea)
+  const [editProveedorId, setEditProveedorId] = useState<string>("");
+  const [editPrecioTarifa, setEditPrecioTarifa] = useState<string>("0");
+  const [editUdsCaja, setEditUdsCaja] = useState<string>("1");
+  const [editDescuentoValor, setEditDescuentoValor] = useState<string>("0");
+  const [editDescuentoTipo, setEditDescuentoTipo] = useState<"%" | "€">("%");
+  const [editRappel, setEditRappel] = useState<string>("0");
+  const [editIvaCompra, setEditIvaCompra] = useState<string>("10");
+  const [editPvp, setEditPvp] = useState<string>("0");
+  const [editIvaVenta, setEditIvaVenta] = useState<string>("10");
 
   // "Nuevo escandallo" (form)
   const [nuevoId, setNuevoId] = useState<string>("");
@@ -232,25 +241,6 @@ export default function EscandallosPage() {
     } catch {
       return "";
     }
-  }
-
-  function draftKey(id: string, field: string): string {
-    return `${id}:${field}`;
-  }
-
-  function getDraft(id: string, field: string): string | undefined {
-    return verDraft[draftKey(id, field)];
-  }
-
-  function setDraft(id: string, field: string, raw: string) {
-    setVerDraft((prev) => ({ ...prev, [draftKey(id, field)]: raw }));
-  }
-
-  function consumeDraftNum(id: string, field: string, fallback: number): number {
-    const raw = (getDraft(id, field) ?? "").trim();
-    if (raw === "") return fallback;
-    const n = toNum(raw);
-    return Number.isFinite(n) ? n : fallback;
   }
 
   useEffect(() => {
@@ -437,6 +427,36 @@ export default function EscandallosPage() {
     }
   }
 
+  async function saveEdit() {
+    setErr(null);
+    setSaved(false);
+    if (!activeEstablishmentId) {
+      setErr("No hay establecimiento activo.");
+      return;
+    }
+    if (!verId) return;
+    const base = items.find((x) => x.id === verId) ?? null;
+    if (!base) return;
+
+    const next: ProductoRow = {
+      ...base,
+      proveedor_id: editProveedorId || null,
+      precio_tarifa: clampNonNeg(toNum(editPrecioTarifa)),
+      uds_caja: Math.max(1, Math.trunc(clampNonNeg(toNum(editUdsCaja)))),
+      descuento_valor: clampNonNeg(toNum(editDescuentoValor)),
+      descuento_tipo: editDescuentoTipo,
+      rappel_valor: clampNonNeg(toNum(editRappel)),
+      iva_compra: normalizeIva(toNum(editIvaCompra)),
+      pvp: clampNonNeg(toNum(editPvp)),
+      iva_venta: normalizeIva(toNum(editIvaVenta))
+    };
+
+    await saveRow(next);
+
+    // Refleja inmediatamente lo guardado (sin esperar recarga completa)
+    setItems((prev) => prev.map((x) => (x.id === verId ? { ...x, ...next } : x)));
+  }
+
   async function guardarNuevo() {
     if (!activeEstablishmentId) return;
     if (!nuevoId) return;
@@ -497,23 +517,17 @@ export default function EscandallosPage() {
 
   useEffect(() => {
     if (!verRow) return;
-    const id = verRow.p.id;
-    // Inicializa borradores sólo si no existen, para no pisar lo que el usuario está escribiendo.
-    setVerDraft((prev) => {
-      const next = { ...prev };
-      const init = (field: string, val: unknown) => {
-        const k = draftKey(id, field);
-        if (next[k] !== undefined) return;
-        next[k] = val == null ? "" : String(val);
-      };
-      init("precio_tarifa", verRow.p.precio_tarifa ?? 0);
-      init("uds_caja", verRow.p.uds_caja ?? 1);
-      init("descuento_valor", verRow.p.descuento_valor ?? 0);
-      init("rappel_valor", verRow.p.rappel_valor ?? 0);
-      init("pvp", verRow.p.pvp ?? 0);
-      return next;
-    });
-  }, [verRow]);
+    // Al cambiar de producto, cargamos en el formulario de edición (sin saneamientos durante tecleo).
+    setEditProveedorId(verRow.p.proveedor_id ?? "");
+    setEditPrecioTarifa(String(verRow.p.precio_tarifa ?? 0));
+    setEditUdsCaja(String(verRow.p.uds_caja ?? 1));
+    setEditDescuentoValor(String(verRow.p.descuento_valor ?? 0));
+    setEditDescuentoTipo((verRow.p.descuento_tipo ?? "%") as "%" | "€");
+    setEditRappel(String(verRow.p.rappel_valor ?? 0));
+    setEditIvaCompra(String(verRow.p.iva_compra ?? 10));
+    setEditPvp(String(verRow.p.pvp ?? 0));
+    setEditIvaVenta(String(verRow.p.iva_venta ?? 10));
+  }, [verId, verRow?.p.id]);
 
   if (loading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
   if (role !== "admin" && role !== "superadmin") {
@@ -902,19 +916,28 @@ export default function EscandallosPage() {
 
             <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
               <label className="col-span-1 flex flex-col gap-1 text-xs font-semibold text-slate-600">
+                Proveedor
+                <select
+                  className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                  value={editProveedorId}
+                  onChange={(e) => setEditProveedorId(e.currentTarget.value)}
+                >
+                  <option value="">(Sin proveedor)</option>
+                  {proveedores.map((pr) => (
+                    <option key={pr.id} value={pr.id}>
+                      {pr.nombre}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="col-span-1 flex flex-col gap-1 text-xs font-semibold text-slate-600">
                 Tarifa
                 <input
                   className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
                   type="text"
                   inputMode="decimal"
-                  value={getDraft(verRow.p.id, "precio_tarifa") ?? ""}
-                  onChange={(e) => setDraft(verRow.p.id, "precio_tarifa", readEvtValue(e))}
-                  onBlur={() => {
-                    const id = verRow.p.id;
-                    const n = clampNonNeg(consumeDraftNum(id, "precio_tarifa", 0));
-                    setDraft(id, "precio_tarifa", String(n));
-                    setItems((prev) => prev.map((x) => (x.id === id ? { ...x, precio_tarifa: n } : x)));
-                  }}
+                  value={editPrecioTarifa}
+                  onChange={(e) => setEditPrecioTarifa(e.currentTarget.value)}
                 />
               </label>
               <label className="col-span-1 flex flex-col gap-1 text-xs font-semibold text-slate-600">
@@ -923,14 +946,8 @@ export default function EscandallosPage() {
                   className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
                   type="text"
                   inputMode="numeric"
-                  value={getDraft(verRow.p.id, "uds_caja") ?? ""}
-                  onChange={(e) => setDraft(verRow.p.id, "uds_caja", readEvtValue(e))}
-                  onBlur={() => {
-                    const id = verRow.p.id;
-                    const n = Math.max(1, Math.trunc(clampNonNeg(consumeDraftNum(id, "uds_caja", 1))));
-                    setDraft(id, "uds_caja", String(n));
-                    setItems((prev) => prev.map((x) => (x.id === id ? { ...x, uds_caja: n } : x)));
-                  }}
+                  value={editUdsCaja}
+                  onChange={(e) => setEditUdsCaja(e.currentTarget.value)}
                 />
               </label>
               <label className="col-span-1 flex flex-col gap-1 text-xs font-semibold text-slate-600">
@@ -939,14 +956,8 @@ export default function EscandallosPage() {
                   className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
                   type="text"
                   inputMode="decimal"
-                  value={getDraft(verRow.p.id, "descuento_valor") ?? ""}
-                  onChange={(e) => setDraft(verRow.p.id, "descuento_valor", readEvtValue(e))}
-                  onBlur={() => {
-                    const id = verRow.p.id;
-                    const n = clampNonNeg(consumeDraftNum(id, "descuento_valor", 0));
-                    setDraft(id, "descuento_valor", String(n));
-                    setItems((prev) => prev.map((x) => (x.id === id ? { ...x, descuento_valor: n } : x)));
-                  }}
+                  value={editDescuentoValor}
+                  onChange={(e) => setEditDescuentoValor(e.currentTarget.value)}
                 />
               </label>
               <label className="col-span-1 flex flex-col gap-1 text-xs font-semibold text-slate-600">
@@ -955,28 +966,16 @@ export default function EscandallosPage() {
                   className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
                   type="text"
                   inputMode="decimal"
-                  value={getDraft(verRow.p.id, "rappel_valor") ?? ""}
-                  onChange={(e) => setDraft(verRow.p.id, "rappel_valor", readEvtValue(e))}
-                  onBlur={() => {
-                    const id = verRow.p.id;
-                    const n = clampNonNeg(consumeDraftNum(id, "rappel_valor", 0));
-                    setDraft(id, "rappel_valor", String(n));
-                    setItems((prev) => prev.map((x) => (x.id === id ? { ...x, rappel_valor: n } : x)));
-                  }}
+                  value={editRappel}
+                  onChange={(e) => setEditRappel(e.currentTarget.value)}
                 />
               </label>
               <label className="col-span-1 flex flex-col gap-1 text-xs font-semibold text-slate-600">
                 Tipo desc.
                 <select
                   className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-                  value={(verRow.p.descuento_tipo ?? "%") as "%" | "€"}
-                  onChange={(e) =>
-                    setItems((prev) =>
-                      prev.map((x) =>
-                        x.id === verRow.p.id ? { ...x, descuento_tipo: readEvtValue(e) as "%" | "€" } : x
-                      )
-                    )
-                  }
+                  value={editDescuentoTipo}
+                  onChange={(e) => setEditDescuentoTipo(e.currentTarget.value as "%" | "€")}
                 >
                   {DESC_OPTIONS.map((v) => (
                     <option key={v} value={v}>
@@ -989,15 +988,11 @@ export default function EscandallosPage() {
                 IVA compra
                 <select
                   className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-                  value={Number(verRow.p.iva_compra ?? 10)}
-                  onChange={(e) =>
-                    setItems((prev) =>
-                      prev.map((x) => (x.id === verRow.p.id ? { ...x, iva_compra: Number(readEvtValue(e)) } : x))
-                    )
-                  }
+                  value={editIvaCompra}
+                  onChange={(e) => setEditIvaCompra(e.currentTarget.value)}
                 >
                   {IVA_OPTIONS.map((v) => (
-                    <option key={v} value={v}>
+                    <option key={v} value={String(v)}>
                       {v}%
                     </option>
                   ))}
@@ -1009,29 +1004,19 @@ export default function EscandallosPage() {
                   className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
                   type="text"
                   inputMode="decimal"
-                  value={getDraft(verRow.p.id, "pvp") ?? ""}
-                  onChange={(e) => setDraft(verRow.p.id, "pvp", readEvtValue(e))}
-                  onBlur={() => {
-                    const id = verRow.p.id;
-                    const n = clampNonNeg(consumeDraftNum(id, "pvp", 0));
-                    setDraft(id, "pvp", String(n));
-                    setItems((prev) => prev.map((x) => (x.id === id ? { ...x, pvp: n } : x)));
-                  }}
+                  value={editPvp}
+                  onChange={(e) => setEditPvp(e.currentTarget.value)}
                 />
               </label>
               <label className="col-span-1 flex flex-col gap-1 text-xs font-semibold text-slate-600">
                 IVA venta
                 <select
                   className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-                  value={Number(verRow.p.iva_venta ?? 10)}
-                  onChange={(e) =>
-                    setItems((prev) =>
-                      prev.map((x) => (x.id === verRow.p.id ? { ...x, iva_venta: Number(readEvtValue(e)) } : x))
-                    )
-                  }
+                  value={editIvaVenta}
+                  onChange={(e) => setEditIvaVenta(e.currentTarget.value)}
                 >
                   {IVA_OPTIONS.map((v) => (
-                    <option key={v} value={v}>
+                    <option key={v} value={String(v)}>
                       {v}%
                     </option>
                   ))}
@@ -1068,7 +1053,7 @@ export default function EscandallosPage() {
             </dl>
 
             <div className="mt-4">
-              <Button onClick={() => saveRow(verRow.p)} disabled={saving === verRow.p.id} className="min-h-11 w-full sm:w-auto">
+              <Button onClick={() => void saveEdit()} disabled={saving === verRow.p.id} className="min-h-11 w-full sm:w-auto">
                 {saving === verRow.p.id ? "Guardando…" : "Guardar"}
               </Button>
             </div>
