@@ -76,9 +76,9 @@ export default function AdminUsersPage() {
         headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
         body: JSON.stringify({ email: email.trim(), password, rol, establecimiento_id: establecimientoId })
       });
-      const json = (await res.json()) as { ok?: boolean; error?: string };
+      const json = (await res.json()) as { ok?: boolean; reused?: boolean; error?: string };
       if (!res.ok) throw new Error(json.error || "Error creando usuario.");
-      setOk("Usuario creado correctamente.");
+      setOk(json.reused ? "Usuario ya existía: rol/establecimiento actualizados." : "Usuario creado correctamente.");
       setEmail("");
       setPassword("");
       setRol("staff");

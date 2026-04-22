@@ -152,6 +152,32 @@ export async function POST(req: Request) {
       email_confirm: true
     });
     if (created.error || !created.data.user) {
+      const msg = (created.error?.message ?? "").toLowerCase();
+      const isAlreadyRegistered =
+        msg.includes("already") && msg.includes("registered") && msg.includes("email");
+
+      // Caso común: el email ya existe en Auth. Reutilizamos si existe fila en public.usuarios.
+      if (isAlreadyRegistered) {
+        const { data: existing, error: exErr } = await adminClient
+          .from("usuarios")
+          .select("id,email")
+          .ilike("email", email)
+          .maybeSingle();
+        if (exErr) return adminError(exErr.message, 400);
+        if (!existing?.id) {
+          return adminError(
+            "Ya existe un usuario con este email en Auth, pero no hay fila en la tabla usuarios. Borra el usuario duplicado o crea la fila en usuarios.",
+            409
+          );
+        }
+        const { error: upErr } = await adminClient
+          .from("usuarios")
+          .update({ rol, establecimiento_id })
+          .eq("id", existing.id);
+        if (upErr) return adminError(upErr.message, 400);
+        return NextResponse.json({ ok: true, reused: true });
+      }
+
       return adminError(created.error?.message ?? "Error al crear el usuario en Auth", 400);
     }
 
