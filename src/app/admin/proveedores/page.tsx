@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { MobileHeader } from "@/components/MobileHeader";
 import { Pencil } from "lucide-react";
+import { supabaseErrToString } from "@/lib/supabaseErrToString";
 
 type Proveedor = {
   id: string;
@@ -33,7 +34,7 @@ export default function ProveedoresPage() {
       })
       .catch((e) => {
         if (cancelled) return;
-        setErr(e instanceof Error ? e.message : String(e));
+        setErr(supabaseErrToString(e));
       })
       .finally(() => {
         if (cancelled) return;
@@ -60,7 +61,7 @@ export default function ProveedoresPage() {
         setItems((data as unknown as Proveedor[]) ?? []);
       } catch (e) {
         if (cancelled) return;
-        setErr(e instanceof Error ? e.message : String(e));
+        setErr(supabaseErrToString(e));
       }
     })();
     return () => {

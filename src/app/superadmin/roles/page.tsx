@@ -8,6 +8,7 @@ import { fetchAdminUsersList, patchAdminUserRole } from "@/lib/adminApi";
 import { supabase } from "@/lib/supabase";
 import { useMyRole } from "@/lib/useMyRole";
 import type { UsuarioListItem, UsuarioRol } from "@/types/ops";
+import { supabaseErrToString } from "@/lib/supabaseErrToString";
 
 const LOAD_FAILED_MESSAGE = "No se pudieron cargar los roles. Contacta con soporte.";
 
@@ -85,7 +86,7 @@ export default function SuperadminRolesPage() {
       await loadData();
       setSelected(null);
     } catch (e) {
-      setAssignErr(e instanceof Error ? e.message : String(e));
+      setAssignErr(supabaseErrToString(e));
     } finally {
       setBusy(false);
     }

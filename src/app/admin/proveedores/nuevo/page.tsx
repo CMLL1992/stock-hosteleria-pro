@@ -7,6 +7,7 @@ import { fetchMyRole } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { MobileHeader } from "@/components/MobileHeader";
+import { supabaseErrToString } from "@/lib/supabaseErrToString";
 
 function normalizeWhatsappPhone(input: string): string {
   // Mantiene solo dígitos y un '+' inicial si existe.
@@ -38,7 +39,7 @@ export default function NuevoProveedorPage() {
       })
       .catch((e) => {
         if (cancelled) return;
-        setErr(e instanceof Error ? e.message : String(e));
+        setErr(supabaseErrToString(e));
       })
       .finally(() => {
         if (cancelled) return;

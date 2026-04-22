@@ -17,24 +17,12 @@ import {
 } from "@/lib/productoFormCatalogo";
 import { insertProductoCategoriaCompat } from "@/lib/productoWriteCompat";
 import { resolveProductoTituloColumn, tituloWritePayload } from "@/lib/productosTituloColumn";
+import { supabaseErrToString } from "@/lib/supabaseErrToString";
 
 type Proveedor = { id: string; nombre: string; telefono_whatsapp: string | null };
 
 function newUid() {
   return crypto.randomUUID().replaceAll("-", "");
-}
-
-function supabaseErrToString(e: unknown): string {
-  if (e instanceof Error) return e.message;
-  if (typeof e === "object" && e) {
-    const anyErr = e as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown };
-    const msg = typeof anyErr.message === "string" ? anyErr.message : "";
-    const details = typeof anyErr.details === "string" ? anyErr.details : "";
-    const hint = typeof anyErr.hint === "string" ? anyErr.hint : "";
-    const code = typeof anyErr.code === "string" ? anyErr.code : "";
-    return [msg, details, hint, code].filter(Boolean).join(" · ") || "Error desconocido";
-  }
-  return String(e);
 }
 
 function parseStockField(raw: string): number {
@@ -67,7 +55,7 @@ export default function NuevoProductoPage() {
       })
       .catch((e) => {
         if (cancelled) return;
-        setErr(e instanceof Error ? e.message : String(e));
+        setErr(supabaseErrToString(e));
       })
       .finally(() => {
         if (cancelled) return;
@@ -94,7 +82,7 @@ export default function NuevoProductoPage() {
         setProveedores((data as unknown as Proveedor[]) ?? []);
       } catch (e) {
         if (cancelled) return;
-        setErr(e instanceof Error ? e.message : String(e));
+        setErr(supabaseErrToString(e));
       }
     })();
     return () => {

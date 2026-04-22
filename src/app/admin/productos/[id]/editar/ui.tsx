@@ -19,6 +19,7 @@ import {
   mapUnidadDbToValor
 } from "@/lib/productoFormCatalogo";
 import { updateProductoCategoriaCompat } from "@/lib/productoWriteCompat";
+import { supabaseErrToString } from "@/lib/supabaseErrToString";
 
 type Proveedor = { id: string; nombre: string };
 
@@ -60,7 +61,7 @@ export function EditarProductoClient({ id }: { id: string }) {
       })
       .catch((e) => {
         if (cancelled) return;
-        setErr(e instanceof Error ? e.message : String(e));
+        setErr(supabaseErrToString(e));
       })
       .finally(() => {
         if (cancelled) return;
@@ -122,7 +123,7 @@ export function EditarProductoClient({ id }: { id: string }) {
         setProveedores((provs as unknown as Proveedor[]) ?? []);
       } catch (e) {
         if (cancelled) return;
-        setErr(e instanceof Error ? e.message : String(e));
+        setErr(supabaseErrToString(e));
       }
     })();
     return () => {

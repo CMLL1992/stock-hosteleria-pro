@@ -10,6 +10,7 @@ import { deleteAdminEstablecimiento } from "@/lib/adminApi";
 import { fetchAdminEstablecimientosList } from "@/lib/fetchAdminEstablecimientos";
 import { supabase } from "@/lib/supabase";
 import { useMyRole } from "@/lib/useMyRole";
+import { supabaseErrToString } from "@/lib/supabaseErrToString";
 
 type EstRow = { id: string; nombre: string; plan_suscripcion?: string | null };
 
@@ -53,7 +54,7 @@ export default function AdminClientesPage() {
 
   useEffect(() => {
     if (!allowed) return;
-    refreshEts().catch((e) => setErr(e instanceof Error ? e.message : String(e)));
+    refreshEts().catch((e) => setErr(supabaseErrToString(e)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allowed]);
 
@@ -86,7 +87,7 @@ export default function AdminClientesPage() {
       await refreshEts();
       void queryClient.invalidateQueries({ queryKey: ["establecimientos"] });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(supabaseErrToString(e));
     } finally {
       setBusy(false);
     }
@@ -105,7 +106,7 @@ export default function AdminClientesPage() {
       void queryClient.invalidateQueries({ queryKey: ["establecimientos"] });
       void queryClient.invalidateQueries({ queryKey: ["myRole"] });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(supabaseErrToString(e));
     } finally {
       setBusy(false);
     }
@@ -137,7 +138,7 @@ export default function AdminClientesPage() {
       setUserPassword("");
       setUserRol("staff");
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(supabaseErrToString(e));
     } finally {
       setBusy(false);
     }

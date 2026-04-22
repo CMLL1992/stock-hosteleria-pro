@@ -12,6 +12,7 @@ import { waUrlPedidoAgrupadoProveedor } from "@/lib/whatsappPedido";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 import { requireUserId } from "@/lib/session";
 import { enqueueMovimiento, newClientUuid } from "@/lib/offlineQueue";
+import { supabaseErrToString } from "@/lib/supabaseErrToString";
 
 type ProveedorRow = {
   id: string;
@@ -119,7 +120,7 @@ export default function PedidosPage() {
         return next;
       });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(supabaseErrToString(e));
     } finally {
       setLoadingData(false);
     }
@@ -134,7 +135,7 @@ export default function PedidosPage() {
         if (!cancelled) setRole(r);
       })
       .catch((e) => {
-        if (!cancelled) setErr(e instanceof Error ? e.message : String(e));
+        if (!cancelled) setErr(supabaseErrToString(e));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -349,7 +350,7 @@ export default function PedidosPage() {
                     await registrarComoPedido(confirm.proveedor, confirm.lineas);
                     setConfirm(null);
                   } catch (e) {
-                    setErr(e instanceof Error ? e.message : String(e));
+                    setErr(supabaseErrToString(e));
                   } finally {
                     setConfirming(false);
                   }

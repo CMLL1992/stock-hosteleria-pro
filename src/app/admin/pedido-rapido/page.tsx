@@ -10,6 +10,7 @@ import { IconWhatsApp } from "@/components/IconWhatsApp";
 import { waUrlProductoPedido } from "@/lib/whatsappPedido";
 import { clasesBordeSemaforo, clasesFondoSemaforo, stockSemaforo } from "@/lib/stockSemaforo";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
+import { supabaseErrToString } from "@/lib/supabaseErrToString";
 
 type Row = {
   id: string;
@@ -78,7 +79,7 @@ export default function PedidoRapidoPage() {
       })
       .catch((e) => {
         if (cancelled) return;
-        setErr(e instanceof Error ? e.message : String(e));
+        setErr(supabaseErrToString(e));
       })
       .finally(() => {
         if (cancelled) return;
@@ -100,7 +101,7 @@ export default function PedidoRapidoPage() {
       })
       .catch((e) => {
         if (cancelled) return;
-        setErr(e instanceof Error ? e.message : String(e));
+        setErr(supabaseErrToString(e));
       })
       .finally(() => {
         if (cancelled) return;
@@ -130,7 +131,7 @@ export default function PedidoRapidoPage() {
       if (error) throw error;
       await refresh();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(supabaseErrToString(e));
     } finally {
       setBusyId(null);
     }

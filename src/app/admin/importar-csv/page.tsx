@@ -183,7 +183,7 @@ export default function ImportarCsvPage() {
       })
       .catch((e) => {
         if (cancelled) return;
-        setErr(e instanceof Error ? e.message : String(e));
+        setErr(supabaseErrToString(e));
       })
       .finally(() => {
         if (cancelled) return;
@@ -308,7 +308,7 @@ export default function ImportarCsvPage() {
       setRowsAnalizadas(rows);
       setAnalizado(true);
     } catch (e) {
-      setAnalisisErr(e instanceof Error ? e.message : String(e));
+      setAnalisisErr(supabaseErrToString(e));
       setRowsAnalizadas([]);
       setAnalizado(false);
     }

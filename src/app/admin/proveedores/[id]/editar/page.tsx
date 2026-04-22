@@ -7,6 +7,7 @@ import { fetchMyRole } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { MobileHeader } from "@/components/MobileHeader";
+import { supabaseErrToString } from "@/lib/supabaseErrToString";
 
 function normalizeWhatsappPhone(input: string): string {
   const trimmed = input.trim();
@@ -46,7 +47,7 @@ export default function EditarProveedorPage({ params }: { params: { id: string }
       })
       .catch((e) => {
         if (cancelled) return;
-        setErr(e instanceof Error ? e.message : String(e));
+        setErr(supabaseErrToString(e));
       })
       .finally(() => {
         if (cancelled) return;
@@ -79,7 +80,7 @@ export default function EditarProveedorPage({ params }: { params: { id: string }
         setNotas(String(p.notas ?? ""));
       } catch (e) {
         if (cancelled) return;
-        setErr(e instanceof Error ? e.message : String(e));
+        setErr(supabaseErrToString(e));
       }
     })();
     return () => {

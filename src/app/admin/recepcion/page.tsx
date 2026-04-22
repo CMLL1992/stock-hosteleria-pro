@@ -8,6 +8,7 @@ import { useMyRole } from "@/lib/useMyRole";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 import { enqueueMovimiento, newClientUuid } from "@/lib/offlineQueue";
 import { requireUserId } from "@/lib/session";
+import { supabaseErrToString } from "@/lib/supabaseErrToString";
 
 type ProveedorRow = { id: string; nombre: string };
 
@@ -69,7 +70,7 @@ export default function RecepcionPage() {
         setProveedores((res.data as ProveedorRow[]) ?? []);
       } catch (e) {
         if (cancelled) return;
-        setErr(e instanceof Error ? e.message : String(e));
+        setErr(supabaseErrToString(e));
       }
     })();
     return () => {
@@ -120,7 +121,7 @@ export default function RecepcionPage() {
         });
       } catch (e) {
         if (cancelled) return;
-        setErr(e instanceof Error ? e.message : String(e));
+        setErr(supabaseErrToString(e));
         setProductos([]);
       } finally {
         if (!cancelled) setLoading(false);
@@ -208,7 +209,7 @@ export default function RecepcionPage() {
         return next;
       });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(supabaseErrToString(e));
       setToast({ kind: "error", msg: "No se pudo confirmar la recepción." });
     } finally {
       setConfirming(false);

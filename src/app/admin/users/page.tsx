@@ -9,6 +9,7 @@ import { deleteAdminUser, fetchAdminUsersList } from "@/lib/adminApi";
 import { fetchAdminEstablecimientosList } from "@/lib/fetchAdminEstablecimientos";
 import { supabase } from "@/lib/supabase";
 import { useMyRole } from "@/lib/useMyRole";
+import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import type { UsuarioListItem } from "@/types/ops";
 
 type EstRow = { id: string; nombre: string; plan_suscripcion?: string | null };
@@ -54,7 +55,7 @@ export default function AdminUsersPage() {
 
   useEffect(() => {
     if (!allowed) return;
-    loadAll().catch((e) => setErr(e instanceof Error ? e.message : String(e)));
+    loadAll().catch((e) => setErr(supabaseErrToString(e)));
   }, [allowed, loadAll]);
 
   const canSubmit = useMemo(() => {
@@ -84,7 +85,7 @@ export default function AdminUsersPage() {
       await loadAll();
       void queryClient.invalidateQueries({ queryKey: ["myRole"] });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(supabaseErrToString(e));
     } finally {
       setBusy(false);
     }
@@ -103,7 +104,7 @@ export default function AdminUsersPage() {
       void queryClient.invalidateQueries({ queryKey: ["establecimientos"] });
       void queryClient.invalidateQueries({ queryKey: ["myRole"] });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(supabaseErrToString(e));
     } finally {
       setBusy(false);
     }

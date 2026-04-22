@@ -10,6 +10,7 @@ import { getBaseUrl } from "@/lib/baseUrl";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { MobileHeader } from "@/components/MobileHeader";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
+import { supabaseErrToString } from "@/lib/supabaseErrToString";
 
 type ProductoRow = {
   id: string;
@@ -54,7 +55,7 @@ export default function AdminEtiquetasPage() {
       })
       .catch((e) => {
         if (cancelled) return;
-        setErr(e instanceof Error ? e.message : String(e));
+        setErr(supabaseErrToString(e));
       })
       .finally(() => {
         if (cancelled) return;
@@ -76,7 +77,7 @@ export default function AdminEtiquetasPage() {
       })
       .catch((e) => {
         if (cancelled) return;
-        setErr(e instanceof Error ? e.message : String(e));
+        setErr(supabaseErrToString(e));
       });
     return () => {
       cancelled = true;

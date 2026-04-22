@@ -11,6 +11,7 @@ import { requireUserId } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
+import { supabaseErrToString } from "@/lib/supabaseErrToString";
 
 type Producto = {
   id: string;
@@ -128,7 +129,7 @@ export function ProductByUidClient({ uid }: { uid: string }) {
       })
       .catch((e) => {
         if (cancelled) return;
-        setErr(e instanceof Error ? e.message : String(e));
+        setErr(supabaseErrToString(e));
         setProducto(null);
         setMovOpen(false);
       })
@@ -195,7 +196,7 @@ export function ProductByUidClient({ uid }: { uid: string }) {
       // refresco sencillo
       setProducto(await fetchProducto(uid, activeEstablishmentId));
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(supabaseErrToString(e));
     }
   }
 
@@ -404,7 +405,7 @@ export function ProductByUidClient({ uid }: { uid: string }) {
                   setPedidoOpen(false);
                   if (waLink) window.open(waLink, "_blank", "noreferrer");
                 } catch (e) {
-                  setErr(e instanceof Error ? e.message : String(e));
+                  setErr(supabaseErrToString(e));
                 }
               }}
               disabled={!pedidoCantidad || pedidoCantidad < 1 || !producto?.proveedor?.telefono_whatsapp}
