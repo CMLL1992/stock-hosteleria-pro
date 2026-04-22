@@ -18,6 +18,7 @@ export function DashboardClient() {
   const { activeEstablishmentId: establecimientoId, activeEstablishmentName, me } = useActiveEstablishment();
   const role = getEffectiveRole(me);
   const canSeePrices = hasPermission(role, "admin");
+  const canManageEnvases = hasPermission(role, "admin");
   const queryClient = useQueryClient();
   const [envasesOpen, setEnvasesOpen] = useState(false);
   const [confirmProd, setConfirmProd] = useState<null | { id: string; articulo: string; stock_vacios: number }>(null);
@@ -306,7 +307,9 @@ export function DashboardClient() {
                   </li>
                 ))}
               </ul>
-              <p className="mt-2 text-xs text-slate-500">Toca para devolver envases.</p>
+              <p className="mt-2 text-xs text-slate-500">
+                {canManageEnvases ? "Toca para devolver envases." : "Solo lectura (sin permisos para registrar devoluciones)."}
+              </p>
             </div>
           ) : (
             <p className="mt-4 text-xs text-slate-500">Sin envases pendientes.</p>
@@ -363,8 +366,12 @@ export function DashboardClient() {
                 <li key={p.id}>
                   <button
                     type="button"
-                    className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-sm hover:bg-slate-50"
-                    onClick={() => setConfirmProd({ id: p.id, articulo: p.articulo, stock_vacios: p.stock_vacios })}
+                    className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-sm hover:bg-slate-50 disabled:opacity-60"
+                    onClick={() => {
+                      if (!canManageEnvases) return;
+                      setConfirmProd({ id: p.id, articulo: p.articulo, stock_vacios: p.stock_vacios });
+                    }}
+                    disabled={!canManageEnvases}
                   >
                     <span className="min-w-0 flex-1 truncate font-semibold text-slate-900">{p.articulo}</span>
                     <span className="shrink-0 font-bold tabular-nums text-slate-900">{p.stock_vacios}</span>
@@ -374,7 +381,7 @@ export function DashboardClient() {
             </ul>
           )}
 
-          {confirmProd ? (
+          {confirmProd && canManageEnvases ? (
             <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <p className="text-sm font-semibold text-slate-900">Confirmar devolución</p>
               <p className="mt-1 text-sm text-slate-700">
