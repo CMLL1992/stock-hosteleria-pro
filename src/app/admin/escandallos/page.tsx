@@ -62,6 +62,26 @@ function normalizeIva(v: number): (typeof IVA_OPTIONS)[number] {
   return 10;
 }
 
+function normalizeDescTipo(v: unknown): "%" | "€" {
+  return String(v ?? "%") === "€" ? "€" : "%";
+}
+
+function supabaseErrorDetail(e: unknown): string {
+  if (!e || typeof e !== "object") return "";
+  const anyErr = e as {
+    code?: unknown;
+    message?: unknown;
+    details?: unknown;
+    hint?: unknown;
+  };
+  const parts: string[] = [];
+  if (typeof anyErr.code === "string" && anyErr.code.trim()) parts.push(`code=${anyErr.code}`);
+  if (typeof anyErr.details === "string" && anyErr.details.trim()) parts.push(`details=${anyErr.details}`);
+  if (typeof anyErr.hint === "string" && anyErr.hint.trim()) parts.push(`hint=${anyErr.hint}`);
+  // Ojo: message ya lo da supabaseErrToString; aquí añadimos el “extra” útil.
+  return parts.length ? parts.join(" | ") : "";
+}
+
 function normCat(c: string | null | undefined): string {
   const s = String(c ?? "").trim();
   return s || "Otros";
@@ -260,17 +280,18 @@ export default function EscandallosPage() {
       for (const r of (resEsc.data as unknown as Record<string, unknown>[]) ?? []) {
         const pid = String(r.producto_id ?? "").trim();
         if (!pid) continue;
+        const udsCaja = Math.max(1, Math.trunc(clampNonNeg(Number(r.uds_caja ?? 1) || 1)));
         escByProd.set(pid, {
           producto_id: pid,
           establecimiento_id: String(r.establecimiento_id ?? activeEstablishmentId),
           precio_tarifa: Number(r.precio_tarifa ?? 0) || 0,
-          uds_caja: Math.max(1, Math.trunc(Number(r.uds_caja ?? 1) || 1)),
+          uds_caja: udsCaja,
           descuento_valor: Number(r.descuento_valor ?? 0) || 0,
-          descuento_tipo: (String(r.descuento_tipo ?? "%") === "€" ? "€" : "%") as "%" | "€",
+          descuento_tipo: normalizeDescTipo(r.descuento_tipo),
           rappel_valor: Number(r.rappel_valor ?? 0) || 0,
-          iva_compra: Math.trunc(Number(r.iva_compra ?? 10) || 10),
+          iva_compra: normalizeIva(Number(r.iva_compra ?? 10)),
           pvp: Number(r.pvp ?? 0) || 0,
-          iva_venta: Math.trunc(Number(r.iva_venta ?? 10) || 10)
+          iva_venta: normalizeIva(Number(r.iva_venta ?? 10))
         });
       }
 
@@ -286,11 +307,11 @@ export default function EscandallosPage() {
             precio_tarifa: esc?.precio_tarifa ?? 0,
             uds_caja: esc?.uds_caja ?? 1,
             descuento_valor: esc?.descuento_valor ?? 0,
-            descuento_tipo: esc?.descuento_tipo ?? "%",
+            descuento_tipo: normalizeDescTipo(esc?.descuento_tipo),
             rappel_valor: esc?.rappel_valor ?? 0,
-            iva_compra: esc?.iva_compra ?? 10,
+            iva_compra: normalizeIva(esc?.iva_compra ?? 10),
             pvp: esc?.pvp ?? 0,
-            iva_venta: esc?.iva_venta ?? 10
+            iva_venta: normalizeIva(esc?.iva_venta ?? 10)
           };
         })
       );
@@ -373,11 +394,11 @@ export default function EscandallosPage() {
         precio_tarifa: clampNonNeg(Number(p.precio_tarifa ?? 0)),
         uds_caja: Math.max(1, Math.trunc(clampNonNeg(Number(p.uds_caja ?? 1)))),
         descuento_valor: clampNonNeg(Number(p.descuento_valor ?? 0)),
-        descuento_tipo: (p.descuento_tipo ?? "%") as "%" | "€",
+        descuento_tipo: normalizeDescTipo(p.descuento_tipo),
         rappel_valor: clampNonNeg(Number(p.rappel_valor ?? 0)),
         iva_compra: normalizeIva(Number(p.iva_compra ?? 10)),
         pvp: clampNonNeg(Number(p.pvp ?? 0)),
-        iva_venta: Number(p.iva_venta ?? 10)
+        iva_venta: normalizeIva(Number(p.iva_venta ?? 10))
       };
       const { error: escErr } = await supabase().from("escandallos").upsert(esc, { onConflict: "producto_id" });
       if (escErr) throw escErr;
@@ -385,7 +406,12 @@ export default function EscandallosPage() {
       setSaved(true);
       setTimeout(() => setSaved(false), 1200);
     } catch (e) {
-      setErr(supabaseErrToString(e));
+      // Log detallado para diagnóstico (column/constraint suele venir en details/hint).
+      // eslint-disable-next-line no-console
+      console.error("[escandallos.saveRow] error", e, { producto_id: p.id, establecimiento_id: activeEstablishmentId });
+      const base = supabaseErrToString(e);
+      const extra = supabaseErrorDetail(e);
+      setErr(extra ? `${base} | ${extra}` : base);
     } finally {
       setSaving(null);
     }
@@ -410,11 +436,11 @@ export default function EscandallosPage() {
         precio_tarifa: clampNonNeg(toNum(nuevoPrecioTarifa)),
         uds_caja: Math.max(1, Math.trunc(clampNonNeg(toNum(nuevoUdsCaja)))),
         descuento_valor: clampNonNeg(toNum(nuevoDescuentoValor)),
-        descuento_tipo: nuevoDescuentoTipo,
+        descuento_tipo: normalizeDescTipo(nuevoDescuentoTipo),
         rappel_valor: clampNonNeg(toNum(nuevoRappel)),
-        iva_compra: Number(nuevoIvaCompra),
+        iva_compra: normalizeIva(Number(nuevoIvaCompra)),
         pvp: clampNonNeg(toNum(nuevoPvp)),
-        iva_venta: Number(nuevoIvaVenta)
+        iva_venta: normalizeIva(Number(nuevoIvaVenta))
       };
       const { error: escErr } = await supabase().from("escandallos").upsert(esc, { onConflict: "producto_id" });
       if (escErr) throw escErr;
@@ -423,7 +449,11 @@ export default function EscandallosPage() {
       setSaved(true);
       setTimeout(() => setSaved(false), 1200);
     } catch (e) {
-      setErr(supabaseErrToString(e));
+      // eslint-disable-next-line no-console
+      console.error("[escandallos.guardarNuevo] error", e, { producto_id: nuevoId, establecimiento_id: activeEstablishmentId });
+      const base = supabaseErrToString(e);
+      const extra = supabaseErrorDetail(e);
+      setErr(extra ? `${base} | ${extra}` : base);
     } finally {
       setSaving(null);
     }
@@ -930,7 +960,9 @@ export default function EscandallosPage() {
                   inputMode="decimal"
                   value={String(verRow.p.pvp ?? 0)}
                   onChange={(e) =>
-                    setItems((prev) => prev.map((x) => (x.id === verRow.p.id ? { ...x, pvp: toNum(e.currentTarget.value) } : x)))
+                    setItems((prev) =>
+                      prev.map((x) => (x.id === verRow.p.id ? { ...x, pvp: toNum(readEvtValue(e)) } : x))
+                    )
                   }
                 />
               </label>
