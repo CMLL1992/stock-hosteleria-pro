@@ -142,7 +142,7 @@ function proveedorNombreOrDefault(p: Producto): string {
 const STOCK_INPUT_CLASS =
   "h-14 w-[5.5rem] shrink-0 rounded-2xl border-2 border-slate-800 bg-white px-2 text-center text-2xl font-black tabular-nums text-slate-900 shadow-inner focus:outline-none focus:ring-4 focus:ring-slate-300";
 
-type QuickMovimientoTipo = "entrada_compra" | "salida_barra" | "devolucion_proveedor";
+type QuickMovimientoTipo = "entrada_compra" | "salida_barra";
 
 function errMsg(e: unknown): string {
   if (e instanceof Error) return e.message;
@@ -383,9 +383,8 @@ export function ProductList() {
           if (x.id !== movProd.id) return x;
           const deltaStock = movTipo === "entrada_compra" ? n : movTipo === "salida_barra" ? -n : 0;
           const nextStock = Math.max(0, Math.trunc(Number(x.stock_actual)) + deltaStock);
-          const deltaVacios = movTipo === "salida_barra" ? n : movTipo === "devolucion_proveedor" ? -n : 0;
           const nextVacios =
-            deltaVacios !== 0 ? Math.max(0, Math.trunc(Number(x.stock_vacios ?? 0)) + deltaVacios) : x.stock_vacios;
+            movTipo === "salida_barra" ? Math.max(0, Math.trunc(Number(x.stock_vacios ?? 0)) + n) : x.stock_vacios;
           return { ...x, stock_actual: nextStock, stock_vacios: nextVacios };
         });
 
@@ -699,17 +698,6 @@ export function ProductList() {
                 className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-50"
               >
                 Sacar a Barra
-              </button>
-              <button
-                type="button"
-                disabled={movBusy}
-                onClick={() => {
-                  setMovTipo("devolucion_proveedor");
-                  setMovStep("cantidad");
-                }}
-                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-50"
-              >
-                Devolución (envases)
               </button>
               {me?.isAdmin && movProd ? (
                 <Link
