@@ -211,6 +211,7 @@ export default function EscandallosPage() {
 
   // Selector de consulta (evita lista infinita)
   const [verId, setVerId] = useState<string>("");
+  const [verDraft, setVerDraft] = useState<Record<string, string>>({});
 
   // "Nuevo escandallo" (form)
   const [nuevoId, setNuevoId] = useState<string>("");
@@ -231,6 +232,25 @@ export default function EscandallosPage() {
     } catch {
       return "";
     }
+  }
+
+  function draftKey(id: string, field: string): string {
+    return `${id}:${field}`;
+  }
+
+  function getDraft(id: string, field: string): string | undefined {
+    return verDraft[draftKey(id, field)];
+  }
+
+  function setDraft(id: string, field: string, raw: string) {
+    setVerDraft((prev) => ({ ...prev, [draftKey(id, field)]: raw }));
+  }
+
+  function consumeDraftNum(id: string, field: string, fallback: number): number {
+    const raw = (getDraft(id, field) ?? "").trim();
+    if (raw === "") return fallback;
+    const n = toNum(raw);
+    return Number.isFinite(n) ? n : fallback;
   }
 
   useEffect(() => {
@@ -474,6 +494,26 @@ export default function EscandallosPage() {
     if (!verId) return null;
     return rows.find((r) => r.p.id === verId) ?? null;
   }, [rows, verId]);
+
+  useEffect(() => {
+    if (!verRow) return;
+    const id = verRow.p.id;
+    // Inicializa borradores sólo si no existen, para no pisar lo que el usuario está escribiendo.
+    setVerDraft((prev) => {
+      const next = { ...prev };
+      const init = (field: string, val: unknown) => {
+        const k = draftKey(id, field);
+        if (next[k] !== undefined) return;
+        next[k] = val == null ? "" : String(val);
+      };
+      init("precio_tarifa", verRow.p.precio_tarifa ?? 0);
+      init("uds_caja", verRow.p.uds_caja ?? 1);
+      init("descuento_valor", verRow.p.descuento_valor ?? 0);
+      init("rappel_valor", verRow.p.rappel_valor ?? 0);
+      init("pvp", verRow.p.pvp ?? 0);
+      return next;
+    });
+  }, [verRow]);
 
   if (loading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
   if (role !== "admin" && role !== "superadmin") {
@@ -865,54 +905,64 @@ export default function EscandallosPage() {
                 Tarifa
                 <input
                   className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                  type="text"
                   inputMode="decimal"
-                  value={String(verRow.p.precio_tarifa ?? 0)}
-                  onChange={(e) =>
-                    setItems((prev) =>
-                      prev.map((x) => (x.id === verRow.p.id ? { ...x, precio_tarifa: toNum(readEvtValue(e)) } : x))
-                    )
-                  }
+                  value={getDraft(verRow.p.id, "precio_tarifa") ?? ""}
+                  onChange={(e) => setDraft(verRow.p.id, "precio_tarifa", readEvtValue(e))}
+                  onBlur={() => {
+                    const id = verRow.p.id;
+                    const n = clampNonNeg(consumeDraftNum(id, "precio_tarifa", 0));
+                    setDraft(id, "precio_tarifa", String(n));
+                    setItems((prev) => prev.map((x) => (x.id === id ? { ...x, precio_tarifa: n } : x)));
+                  }}
                 />
               </label>
               <label className="col-span-1 flex flex-col gap-1 text-xs font-semibold text-slate-600">
                 Uds / caja
                 <input
                   className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                  type="text"
                   inputMode="numeric"
-                  value={String(verRow.p.uds_caja ?? 1)}
-                  onChange={(e) =>
-                    setItems((prev) =>
-                      prev.map((x) =>
-                        x.id === verRow.p.id ? { ...x, uds_caja: Math.max(1, Math.trunc(toNum(readEvtValue(e)))) } : x
-                      )
-                    )
-                  }
+                  value={getDraft(verRow.p.id, "uds_caja") ?? ""}
+                  onChange={(e) => setDraft(verRow.p.id, "uds_caja", readEvtValue(e))}
+                  onBlur={() => {
+                    const id = verRow.p.id;
+                    const n = Math.max(1, Math.trunc(clampNonNeg(consumeDraftNum(id, "uds_caja", 1))));
+                    setDraft(id, "uds_caja", String(n));
+                    setItems((prev) => prev.map((x) => (x.id === id ? { ...x, uds_caja: n } : x)));
+                  }}
                 />
               </label>
               <label className="col-span-1 flex flex-col gap-1 text-xs font-semibold text-slate-600">
                 Descuento
                 <input
                   className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                  type="text"
                   inputMode="decimal"
-                  value={String(verRow.p.descuento_valor ?? 0)}
-                  onChange={(e) =>
-                    setItems((prev) =>
-                      prev.map((x) => (x.id === verRow.p.id ? { ...x, descuento_valor: toNum(readEvtValue(e)) } : x))
-                    )
-                  }
+                  value={getDraft(verRow.p.id, "descuento_valor") ?? ""}
+                  onChange={(e) => setDraft(verRow.p.id, "descuento_valor", readEvtValue(e))}
+                  onBlur={() => {
+                    const id = verRow.p.id;
+                    const n = clampNonNeg(consumeDraftNum(id, "descuento_valor", 0));
+                    setDraft(id, "descuento_valor", String(n));
+                    setItems((prev) => prev.map((x) => (x.id === id ? { ...x, descuento_valor: n } : x)));
+                  }}
                 />
               </label>
               <label className="col-span-1 flex flex-col gap-1 text-xs font-semibold text-slate-600">
                 Rappel
                 <input
                   className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                  type="text"
                   inputMode="decimal"
-                  value={String(verRow.p.rappel_valor ?? 0)}
-                  onChange={(e) =>
-                    setItems((prev) =>
-                      prev.map((x) => (x.id === verRow.p.id ? { ...x, rappel_valor: toNum(readEvtValue(e)) } : x))
-                    )
-                  }
+                  value={getDraft(verRow.p.id, "rappel_valor") ?? ""}
+                  onChange={(e) => setDraft(verRow.p.id, "rappel_valor", readEvtValue(e))}
+                  onBlur={() => {
+                    const id = verRow.p.id;
+                    const n = clampNonNeg(consumeDraftNum(id, "rappel_valor", 0));
+                    setDraft(id, "rappel_valor", String(n));
+                    setItems((prev) => prev.map((x) => (x.id === id ? { ...x, rappel_valor: n } : x)));
+                  }}
                 />
               </label>
               <label className="col-span-1 flex flex-col gap-1 text-xs font-semibold text-slate-600">
@@ -957,13 +1007,16 @@ export default function EscandallosPage() {
                 PVP
                 <input
                   className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                  type="text"
                   inputMode="decimal"
-                  value={String(verRow.p.pvp ?? 0)}
-                  onChange={(e) =>
-                    setItems((prev) =>
-                      prev.map((x) => (x.id === verRow.p.id ? { ...x, pvp: toNum(readEvtValue(e)) } : x))
-                    )
-                  }
+                  value={getDraft(verRow.p.id, "pvp") ?? ""}
+                  onChange={(e) => setDraft(verRow.p.id, "pvp", readEvtValue(e))}
+                  onBlur={() => {
+                    const id = verRow.p.id;
+                    const n = clampNonNeg(consumeDraftNum(id, "pvp", 0));
+                    setDraft(id, "pvp", String(n));
+                    setItems((prev) => prev.map((x) => (x.id === id ? { ...x, pvp: n } : x)));
+                  }}
                 />
               </label>
               <label className="col-span-1 flex flex-col gap-1 text-xs font-semibold text-slate-600">
