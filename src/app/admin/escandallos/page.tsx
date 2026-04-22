@@ -69,6 +69,9 @@ export default function EscandallosPage() {
   const [proveedores, setProveedores] = useState<ProveedorRow[]>([]);
   const { activeEstablishmentId } = useActiveEstablishment();
 
+  // Selector de consulta (evita lista infinita)
+  const [verId, setVerId] = useState<string>("");
+
   // "Nuevo escandallo" (form)
   const [nuevoId, setNuevoId] = useState<string>("");
   const [nuevoProveedorId, setNuevoProveedorId] = useState<string>("");
@@ -316,6 +319,11 @@ export default function EscandallosPage() {
     });
   }, [items]);
 
+  const verRow = useMemo(() => {
+    if (!verId) return null;
+    return rows.find((r) => r.p.id === verId) ?? null;
+  }, [rows, verId]);
+
   if (loading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
   if (role !== "admin" && role !== "superadmin") {
     return (
@@ -529,10 +537,48 @@ export default function EscandallosPage() {
         </div>
       </section>
 
-      <div className="flex flex-col gap-3">
-        {rows.map(({ p, cn, vn, mb, mp, healthy }) => (
-          <article key={p.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-100">
-            <h2 className="text-base font-bold leading-snug text-slate-900">{p.articulo}</h2>
+      {/* Consulta (desplegable por familias) */}
+      <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-100">
+        <h2 className="text-base font-bold text-slate-900">Consultar escandallo</h2>
+        <p className="mt-1 text-sm text-slate-600">Selecciona un producto para ver su ficha.</p>
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
+            Producto
+            <select
+              className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+              value={verId}
+              onChange={(e) => setVerId(e.currentTarget.value)}
+              aria-label="Consultar producto"
+            >
+              <option value="">(Selecciona…)</option>
+              {Array.from(
+                items.reduce((m, p) => {
+                  const c = normCat(p.categoria);
+                  m.set(c, [...(m.get(c) ?? []), p]);
+                  return m;
+                }, new Map<string, ProductoRow[]>())
+              )
+                .sort(([a], [b]) => sortCats(a, b))
+                .map(([cat, prods]) => (
+                  <optgroup key={cat} label={cat}>
+                    {prods
+                      .slice()
+                      .sort((a, b) => a.articulo.localeCompare(b.articulo, "es"))
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.articulo}
+                        </option>
+                      ))}
+                  </optgroup>
+                ))}
+            </select>
+          </label>
+        </div>
+
+        {verRow ? (
+          <article className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-100">
+            <h3 className="text-base font-bold leading-snug text-slate-900">{verRow.p.articulo}</h3>
 
             <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
               <label className="col-span-1 flex flex-col gap-1 text-xs font-semibold text-slate-600">
@@ -540,9 +586,11 @@ export default function EscandallosPage() {
                 <input
                   className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
                   inputMode="decimal"
-                  value={String(p.precio_tarifa ?? 0)}
+                  value={String(verRow.p.precio_tarifa ?? 0)}
                   onChange={(e) =>
-                    setItems((prev) => prev.map((x) => (x.id === p.id ? { ...x, precio_tarifa: toNum(e.currentTarget.value) } : x)))
+                    setItems((prev) =>
+                      prev.map((x) => (x.id === verRow.p.id ? { ...x, precio_tarifa: toNum(e.currentTarget.value) } : x))
+                    )
                   }
                 />
               </label>
@@ -551,10 +599,10 @@ export default function EscandallosPage() {
                 <input
                   className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
                   inputMode="decimal"
-                  value={String(p.descuento_valor ?? 0)}
+                  value={String(verRow.p.descuento_valor ?? 0)}
                   onChange={(e) =>
                     setItems((prev) =>
-                      prev.map((x) => (x.id === p.id ? { ...x, descuento_valor: toNum(e.currentTarget.value) } : x))
+                      prev.map((x) => (x.id === verRow.p.id ? { ...x, descuento_valor: toNum(e.currentTarget.value) } : x))
                     )
                   }
                 />
@@ -563,10 +611,12 @@ export default function EscandallosPage() {
                 Tipo desc.
                 <select
                   className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-                  value={(p.descuento_tipo ?? "%") as "%" | "€"}
+                  value={(verRow.p.descuento_tipo ?? "%") as "%" | "€"}
                   onChange={(e) =>
                     setItems((prev) =>
-                      prev.map((x) => (x.id === p.id ? { ...x, descuento_tipo: e.currentTarget.value as "%" | "€" } : x))
+                      prev.map((x) =>
+                        x.id === verRow.p.id ? { ...x, descuento_tipo: e.currentTarget.value as "%" | "€" } : x
+                      )
                     )
                   }
                 >
@@ -581,10 +631,10 @@ export default function EscandallosPage() {
                 IVA compra
                 <select
                   className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-                  value={Number(p.iva_compra ?? 10)}
+                  value={Number(verRow.p.iva_compra ?? 10)}
                   onChange={(e) =>
                     setItems((prev) =>
-                      prev.map((x) => (x.id === p.id ? { ...x, iva_compra: Number(e.currentTarget.value) } : x))
+                      prev.map((x) => (x.id === verRow.p.id ? { ...x, iva_compra: Number(e.currentTarget.value) } : x))
                     )
                   }
                 >
@@ -600,9 +650,9 @@ export default function EscandallosPage() {
                 <input
                   className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
                   inputMode="decimal"
-                  value={String(p.pvp ?? 0)}
+                  value={String(verRow.p.pvp ?? 0)}
                   onChange={(e) =>
-                    setItems((prev) => prev.map((x) => (x.id === p.id ? { ...x, pvp: toNum(e.currentTarget.value) } : x)))
+                    setItems((prev) => prev.map((x) => (x.id === verRow.p.id ? { ...x, pvp: toNum(e.currentTarget.value) } : x)))
                   }
                 />
               </label>
@@ -610,10 +660,10 @@ export default function EscandallosPage() {
                 IVA venta
                 <select
                   className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-                  value={Number(p.iva_venta ?? 10)}
+                  value={Number(verRow.p.iva_venta ?? 10)}
                   onChange={(e) =>
                     setItems((prev) =>
-                      prev.map((x) => (x.id === p.id ? { ...x, iva_venta: Number(e.currentTarget.value) } : x))
+                      prev.map((x) => (x.id === verRow.p.id ? { ...x, iva_venta: Number(e.currentTarget.value) } : x))
                     )
                   }
                 >
@@ -629,15 +679,15 @@ export default function EscandallosPage() {
             <dl className="mt-4 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
               <div className="rounded-xl bg-slate-50 px-3 py-2">
                 <dt className="text-xs font-semibold text-slate-500">Coste neto</dt>
-                <dd className="font-semibold tabular-nums text-slate-900">{formatEUR(cn)}</dd>
+                <dd className="font-semibold tabular-nums text-slate-900">{formatEUR(verRow.cn)}</dd>
               </div>
               <div className="rounded-xl bg-slate-50 px-3 py-2">
                 <dt className="text-xs font-semibold text-slate-500">Venta neta</dt>
-                <dd className="tabular-nums text-slate-800">{formatEUR(vn)}</dd>
+                <dd className="tabular-nums text-slate-800">{formatEUR(verRow.vn)}</dd>
               </div>
               <div className="rounded-xl bg-slate-50 px-3 py-2">
                 <dt className="text-xs font-semibold text-slate-500">Margen €</dt>
-                <dd className="font-semibold tabular-nums text-slate-900">{formatEUR(mb)}</dd>
+                <dd className="font-semibold tabular-nums text-slate-900">{formatEUR(verRow.mb)}</dd>
               </div>
               <div className="rounded-xl bg-slate-50 px-3 py-2">
                 <dt className="text-xs font-semibold text-slate-500">Margen %</dt>
@@ -645,23 +695,27 @@ export default function EscandallosPage() {
                   <span
                     className={[
                       "inline-flex min-h-8 items-center rounded-full px-2.5 text-xs font-semibold tabular-nums ring-1",
-                      healthy ? "bg-emerald-50 text-emerald-800 ring-emerald-100" : "bg-red-50 text-red-800 ring-red-100"
+                      verRow.healthy ? "bg-emerald-50 text-emerald-800 ring-emerald-100" : "bg-red-50 text-red-800 ring-red-100"
                     ].join(" ")}
                   >
-                    {mp.toFixed(2)}%
+                    {verRow.mp.toFixed(2)}%
                   </span>
                 </dd>
               </div>
             </dl>
 
             <div className="mt-4">
-              <Button onClick={() => saveRow(p)} disabled={saving === p.id} className="min-h-11 w-full sm:w-auto">
-                {saving === p.id ? "Guardando…" : "Guardar"}
+              <Button onClick={() => saveRow(verRow.p)} disabled={saving === verRow.p.id} className="min-h-11 w-full sm:w-auto">
+                {saving === verRow.p.id ? "Guardando…" : "Guardar"}
               </Button>
             </div>
           </article>
-        ))}
-      </div>
+        ) : (
+          <p className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+            Selecciona un producto para ver sus importes y márgenes.
+          </p>
+        )}
+      </section>
       </main>
     </div>
   );
