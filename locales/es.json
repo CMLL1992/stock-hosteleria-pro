@@ -11,7 +11,9 @@
     "close": "Cerrar",
     "loading": "Cargando…",
     "searchProduct": "Buscar producto…",
-    "accessDenied": "Acceso denegado."
+    "accessDenied": "Acceso denegado.",
+    "back": "Volver",
+    "logout": "Salir"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -19,6 +21,11 @@
     "lowStockEmpty": "No hay productos bajo mínimos.",
     "stockRatioHint": "Stock actual / stock mínimo",
     "activeEstablishment": "Establecimiento activo:"
+  },
+  "roles": {
+    "superadmin": "Superadmin",
+    "admin": "Admin",
+    "staff": "Staff"
   },
   "status": {
     "soldOut": "Agotado",

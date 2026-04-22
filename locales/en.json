@@ -11,7 +11,9 @@
     "close": "Close",
     "loading": "Loading…",
     "searchProduct": "Search product…",
-    "accessDenied": "Access denied."
+    "accessDenied": "Access denied.",
+    "back": "Back",
+    "logout": "Log out"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -19,6 +21,11 @@
     "lowStockEmpty": "There are no products below minimum.",
     "stockRatioHint": "Current stock / minimum stock",
     "activeEstablishment": "Active establishment:"
+  },
+  "roles": {
+    "superadmin": "Superadmin",
+    "admin": "Admin",
+    "staff": "Staff"
   },
   "status": {
     "soldOut": "Sold out",

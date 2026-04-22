@@ -3,7 +3,6 @@
 import { DashboardClient } from "@/components/DashboardClient";
 import { MobileHeader } from "@/components/MobileHeader";
 import { useMyRole } from "@/lib/useMyRole";
-import { LanguageSelector } from "@/components/LanguageSelector";
 import { useTranslations } from "next-intl";
 
 export default function AdminDashboardPage() {
@@ -24,9 +23,6 @@ export default function AdminDashboardPage() {
     <div className="min-h-dvh bg-slate-50">
       <MobileHeader title="Dashboard" showBack backHref="/admin" />
       <main className="mx-auto max-w-3xl p-4 pb-28">
-        <div className="mb-4 flex justify-end">
-          <LanguageSelector />
-        </div>
         <DashboardClient />
       </main>
     </div>

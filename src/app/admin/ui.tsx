@@ -6,7 +6,6 @@ import { ChevronRight } from "lucide-react";
 import { MobileHeader } from "@/components/MobileHeader";
 import { useMyRole } from "@/lib/useMyRole";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
-import { LanguageSelector } from "@/components/LanguageSelector";
 import { useTranslations } from "next-intl";
 
 type AdminNavItem = {
@@ -140,7 +139,6 @@ export function AdminHomeClient({ denied }: { denied?: string | null } = {}) {
                 <h1 className="text-lg font-semibold text-slate-900">Panel de control</h1>
                 <p className="mt-0.5 text-sm text-slate-500">Menú de administración por áreas.</p>
               </div>
-              <LanguageSelector />
             </div>
           </header>
 
@@ -167,7 +165,6 @@ export function AdminHomeClient({ denied }: { denied?: string | null } = {}) {
               <h1 className="text-lg font-semibold text-slate-900">Panel de control</h1>
               <p className="mt-0.5 text-sm text-slate-500">Menú de administración por áreas.</p>
             </div>
-            <LanguageSelector />
           </div>
         </header>
 

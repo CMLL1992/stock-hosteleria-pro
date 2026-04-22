@@ -4,6 +4,8 @@ import { ArrowLeft, LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { supabase } from "@/lib/supabase";
+import { LanguageSelector } from "@/components/LanguageSelector";
+import { useLanguage } from "@/lib/LanguageContext";
 
 export function MobileHeader({
   title,
@@ -15,6 +17,7 @@ export function MobileHeader({
   backHref?: string;
 }) {
   const router = useRouter();
+  const { t } = useLanguage();
   const {
     me,
     isSuperadmin,
@@ -33,8 +36,8 @@ export function MobileHeader({
             {showBack ? (
               <button
                 className="grid h-9 w-9 place-items-center rounded-full border border-slate-200 bg-white shadow-sm hover:bg-slate-50"
-                aria-label="Volver"
-                title="Volver"
+                aria-label={t("common.back")}
+                title={t("common.back")}
                 onClick={() => {
                   router.back();
                   // fallback si no hay historial útil
@@ -61,13 +64,13 @@ export function MobileHeader({
           </div>
 
           <p className="mt-1 text-xs font-medium text-slate-500">
-            {me?.isSuperadmin ? "Superadmin" : me?.isAdmin ? "Admin" : "Staff"}
+            {me?.isSuperadmin ? t("roles.superadmin") : me?.isAdmin ? t("roles.admin") : t("roles.staff")}
           </p>
           <h1 className="truncate text-lg font-semibold text-slate-900">{title}</h1>
           {isSuperadmin ? (
             <div className="mt-2 max-w-[280px]">
               <label className="sr-only" htmlFor="establecimiento">
-                Establecimiento activo
+                {t("dashboard.activeEstablishment")}
               </label>
               <select
                 id="establecimiento"
@@ -82,16 +85,19 @@ export function MobileHeader({
                 ))}
               </select>
               {activeEstablishmentName ? (
-                <p className="mt-1 text-[11px] text-slate-500">Establecimiento: {activeEstablishmentName}</p>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  {t("dashboard.activeEstablishment")} {activeEstablishmentName}
+                </p>
               ) : null}
             </div>
           ) : null}
         </div>
         <div className="flex items-center gap-2">
+          <LanguageSelector />
           <button
             className="grid h-10 w-10 place-items-center rounded-full border border-slate-200 bg-white shadow-sm"
-            aria-label="Salir"
-            title="Salir"
+            aria-label={t("common.logout")}
+            title={t("common.logout")}
             onClick={async () => {
               await supabase().auth.signOut();
               window.location.href = "/login";

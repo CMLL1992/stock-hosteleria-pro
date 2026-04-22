@@ -11,7 +11,9 @@
     "close": "Tancar",
     "loading": "Carregant…",
     "searchProduct": "Cercar producte…",
-    "accessDenied": "Accés denegat."
+    "accessDenied": "Accés denegat.",
+    "back": "Tornar",
+    "logout": "Sortir"
   },
   "dashboard": {
     "title": "Tauler",
@@ -19,6 +21,11 @@
     "lowStockEmpty": "No hi ha productes per sota del mínim.",
     "stockRatioHint": "Stock actual / stock mínim",
     "activeEstablishment": "Establiment actiu:"
+  },
+  "roles": {
+    "superadmin": "Superadmin",
+    "admin": "Admin",
+    "staff": "Staff"
   },
   "status": {
     "soldOut": "Esgotat",
