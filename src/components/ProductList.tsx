@@ -178,9 +178,14 @@ function errMsg(e: unknown): string {
   return "No se pudo completar la acción. Revisa la conexión y vuelve a intentarlo.";
 }
 
-function readEvtValue(e: { currentTarget?: { value?: unknown } } | null | undefined): string {
+function readEvtValue(
+  e:
+    | { currentTarget?: { value?: unknown }; target?: { value?: unknown } }
+    | null
+    | undefined
+): string {
   try {
-    const v = e?.currentTarget?.value;
+    const v = e?.currentTarget?.value ?? e?.target?.value;
     return typeof v === "string" ? v : String(v ?? "");
   } catch {
     return "";
@@ -739,7 +744,10 @@ export function ProductList() {
                       disabled={busy || !canSetStockAbsolute}
                       className={STOCK_INPUT_CLASS}
                       value={stockDraft[p.id] ?? String(p.stock_actual)}
-                      onChange={(e) => setStockDraft((d) => ({ ...d, [p.id]: readEvtValue(e) }))}
+                      onChange={(e) => {
+                        const v = e.currentTarget?.value ?? readEvtValue(e);
+                        setStockDraft((d) => ({ ...d, [p.id]: v }));
+                      }}
                       onBlur={() => {
                         if (!canSetStockAbsolute) {
                           // Staff: no puede fijar stock absoluto desde aquí.
