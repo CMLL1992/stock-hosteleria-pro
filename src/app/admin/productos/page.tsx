@@ -786,9 +786,9 @@ export default function AdminProductosPage() {
                       disabled={busy}
                       className="h-14 w-[5.5rem] rounded-xl border border-slate-300 bg-white px-1 text-center text-2xl font-black tabular-nums text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
                       value={stockQuickDraft[p.id] ?? String(p.stock_actual)}
-                      onChange={(e) => setStockQuickDraft((d) => ({ ...d, [p.id]: e.target.value }))}
+                      onChange={(e) => setStockQuickDraft((d) => ({ ...d, [p.id]: e.currentTarget.value }))}
                       onBlur={(e) => {
-                        void commitQuickStock(p, e.target.value);
+                        void commitQuickStock(p, e.currentTarget.value);
                       }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") (e.target as HTMLInputElement).blur();

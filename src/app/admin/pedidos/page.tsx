@@ -352,7 +352,7 @@ export default function PedidosPage() {
                                       placeholder="0"
                                       className="h-16 w-24 shrink-0 rounded-2xl border-2 border-slate-800 bg-white px-2 text-center text-3xl font-black tabular-nums text-slate-900 shadow-inner focus:outline-none focus:ring-4 focus:ring-slate-300"
                                       value={qty[p.id] ?? ""}
-                                      onChange={(e) => setQty((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                                      onChange={(e) => setQty((prev) => ({ ...prev, [p.id]: e.currentTarget.value }))}
                                       min={0}
                                     />
                                   </li>

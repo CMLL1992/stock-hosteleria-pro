@@ -40,6 +40,28 @@ export function DashboardClient() {
 
   const rows = useMemo(() => productosQuery.data ?? [], [productosQuery.data]);
 
+  const escandallosPrecioQuery = useQuery({
+    queryKey: ["dashboard", "escandallos-precio", establecimientoId],
+    enabled: !!establecimientoId && !!(me?.isAdmin || me?.isSuperadmin),
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("escandallos")
+        .select("producto_id,precio_tarifa")
+        .eq("establecimiento_id", establecimientoId as string);
+      if (error) throw error;
+      const map = new Map<string, number>();
+      for (const r of ((data ?? []) as unknown as Array<{ producto_id: unknown; precio_tarifa: unknown }>)) {
+        const pid = String(r.producto_id ?? "").trim();
+        if (!pid) continue;
+        const n = Number(r.precio_tarifa ?? 0);
+        map.set(pid, Number.isFinite(n) ? n : 0);
+      }
+      return map;
+    },
+    staleTime: 30_000,
+    retry: 1
+  });
+
   const bajoMinimos = useMemo(() => rows.filter((p) => p.stock_actual <= p.stock_minimo), [rows]);
 
   function bucketUnidad(p: { unidad: string | null; categoria: string | null; articulo: string }): "caja" | "barril" | "gas" | null {
@@ -93,14 +115,16 @@ export function DashboardClient() {
   }, [rows]);
 
   const valorStock = useMemo(() => {
-    // Valor del stock actual a coste (tarifa/caja ya es "coste"; si no está, 0).
+    // Valor del stock actual a coste (usa escandallos.precio_tarifa por producto).
     let total = 0;
+    const priceById = escandallosPrecioQuery.data ?? new Map<string, number>();
     for (const p of rows) {
-      const price = Number((p as unknown as { precio_tarifa?: unknown }).precio_tarifa ?? 0) || 0;
-      total += Math.max(0, Number(p.stock_actual ?? 0) || 0) * Math.max(0, price);
+      const price = Math.max(0, priceById.get(p.id) ?? 0);
+      const qty = Math.max(0, Number(p.stock_actual ?? 0) || 0);
+      total += qty * price;
     }
     return total;
-  }, [rows]);
+  }, [escandallosPrecioQuery.data, rows]);
 
   const envasePreciosQuery = useQuery({
     queryKey: ["config", "precios-envases", establecimientoId],

@@ -642,9 +642,9 @@ export function ProductList() {
                       disabled={busy}
                       className={STOCK_INPUT_CLASS}
                       value={stockDraft[p.id] ?? String(p.stock_actual)}
-                      onChange={(e) => setStockDraft((d) => ({ ...d, [p.id]: e.target.value }))}
+                      onChange={(e) => setStockDraft((d) => ({ ...d, [p.id]: e.currentTarget.value }))}
                       onBlur={(e) => {
-                        void setStockFromInput(p, e.target.value);
+                        void setStockFromInput(p, e.currentTarget.value);
                       }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
