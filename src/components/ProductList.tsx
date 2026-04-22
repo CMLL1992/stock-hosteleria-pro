@@ -143,6 +143,22 @@ const STOCK_INPUT_CLASS =
 
 type QuickMovimientoTipo = "entrada_compra" | "salida_barra" | "devolucion_proveedor";
 
+function errMsg(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+  if (e && typeof e === "object") {
+    const maybeMsg = (e as { message?: unknown }).message;
+    if (typeof maybeMsg === "string" && maybeMsg.trim()) return maybeMsg;
+    try {
+      const s = JSON.stringify(e);
+      if (s && s !== "{}") return s;
+    } catch {
+      // ignore
+    }
+  }
+  return "No se pudo completar la acción. Revisa la conexión y vuelve a intentarlo.";
+}
+
 export function ProductList() {
   const searchParams = useSearchParams();
   const listaCompra = searchParams.get("compra") === "1";
@@ -274,7 +290,9 @@ export function ProductList() {
       await queryClient.invalidateQueries({ queryKey: ["productos", establecimientoId] });
       await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", establecimientoId] });
     } catch (e) {
-      setStockErr(e instanceof Error ? e.message : String(e));
+      // eslint-disable-next-line no-console
+      console.error(e);
+      setStockErr(errMsg(e));
       setStockDraft((d) => ({ ...d, [p.id]: String(p.stock_actual) }));
     } finally {
       setBusyId(null);
@@ -297,7 +315,9 @@ export function ProductList() {
       await queryClient.invalidateQueries({ queryKey: ["productos", establecimientoId] });
       await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", establecimientoId] });
     } catch (e) {
-      setStockErr(e instanceof Error ? e.message : String(e));
+      // eslint-disable-next-line no-console
+      console.error(e);
+      setStockErr(errMsg(e));
     } finally {
       setBusyId(null);
     }
@@ -362,7 +382,9 @@ export function ProductList() {
       setMovProd(null);
       setMovStep("menu");
     } catch (e) {
-      setStockErr(e instanceof Error ? e.message : String(e));
+      // eslint-disable-next-line no-console
+      console.error(e);
+      setStockErr(errMsg(e));
     } finally {
       setMovBusy(false);
     }
@@ -373,7 +395,7 @@ export function ProductList() {
   if (error) {
     return (
       <p className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-        {(error as Error).message}
+        {errMsg(error)}
       </p>
     );
   }
