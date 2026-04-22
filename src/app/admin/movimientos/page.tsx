@@ -39,6 +39,7 @@ export default function AdminMovimientosPage() {
     if (tipo === "pedido") return "Pedido";
     if (tipo === "salida_barra") return "Salida a barra";
     if (tipo === "entrada_vacio") return "Entrada de vacío";
+    if (tipo === "devolucion_envase") return "Devolución envase";
     if (tipo === "devolucion_proveedor") return "Devolución a proveedor";
     return tipo;
   }

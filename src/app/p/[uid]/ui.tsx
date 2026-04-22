@@ -69,7 +69,7 @@ async function createMovimientoOnline(input: {
   client_uuid: string;
   producto_id: string;
   establecimiento_id: string;
-  tipo: "entrada" | "salida" | "pedido" | "salida_barra" | "entrada_vacio";
+  tipo: "entrada" | "salida" | "pedido" | "salida_barra" | "entrada_vacio" | "devolucion_envase";
   cantidad: number;
   usuario_id: string;
   timestamp: string;
@@ -174,7 +174,7 @@ export function ProductByUidClient({ uid }: { uid: string }) {
   }, [pedidoCantidad, producto?.articulo, producto?.proveedor?.nombre, producto?.proveedor?.telefono_whatsapp]);
 
   async function registrar(
-    tipo: "entrada" | "salida" | "pedido" | "salida_barra" | "entrada_vacio",
+    tipo: "entrada" | "salida" | "pedido" | "salida_barra" | "entrada_vacio" | "devolucion_envase",
     cantidadMovimiento: number,
     opts?: { genera_vacio?: boolean }
   ) {
@@ -350,7 +350,8 @@ export function ProductByUidClient({ uid }: { uid: string }) {
                   return;
                 }
                 if (modo === "salida") {
-                  await registrar("salida_barra", Math.abs(n), { genera_vacio: true });
+                  // Importante: 'salida_barra' ya NO genera envases vacíos automáticamente.
+                  await registrar("salida_barra", Math.abs(n));
                   setSaved(true);
                   window.setTimeout(() => setSaved(false), 1200);
                   return;

@@ -8,6 +8,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Search } from "lucide-react";
 import { Drawer } from "@/components/ui/Drawer";
 import { IconWhatsApp } from "@/components/IconWhatsApp";
+import { Button } from "@/components/ui/Button";
 import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { stockSemaforo } from "@/lib/stockSemaforo";
@@ -209,6 +210,15 @@ export function ProductList() {
   const [movBusy, setMovBusy] = useState(false);
   const qtyRef = useRef<HTMLInputElement | null>(null);
 
+  // Devolver envases vacíos (manual, staff/admin/superadmin)
+  const [vaciosOpen, setVaciosOpen] = useState(false);
+  const [vaciosStep, setVaciosStep] = useState<"pick" | "qty">("pick");
+  const [vaciosSearch, setVaciosSearch] = useState("");
+  const [vaciosProd, setVaciosProd] = useState<Producto | null>(null);
+  const [vaciosQty, setVaciosQty] = useState<string>("1");
+  const [vaciosBusy, setVaciosBusy] = useState(false);
+  const [vaciosErr, setVaciosErr] = useState<string | null>(null);
+
   const { data, isLoading, error } = useQuery({
     queryKey: ["productos", establecimientoId],
     queryFn: () => fetchProductos(establecimientoId),
@@ -280,6 +290,68 @@ export function ProductList() {
     if (!q) return filteredForMode;
     return filteredForMode.filter((p) => p.articulo.toLowerCase().includes(q));
   }, [filteredForMode, search]);
+
+  const vaciosPickList = useMemo(() => {
+    const q = vaciosSearch.trim().toLowerCase();
+    const list = Array.isArray(data) ? data : [];
+    if (!q) return list;
+    return list.filter((p) => (p.articulo ?? "").toLowerCase().includes(q));
+  }, [data, vaciosSearch]);
+
+  async function commitDevolverVacios() {
+    if (!establecimientoId || !vaciosProd) return;
+    const n = Math.max(0, Math.trunc(Number(String(vaciosQty).replace(",", "."))));
+    if (!Number.isFinite(n) || n <= 0) return;
+    setVaciosBusy(true);
+    setVaciosErr(null);
+    try {
+      const usuario_id = await requireUserId();
+      const payload = {
+        client_uuid: newClientUuid(),
+        producto_id: vaciosProd.id,
+        establecimiento_id: establecimientoId,
+        tipo: "devolucion_envase" as const,
+        cantidad: n,
+        usuario_id,
+        timestamp: new Date().toISOString()
+      };
+
+      if (typeof navigator !== "undefined" && navigator.onLine) {
+        const { error } = await supabase()
+          .from("movimientos")
+          .upsert(payload, { onConflict: "client_uuid", ignoreDuplicates: true });
+        if (error) throw error;
+      } else {
+        await enqueueMovimiento(payload);
+      }
+
+      // Optimistic: suma a stock_vacios
+      const applyOptimistic = (prevList: Producto[]) =>
+        prevList.map((x) => {
+          if (x.id !== vaciosProd.id) return x;
+          const nextV = Math.max(0, Math.trunc(Number(x.stock_vacios ?? 0)) + n);
+          return { ...x, stock_vacios: nextV };
+        });
+      queryClient.setQueryData(["productos", establecimientoId], (old) => applyOptimistic(((old as Producto[] | undefined) ?? []) as Producto[]));
+      queryClient.setQueryData(["dashboard", "productos", establecimientoId], (old) => applyOptimistic(((old as Producto[] | undefined) ?? []) as Producto[]));
+
+      await queryClient.invalidateQueries({ queryKey: ["productos", establecimientoId] });
+      await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", establecimientoId] });
+      await queryClient.invalidateQueries({ queryKey: ["movimientos", establecimientoId] });
+
+      setVaciosOpen(false);
+      setVaciosStep("pick");
+      setVaciosSearch("");
+      setVaciosProd(null);
+      setVaciosQty("1");
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error(e);
+      setVaciosErr(errMsg(e));
+    } finally {
+      setVaciosBusy(false);
+    }
+  }
 
   const orderedList = useMemo(() => {
     const list = [...filteredBySearch];
@@ -421,7 +493,6 @@ export function ProductList() {
         cantidad: number;
         usuario_id: string;
         timestamp: string;
-        genera_vacio?: boolean;
       } = {
         client_uuid: newClientUuid(),
         producto_id: movProd.id,
@@ -431,7 +502,6 @@ export function ProductList() {
         usuario_id,
         timestamp: new Date().toISOString()
       };
-      if (movTipo === "salida_barra") payload.genera_vacio = true;
 
       if (typeof navigator !== "undefined" && navigator.onLine) {
         const { error } = await supabase()
@@ -448,9 +518,8 @@ export function ProductList() {
           if (x.id !== movProd.id) return x;
           const deltaStock = movTipo === "entrada_compra" ? n : movTipo === "salida_barra" ? -n : 0;
           const nextStock = Math.max(0, Math.trunc(Number(x.stock_actual)) + deltaStock);
-          const nextVacios =
-            movTipo === "salida_barra" ? Math.max(0, Math.trunc(Number(x.stock_vacios ?? 0)) + n) : x.stock_vacios;
-          return { ...x, stock_actual: nextStock, stock_vacios: nextVacios };
+          // Importante: 'salida_barra' ya NO genera vacíos automáticamente.
+          return { ...x, stock_actual: nextStock };
         });
 
       queryClient.setQueryData(["productos", establecimientoId], (old) => {
@@ -496,6 +565,21 @@ export function ProductList() {
 
   return (
     <div className="space-y-4 pb-32">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <button
+          type="button"
+          onClick={() => {
+            setVaciosErr(null);
+            setVaciosOpen(true);
+            setVaciosStep("pick");
+            setVaciosProd(null);
+            setVaciosQty("1");
+          }}
+          className="min-h-12 w-full rounded-3xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-900 shadow-sm hover:bg-slate-50 sm:w-auto"
+        >
+          Devolver Envases Vacíos
+        </button>
+      </div>
       {modoVacios ? (
         <div className="rounded-3xl border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm">
           Vista: <span className="font-semibold text-slate-900">Vacíos</span>. Solo se muestran productos con vacíos &gt; 0.
@@ -771,17 +855,19 @@ export function ProductList() {
         <div className="space-y-3">
           {movStep === "menu" ? (
             <div className="space-y-2">
-              <button
-                type="button"
-                disabled={movBusy}
-                onClick={() => {
-                  setMovTipo("entrada_compra");
-                  setMovStep("cantidad");
-                }}
-                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-50"
-              >
-                Registrar Entrada (Compra)
-              </button>
+              {canPedidos ? (
+                <button
+                  type="button"
+                  disabled={movBusy}
+                  onClick={() => {
+                    setMovTipo("entrada_compra");
+                    setMovStep("cantidad");
+                  }}
+                  className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-50"
+                >
+                  Registrar Entrada (Compra)
+                </button>
+              ) : null}
               <button
                 type="button"
                 disabled={movBusy}
@@ -862,6 +948,93 @@ export function ProductList() {
           >
             Cerrar
           </button>
+        </div>
+      </Drawer>
+
+      <Drawer
+        open={vaciosOpen}
+        title="Devolver envases vacíos"
+        onClose={() => {
+          if (vaciosBusy) return;
+          setVaciosOpen(false);
+          setVaciosErr(null);
+          setVaciosStep("pick");
+          setVaciosProd(null);
+          setVaciosQty("1");
+        }}
+      >
+        <div className="space-y-3 pb-2">
+          {vaciosErr ? (
+            <p className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{vaciosErr}</p>
+          ) : null}
+
+          {vaciosStep === "pick" ? (
+            <div className="space-y-3">
+              <input
+                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                placeholder="Buscar producto…"
+                value={vaciosSearch}
+                onChange={(e) => setVaciosSearch(e.currentTarget.value)}
+              />
+              <div className="max-h-[55vh] overflow-auto rounded-2xl border border-slate-200 bg-white">
+                {vaciosPickList.slice(0, 80).map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    disabled={vaciosBusy}
+                    onClick={() => {
+                      setVaciosProd(p);
+                      setVaciosStep("qty");
+                      setVaciosQty("1");
+                    }}
+                    className="flex w-full items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-left hover:bg-slate-50"
+                  >
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">{p.articulo}</span>
+                    <span className="shrink-0 text-xs font-semibold text-slate-600">
+                      Vacíos: {Math.max(0, Number(p.stock_vacios ?? 0) || 0)}
+                    </span>
+                  </button>
+                ))}
+                {!vaciosPickList.length ? (
+                  <p className="p-4 text-sm text-slate-600">No hay productos que coincidan.</p>
+                ) : null}
+              </div>
+              <p className="text-xs text-slate-500">
+                Selecciona un producto y registra cuántos envases vacíos llevas al almacén.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm font-semibold text-slate-900">{vaciosProd?.articulo ?? "Producto"}</p>
+              <label className="text-sm font-semibold text-slate-900">Cantidad</label>
+              <input
+                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base"
+                inputMode="numeric"
+                type="number"
+                min={1}
+                step={1}
+                value={vaciosQty}
+                onChange={(e) => setVaciosQty(e.currentTarget.value)}
+                disabled={vaciosBusy}
+              />
+              <div className="grid grid-cols-1 gap-2">
+                <Button onClick={() => void commitDevolverVacios()} disabled={vaciosBusy || !vaciosProd}>
+                  {vaciosBusy ? "Guardando…" : "Confirmar devolución"}
+                </Button>
+                <button
+                  type="button"
+                  className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 hover:bg-slate-50"
+                  disabled={vaciosBusy}
+                  onClick={() => {
+                    setVaciosStep("pick");
+                    setVaciosProd(null);
+                  }}
+                >
+                  Cambiar producto
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </Drawer>
     </div>

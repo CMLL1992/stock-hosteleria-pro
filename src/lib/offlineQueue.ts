@@ -6,6 +6,7 @@ export type MovimientoTipo =
   | "pedido"
   | "salida_barra"
   | "entrada_vacio"
+  | "devolucion_envase"
   | "devolucion_proveedor"
   | "entrada_compra";
 
