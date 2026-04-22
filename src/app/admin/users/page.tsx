@@ -26,7 +26,7 @@ export default function AdminUsersPage() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [rol, setRol] = useState<"admin" | "staff">("staff");
+  const [rol, setRol] = useState<"superadmin" | "admin" | "staff">("staff");
   const [establecimientoId, setEstablecimientoId] = useState<string>("");
 
   const [confirmDeleteUser, setConfirmDeleteUser] = useState<UsuarioListItem | null>(null);
@@ -206,10 +206,11 @@ export default function AdminUsersPage() {
               <select
                 className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
                 value={rol}
-                onChange={(e) => setRol(e.currentTarget.value as "admin" | "staff")}
+                onChange={(e) => setRol(e.currentTarget.value as "superadmin" | "admin" | "staff")}
               >
                 <option value="staff">staff</option>
                 <option value="admin">admin</option>
+                <option value="superadmin">superadmin</option>
               </select>
             </div>
             <div className="space-y-1">

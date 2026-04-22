@@ -8,7 +8,7 @@ const MIN_PASSWORD_LEN = 6;
 type Body = {
   email?: string;
   password?: string;
-  rol?: "admin" | "staff";
+  rol?: "superadmin" | "admin" | "staff";
   establecimiento_id?: string;
 };
 
@@ -96,7 +96,7 @@ export async function PATCH(req: Request) {
 }
 
 function validateCreateUserBody(body: Body):
-  | { ok: true; email: string; password: string; rol: "admin" | "staff"; establecimiento_id: string }
+  | { ok: true; email: string; password: string; rol: "superadmin" | "admin" | "staff"; establecimiento_id: string }
   | { ok: false; message: string } {
   const { email, password, rol, establecimiento_id } = body;
 
@@ -119,8 +119,8 @@ function validateCreateUserBody(body: Body):
       message: `La contraseña debe tener al menos ${MIN_PASSWORD_LEN} caracteres.`
     };
   }
-  if (!rol || (rol !== "admin" && rol !== "staff")) {
-    return { ok: false, message: "El rol debe ser 'admin' o 'staff'." };
+  if (!rol || (rol !== "superadmin" && rol !== "admin" && rol !== "staff")) {
+    return { ok: false, message: "El rol debe ser 'superadmin', 'admin' o 'staff'." };
   }
 
   return {
