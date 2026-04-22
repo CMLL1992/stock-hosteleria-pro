@@ -786,10 +786,10 @@ export default function AdminProductosPage() {
                   <div className={`flex shrink-0 flex-col items-center gap-1 rounded-2xl border-2 p-2 ${stockRingClass}`}>
                     <span className="text-[10px] font-bold uppercase text-slate-500">Stock</span>
                     <input
-                      type="number"
+                      type="text"
                       inputMode="numeric"
                       pattern="[0-9]*"
-                      min={0}
+                      aria-label={`Stock de ${p.articulo}`}
                       disabled={busy}
                       className="h-14 w-[5.5rem] rounded-xl border border-slate-300 bg-white px-1 text-center text-2xl font-black tabular-nums text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
                       value={stockQuickDraft[p.id] ?? String(p.stock_actual)}

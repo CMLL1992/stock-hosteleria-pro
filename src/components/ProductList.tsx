@@ -732,10 +732,10 @@ export function ProductList() {
                   <div className="flex shrink-0 flex-col items-center gap-1">
                     <span className="text-[10px] font-bold uppercase text-slate-500">Stock</span>
                     <input
-                      type="number"
+                      type="text"
                       inputMode="numeric"
                       pattern="[0-9]*"
-                      min={0}
+                      aria-label={`Stock de ${p.articulo}`}
                       disabled={busy || !canSetStockAbsolute}
                       className={STOCK_INPUT_CLASS}
                       value={stockDraft[p.id] ?? String(p.stock_actual)}
