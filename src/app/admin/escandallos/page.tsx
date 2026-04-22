@@ -56,6 +56,12 @@ type ProveedorRow = { id: string; nombre: string };
 const IVA_OPTIONS = [4, 10, 21] as const;
 const DESC_OPTIONS = ["%", "€"] as const;
 
+function normalizeIva(v: number): (typeof IVA_OPTIONS)[number] {
+  const n = Math.trunc(Number(v));
+  if (n === 4 || n === 10 || n === 21) return n;
+  return 10;
+}
+
 function normCat(c: string | null | undefined): string {
   const s = String(c ?? "").trim();
   return s || "Otros";
@@ -493,7 +499,7 @@ export default function EscandallosPage() {
                     const precioTarifa = toNum(String(row.Precio_Tarifa_Caja ?? ""));
                     const udsCaja = Math.trunc(toNum(String(row.Uds_Caja ?? "")));
                     const rappel = toNum(String(row.Rappel ?? ""));
-                    const iva = Math.trunc(toNum(String(row.IVA ?? ""))) || 10;
+                    const iva = normalizeIva(toNum(String(row.IVA ?? "")));
                     const pvp = toNum(String(row.PVP_Botella ?? ""));
 
                     // Importante: NO tocamos `productos` en importación masiva.
