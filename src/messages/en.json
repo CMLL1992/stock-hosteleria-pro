@@ -27,6 +27,11 @@
     "close": "Close",
     "loading": "Loading…",
     "searchProduct": "Search product…"
+  },
+  "dashboard": {
+    "lowStockHint": "Current stock ≤ minimum stock",
+    "lowStockEmpty": "There are no products below minimum.",
+    "stockRatioHint": "Current stock / minimum stock"
   }
 }
 

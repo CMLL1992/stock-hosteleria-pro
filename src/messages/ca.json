@@ -27,6 +27,11 @@
     "close": "Tancar",
     "loading": "Carregant…",
     "searchProduct": "Cercar producte…"
+  },
+  "dashboard": {
+    "lowStockHint": "Stock actual ≤ stock mínim",
+    "lowStockEmpty": "No hi ha productes per sota del mínim.",
+    "stockRatioHint": "Stock actual / stock mínim"
   }
 }
 

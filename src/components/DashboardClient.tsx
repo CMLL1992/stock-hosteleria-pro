@@ -12,12 +12,12 @@ import { enqueueMovimiento, newClientUuid } from "@/lib/offlineQueue";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { useT } from "@/lib/i18n";
+import { useTranslations } from "next-intl";
 
 export function DashboardClient() {
   const { activeEstablishmentId: establecimientoId, activeEstablishmentName, me } = useActiveEstablishment();
   const queryClient = useQueryClient();
-  const tt = useT();
+  const t = useTranslations();
   const [envasesOpen, setEnvasesOpen] = useState(false);
   const [confirmProd, setConfirmProd] = useState<null | { id: string; articulo: string; stock_vacios: number }>(null);
   const [confirming, setConfirming] = useState(false);
@@ -220,10 +220,10 @@ export function DashboardClient() {
         <Link
           href="/admin/bajo-minimos"
           className="block rounded-3xl border-2 border-red-200 bg-white p-6 shadow-md ring-2 ring-red-100 transition hover:bg-slate-50"
-          aria-label={tt("admin.lowStock")}
+          aria-label={t("status.low")}
         >
-          <p className="text-center text-xs font-bold uppercase tracking-wide text-red-700">{tt("admin.lowStock")}</p>
-          <p className="mt-1 text-center text-[11px] text-red-600/90">{tt("admin.lowStockHint")}</p>
+          <p className="text-center text-xs font-bold uppercase tracking-wide text-red-700">{t("status.low")}</p>
+          <p className="mt-1 text-center text-[11px] text-red-600/90">{t("dashboard.lowStockHint")}</p>
           <p className="mt-4 text-center text-5xl font-black tabular-nums tracking-tight text-red-600">{bajoMinimos.length}</p>
         </Link>
         <button
