@@ -178,6 +178,15 @@ function errMsg(e: unknown): string {
   return "No se pudo completar la acción. Revisa la conexión y vuelve a intentarlo.";
 }
 
+function readEvtValue(e: { currentTarget?: { value?: unknown } } | null | undefined): string {
+  try {
+    const v = e?.currentTarget?.value;
+    return typeof v === "string" ? v : String(v ?? "");
+  } catch {
+    return "";
+  }
+}
+
 export function ProductList() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -730,14 +739,14 @@ export function ProductList() {
                       disabled={busy || !canSetStockAbsolute}
                       className={STOCK_INPUT_CLASS}
                       value={stockDraft[p.id] ?? String(p.stock_actual)}
-                      onChange={(e) => setStockDraft((d) => ({ ...d, [p.id]: e.currentTarget.value }))}
+                      onChange={(e) => setStockDraft((d) => ({ ...d, [p.id]: readEvtValue(e) }))}
                       onBlur={(e) => {
                         if (!canSetStockAbsolute) {
                           // Staff: no puede fijar stock absoluto desde aquí.
                           setStockDraft((d) => ({ ...d, [p.id]: String(p.stock_actual) }));
                           return;
                         }
-                        void setStockFromInput(p, e.currentTarget.value);
+                        void setStockFromInput(p, readEvtValue(e));
                       }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
