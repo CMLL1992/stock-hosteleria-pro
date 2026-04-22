@@ -87,7 +87,15 @@ function toCsv(rows: Record<string, unknown>[], columns: readonly string[]): str
   return [head, ...lines].join("\n");
 }
 
+function detectCsvDelimiter(text: string): "," | ";" {
+  const firstLine = String(text ?? "").split(/\r?\n/, 1)[0] ?? "";
+  const commas = (firstLine.match(/,/g) ?? []).length;
+  const semis = (firstLine.match(/;/g) ?? []).length;
+  return semis > commas ? ";" : ",";
+}
+
 function parseCsv(text: string): Record<string, string>[] {
+  const delim = detectCsvDelimiter(text);
   const rows: string[][] = [];
   let cur: string[] = [];
   let field = "";
@@ -112,7 +120,7 @@ function parseCsv(text: string): Record<string, string>[] {
       inQuotes = true;
       continue;
     }
-    if (ch === ",") {
+    if (ch === delim) {
       cur.push(field);
       field = "";
       continue;
