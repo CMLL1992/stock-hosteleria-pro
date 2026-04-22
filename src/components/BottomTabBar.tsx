@@ -37,6 +37,7 @@ export function BottomTabBar() {
   const tabs: Tab[] = useMemo(() => {
     if (!isAdmin) {
       return [
+        { href: "/admin/scan", label: "ESCANEAR" },
         { href: "/stock", label: "STOCK" },
         { href: "/stock?vacios=1", label: "VACÍOS" }
       ];

@@ -366,12 +366,15 @@ export default function EscandallosPage() {
 
           <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
             Precio tarifa / caja
-            <input
-              className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-              inputMode="decimal"
-              value={nuevoPrecioTarifa}
-              onChange={(e) => setNuevoPrecioTarifa(e.currentTarget.value)}
-            />
+            <div className="relative">
+              <input
+                className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 pr-9 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                inputMode="decimal"
+                value={nuevoPrecioTarifa}
+                onChange={(e) => setNuevoPrecioTarifa(e.currentTarget.value)}
+              />
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500">€</span>
+            </div>
           </label>
 
           <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
@@ -386,12 +389,17 @@ export default function EscandallosPage() {
 
           <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
             Descuento
-            <input
-              className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-              inputMode="decimal"
-              value={nuevoDescuentoValor}
-              onChange={(e) => setNuevoDescuentoValor(e.currentTarget.value)}
-            />
+            <div className="relative">
+              <input
+                className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 pr-9 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                inputMode="decimal"
+                value={nuevoDescuentoValor}
+                onChange={(e) => setNuevoDescuentoValor(e.currentTarget.value)}
+              />
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500">
+                {nuevoDescuentoTipo}
+              </span>
+            </div>
           </label>
 
           <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
@@ -411,12 +419,15 @@ export default function EscandallosPage() {
 
           <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
             Rappel
-            <input
-              className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-              inputMode="decimal"
-              value={nuevoRappel}
-              onChange={(e) => setNuevoRappel(e.currentTarget.value)}
-            />
+            <div className="relative">
+              <input
+                className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 pr-9 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                inputMode="decimal"
+                value={nuevoRappel}
+                onChange={(e) => setNuevoRappel(e.currentTarget.value)}
+              />
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500">€</span>
+            </div>
           </label>
 
           <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
@@ -436,12 +447,15 @@ export default function EscandallosPage() {
 
           <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
             PVP por botella
-            <input
-              className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-              inputMode="decimal"
-              value={nuevoPvp}
-              onChange={(e) => setNuevoPvp(e.currentTarget.value)}
-            />
+            <div className="relative">
+              <input
+                className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 pr-9 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                inputMode="decimal"
+                value={nuevoPvp}
+                onChange={(e) => setNuevoPvp(e.currentTarget.value)}
+              />
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500">€</span>
+            </div>
           </label>
 
           <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">

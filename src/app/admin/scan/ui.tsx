@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { QrScanner } from "@/components/scanner/QrScanner";
+import { Drawer } from "@/components/ui/Drawer";
+import { supabase } from "@/lib/supabase";
+import { supabaseErrToString } from "@/lib/supabaseErrToString";
 
 function extractProductId(decodedText: string): string | null {
   const raw = decodedText.trim();
@@ -27,6 +30,13 @@ export function ScanGoClient() {
   const router = useRouter();
   const [last, setLast] = useState<string | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
+
+  // Comparar albarán (modo consulta, no guarda)
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [compareStep, setCompareStep] = useState<"scan" | "compare">("scan");
+  const [compareProd, setCompareProd] = useState<null | { id: string; articulo: string; precio_tarifa: number }>(null);
+  const [comparePrecio, setComparePrecio] = useState<string>("");
+  const [compareMsg, setCompareMsg] = useState<string | null>(null);
 
   useEffect(() => {
     // iOS/Safari suele requerir un gesto del usuario para poder reproducir sonido.
@@ -67,6 +77,19 @@ export function ScanGoClient() {
     }
   }, []);
 
+  const openCompare = useCallback(() => {
+    setCompareOpen(true);
+    setCompareStep("scan");
+    setCompareProd(null);
+    setComparePrecio("");
+    setCompareMsg(null);
+  }, []);
+
+  const compareBeep = useCallback(() => {
+    // reutiliza el mismo beep (no duplica sonido)
+    beep();
+  }, [beep]);
+
   const onDetected = useCallback(
     (decodedText: string) => {
       const id = extractProductId(decodedText);
@@ -87,6 +110,117 @@ export function ScanGoClient() {
     [beep, last, router]
   );
 
-  return <QrScanner onDetected={onDetected} />;
+  return (
+    <div className="relative">
+      <div className="absolute left-0 right-0 top-3 z-10 flex justify-center px-3">
+        <button
+          type="button"
+          onClick={openCompare}
+          className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-white/25 bg-black/35 px-4 text-sm font-semibold text-white backdrop-blur"
+        >
+          Comparar Albarán
+        </button>
+      </div>
+
+      <QrScanner onDetected={onDetected} />
+
+      <Drawer
+        open={compareOpen}
+        title="Comparar albarán (sin guardar)"
+        onClose={() => {
+          setCompareOpen(false);
+          setCompareMsg(null);
+        }}
+      >
+        <div className="space-y-3 pb-4">
+          {compareStep === "scan" ? (
+            <div className="overflow-hidden rounded-2xl border border-slate-200">
+              <QrScanner
+                onDetected={async (txt) => {
+                  const pid = extractProductId(txt);
+                  if (!pid) return;
+                  compareBeep();
+                  try {
+                    const { data, error } = await supabase()
+                      .from("productos")
+                      .select("id,articulo,nombre,precio_tarifa")
+                      .eq("id", pid)
+                      .maybeSingle();
+                    if (error) throw error;
+                    const row = (data ?? null) as null | { id?: string; articulo?: string | null; nombre?: string | null; precio_tarifa?: unknown };
+                    if (!row?.id) throw new Error("Producto no encontrado.");
+                    setCompareProd({
+                      id: String(row.id),
+                      articulo: String(row.articulo ?? row.nombre ?? "—").trim() || "—",
+                      precio_tarifa: Number(row.precio_tarifa ?? 0) || 0
+                    });
+                    setCompareStep("compare");
+                  } catch (e) {
+                    setCompareMsg(supabaseErrToString(e));
+                  }
+                }}
+              />
+            </div>
+          ) : null}
+
+          {compareStep === "compare" && compareProd ? (
+            <div className="space-y-3">
+              {compareMsg ? (
+                <p className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{compareMsg}</p>
+              ) : null}
+              <p className="text-sm font-semibold text-slate-900">{compareProd.articulo}</p>
+              <p className="text-sm text-slate-600">
+                Precio guardado (tarifa): <span className="font-semibold tabular-nums text-slate-900">{compareProd.precio_tarifa.toFixed(2)}€</span>
+              </p>
+
+              <label className="block text-sm font-semibold text-slate-900">
+                Precio en albarán
+                <input
+                  className="mt-1 min-h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base tabular-nums text-slate-900"
+                  inputMode="decimal"
+                  value={comparePrecio}
+                  onChange={(e) => setComparePrecio(e.currentTarget.value)}
+                  placeholder="0,00"
+                />
+              </label>
+
+              <button
+                type="button"
+                className="min-h-12 w-full rounded-2xl bg-black px-4 text-sm font-semibold text-white hover:bg-slate-900"
+                onClick={() => {
+                  const n = Number(String(comparePrecio).replace(",", "."));
+                  if (!Number.isFinite(n) || n <= 0) {
+                    setCompareMsg("Introduce un precio válido.");
+                    return;
+                  }
+                  const diff = Math.abs(n - compareProd.precio_tarifa);
+                  if (diff < 0.005) {
+                    setCompareMsg("OK: el precio coincide con el escandallo.");
+                  } else {
+                    setCompareMsg(`ALERTA: el precio ha cambiado. Albarán ${n.toFixed(2)}€ vs guardado ${compareProd.precio_tarifa.toFixed(2)}€.`);
+                  }
+                }}
+              >
+                Comparar
+              </button>
+
+              <button
+                type="button"
+                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 hover:bg-slate-50"
+                onClick={() => {
+                  setCompareStep("scan");
+                  setCompareProd(null);
+                  setComparePrecio("");
+                  setCompareMsg(null);
+                }}
+              >
+                Escanear otro
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </Drawer>
+    </div>
+  );
 }
 
