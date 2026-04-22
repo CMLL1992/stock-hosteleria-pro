@@ -186,6 +186,7 @@ export function ProductList() {
   const [deepLinkDone, setDeepLinkDone] = useState(false);
   const queryClient = useQueryClient();
   const { me, activeEstablishmentId: establecimientoId, activeEstablishmentName } = useActiveEstablishment();
+  const canPedidos = !!me?.isAdmin;
   const [tab, setTab] = useState<string>("todos");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [stockErr, setStockErr] = useState<string | null>(null);
@@ -534,15 +535,17 @@ export function ProductList() {
                 ].join(" ")}
               >
                 <div className="flex items-start gap-3">
-                  <label className="mt-1 flex shrink-0 cursor-pointer items-center">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.has(p.id)}
-                      onChange={() => toggleSelect(p.id)}
-                      className="h-6 w-6 rounded border-slate-300 text-slate-900"
-                      aria-label={`Seleccionar ${p.articulo}`}
-                    />
-                  </label>
+                  {canPedidos ? (
+                    <label className="mt-1 flex shrink-0 cursor-pointer items-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(p.id)}
+                        onChange={() => toggleSelect(p.id)}
+                        className="h-6 w-6 rounded border-slate-300 text-slate-900"
+                        aria-label={`Seleccionar ${p.articulo}`}
+                      />
+                    </label>
+                  ) : null}
 
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -628,7 +631,7 @@ export function ProductList() {
         </p>
       ) : null}
 
-      {selectedIds.size > 0 ? (
+      {canPedidos && selectedIds.size > 0 ? (
         <button
           type="button"
           className="fixed bottom-24 right-4 z-30 flex min-h-[52px] items-center gap-2 rounded-full border-2 border-slate-900 bg-slate-900 px-5 py-3 text-base font-bold text-white shadow-xl"
@@ -639,51 +642,53 @@ export function ProductList() {
         </button>
       ) : null}
 
-      <Drawer open={cestaOpen} title="Resumen del pedido" onClose={() => setCestaOpen(false)}>
-        <div className="space-y-6 pb-4">
-          <p className="text-sm text-slate-600">
-            {estNombre} · {selectedProductos.length} artículo{selectedProductos.length === 1 ? "" : "s"}
-          </p>
-          {cestaPorProveedor.map((grupo) => {
-            const lineas = grupo.items.map((p) => {
-              const min = typeof p.stock_minimo === "number" ? p.stock_minimo : 0;
-              const cant = cantidadSugeridaPedido(p.stock_actual, min);
-              return {
-                articulo: p.articulo,
-                cantidad: cant,
-                unidad: p.unidad
-              };
-            });
-            const url = waUrlPedidoCestaProveedor({
-              nombreProveedor: grupo.nombre === "Sin proveedor" ? "Proveedor" : grupo.nombre,
-              telefonoWhatsapp: grupo.telefono,
-              nombreEstablecimiento: estNombre,
-              lineas
-            });
-            return (
-              <section key={grupo.nombre} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <h3 className="font-bold text-slate-900">{grupo.nombre}</h3>
-                <ul className="mt-2 list-inside list-disc text-sm text-slate-700">
-                  {lineas.map((l, i) => (
-                    <li key={i}>
-                      {l.cantidad} {(l.unidad ?? "uds").toString()} de {l.articulo}
-                    </li>
-                  ))}
-                </ul>
-                <a
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-600"
-                >
-                  <IconWhatsApp className="h-6 w-6 shrink-0 text-white" />
-                  Enviar pedido a {grupo.nombre === "Sin proveedor" ? "WhatsApp" : grupo.nombre}
-                </a>
-              </section>
-            );
-          })}
-        </div>
-      </Drawer>
+      {canPedidos ? (
+        <Drawer open={cestaOpen} title="Resumen del pedido" onClose={() => setCestaOpen(false)}>
+          <div className="space-y-6 pb-4">
+            <p className="text-sm text-slate-600">
+              {estNombre} · {selectedProductos.length} artículo{selectedProductos.length === 1 ? "" : "s"}
+            </p>
+            {cestaPorProveedor.map((grupo) => {
+              const lineas = grupo.items.map((p) => {
+                const min = typeof p.stock_minimo === "number" ? p.stock_minimo : 0;
+                const cant = cantidadSugeridaPedido(p.stock_actual, min);
+                return {
+                  articulo: p.articulo,
+                  cantidad: cant,
+                  unidad: p.unidad
+                };
+              });
+              const url = waUrlPedidoCestaProveedor({
+                nombreProveedor: grupo.nombre === "Sin proveedor" ? "Proveedor" : grupo.nombre,
+                telefonoWhatsapp: grupo.telefono,
+                nombreEstablecimiento: estNombre,
+                lineas
+              });
+              return (
+                <section key={grupo.nombre} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h3 className="font-bold text-slate-900">{grupo.nombre}</h3>
+                  <ul className="mt-2 list-inside list-disc text-sm text-slate-700">
+                    {lineas.map((l, i) => (
+                      <li key={i}>
+                        {l.cantidad} {(l.unidad ?? "uds").toString()} de {l.articulo}
+                      </li>
+                    ))}
+                  </ul>
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-600"
+                  >
+                    <IconWhatsApp className="h-6 w-6 shrink-0 text-white" />
+                    Enviar pedido a {grupo.nombre === "Sin proveedor" ? "WhatsApp" : grupo.nombre}
+                  </a>
+                </section>
+              );
+            })}
+          </div>
+        </Drawer>
+      ) : null}
 
       <Drawer
         open={movOpen}
