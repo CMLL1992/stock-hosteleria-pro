@@ -26,6 +26,11 @@ export default function PreciosEnvasesPage() {
 
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState<EnvaseTipo | null>(null);
+  const [touched, setTouched] = useState<Record<EnvaseTipo, boolean>>({
+    caja: false,
+    barril: false,
+    gas: false
+  });
   const [draft, setDraft] = useState<Record<EnvaseTipo, string>>({
     caja: "0",
     barril: "0",
@@ -49,6 +54,8 @@ export default function PreciosEnvasesPage() {
           const next = { ...prev };
           for (const r of rows) {
             if (!r?.tipo) continue;
+            // Si el usuario ya ha tocado el campo, NO lo pisamos mientras escribe.
+            if (touched[r.tipo]) continue;
             next[r.tipo] = String(Number(r.precio ?? 0) || 0);
           }
           return next;
@@ -60,7 +67,7 @@ export default function PreciosEnvasesPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeEstablishmentId]);
+  }, [activeEstablishmentId, touched]);
 
   const canUse = useMemo(() => !!me?.role, [me?.role]);
 
@@ -118,7 +125,11 @@ export default function PreciosEnvasesPage() {
                     className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 pr-10 text-base tabular-nums text-slate-900 focus:outline-none focus:ring-4 focus:ring-slate-300"
                     inputMode="decimal"
                     value={draft[t.tipo]}
-                    onChange={(e) => setDraft((prev) => ({ ...prev, [t.tipo]: e.currentTarget.value }))}
+                    onChange={(e) => {
+                      const v = e.currentTarget.value;
+                      setTouched((prev) => ({ ...prev, [t.tipo]: true }));
+                      setDraft((prev) => ({ ...prev, [t.tipo]: v }));
+                    }}
                     aria-label={`Precio ${t.label}`}
                   />
                   <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500">€</span>
