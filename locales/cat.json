@@ -32,6 +32,25 @@
   "actions": {
     "edit": "Editar",
     "qr": "QR"
+  },
+  "stock": {
+    "manage": "GESTIONAR",
+    "generateQr": "Generar QR"
+  },
+  "envases": {
+    "title": "Envasos per retornar",
+    "subtitle": "Total d’envasos buits en estoc (només positius).",
+    "boxes": "Caixes",
+    "kegs": "Barrils",
+    "gas": "Gas",
+    "detailTop": "Detall (top 3)",
+    "tapToReturn": "Toca per retornar envasos.",
+    "none": "Sense envasos pendents.",
+    "confirmTitle": "Confirmar devolució",
+    "confirmBody": "Total d’envasos a retornar d’aquest producte:",
+    "cancel": "Cancel·lar",
+    "confirm": "Confirmar",
+    "saving": "Registrant…"
   }
 }
 

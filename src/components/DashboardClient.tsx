@@ -231,25 +231,25 @@ export function DashboardClient() {
           onClick={() => setEnvasesOpen(true)}
           className="block rounded-3xl border border-slate-200 bg-white p-6 text-left text-sm text-slate-600 shadow-sm hover:bg-slate-50"
         >
-          <p className="font-semibold text-slate-900">Envases para devolver</p>
-          <p className="mt-2 text-sm text-slate-600">Total en stock de vacíos (solo positivos).</p>
+          <p className="font-semibold text-slate-900">{t("envases.title")}</p>
+          <p className="mt-2 text-sm text-slate-600">{t("envases.subtitle")}</p>
           <div className="mt-4 grid grid-cols-3 gap-2">
             <div className="rounded-2xl bg-slate-50 p-3 text-center">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Cajas</p>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{t("envases.boxes")}</p>
               <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{vacios.cajas}</p>
             </div>
             <div className="rounded-2xl bg-slate-50 p-3 text-center">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Barriles</p>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{t("envases.kegs")}</p>
               <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{vacios.barriles}</p>
             </div>
             <div className="rounded-2xl bg-slate-50 p-3 text-center">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Gas</p>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{t("envases.gas")}</p>
               <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{vacios.gas}</p>
             </div>
           </div>
           {vaciosDetalleTop.length > 0 ? (
             <div className="mt-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Detalle (top 3)</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t("envases.detailTop")}</p>
               <ul className="mt-2 space-y-1 text-sm text-slate-700">
                 {vaciosDetalleTop.map((t) => (
                   <li key={t} className="truncate">
@@ -257,10 +257,10 @@ export function DashboardClient() {
                   </li>
                 ))}
               </ul>
-              <p className="mt-2 text-xs text-slate-500">Toca para devolver envases.</p>
+              <p className="mt-2 text-xs text-slate-500">{t("envases.tapToReturn")}</p>
             </div>
           ) : (
-            <p className="mt-4 text-xs text-slate-500">Sin envases pendientes.</p>
+            <p className="mt-4 text-xs text-slate-500">{t("envases.none")}</p>
           )}
         </button>
       </div>
@@ -300,14 +300,14 @@ export function DashboardClient() {
         </p>
       </section>
 
-      <Drawer open={envasesOpen} title="Envases para devolver" onClose={() => setEnvasesOpen(false)}>
+      <Drawer open={envasesOpen} title={t("envases.title")} onClose={() => setEnvasesOpen(false)}>
         <div className="space-y-3 pb-4">
           {envasesErr ? (
             <p className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{envasesErr}</p>
           ) : null}
 
           {productosConVacios.length === 0 ? (
-            <p className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">Sin envases pendientes.</p>
+            <p className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">{t("envases.none")}</p>
           ) : (
             <ul className="space-y-2">
               {productosConVacios.map((p) => (
@@ -327,9 +327,9 @@ export function DashboardClient() {
 
           {confirmProd ? (
             <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-sm font-semibold text-slate-900">Confirmar devolución</p>
+              <p className="text-sm font-semibold text-slate-900">{t("envases.confirmTitle")}</p>
               <p className="mt-1 text-sm text-slate-700">
-                Total de envases a devolver de este producto: <span className="font-bold">{confirmProd.stock_vacios}</span>
+                {t("envases.confirmBody")} <span className="font-bold">{confirmProd.stock_vacios}</span>
               </p>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <button
@@ -338,7 +338,7 @@ export function DashboardClient() {
                   onClick={() => setConfirmProd(null)}
                   disabled={confirming}
                 >
-                  Cancelar
+                  {t("envases.cancel")}
                 </button>
                 <button
                   type="button"
@@ -346,7 +346,7 @@ export function DashboardClient() {
                   onClick={() => void confirmarDevolucionTotal()}
                   disabled={confirming}
                 >
-                  {confirming ? "Registrando…" : "Confirmar"}
+                  {confirming ? t("envases.saving") : t("envases.confirm")}
                 </button>
               </div>
             </div>

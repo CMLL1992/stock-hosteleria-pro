@@ -32,6 +32,25 @@
   "actions": {
     "edit": "Edit",
     "qr": "QR"
+  },
+  "stock": {
+    "manage": "MANAGE",
+    "generateQr": "Generate QR"
+  },
+  "envases": {
+    "title": "Containers to return",
+    "subtitle": "Total empty containers in stock (positive only).",
+    "boxes": "Boxes",
+    "kegs": "Kegs",
+    "gas": "Gas",
+    "detailTop": "Details (top 3)",
+    "tapToReturn": "Tap to return containers.",
+    "none": "No pending containers.",
+    "confirmTitle": "Confirm return",
+    "confirmBody": "Total containers to return for this product:",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "saving": "Saving…"
   }
 }
 

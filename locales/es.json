@@ -32,6 +32,25 @@
   "actions": {
     "edit": "Editar",
     "qr": "QR"
+  },
+  "stock": {
+    "manage": "GESTIONAR",
+    "generateQr": "Generar QR"
+  },
+  "envases": {
+    "title": "Envases para devolver",
+    "subtitle": "Total en stock de vacíos (solo positivos).",
+    "boxes": "Cajas",
+    "kegs": "Barriles",
+    "gas": "Gas",
+    "detailTop": "Detalle (top 3)",
+    "tapToReturn": "Toca para devolver envases.",
+    "none": "Sin envases pendientes.",
+    "confirmTitle": "Confirmar devolución",
+    "confirmBody": "Total de envases a devolver de este producto:",
+    "cancel": "Cancelar",
+    "confirm": "Confirmar",
+    "saving": "Registrando…"
   }
 }
 

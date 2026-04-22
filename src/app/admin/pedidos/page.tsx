@@ -14,7 +14,7 @@ import { requireUserId } from "@/lib/session";
 import { enqueueMovimiento, newClientUuid } from "@/lib/offlineQueue";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { Search } from "lucide-react";
-import { useTranslations } from "next-intl";
+import { useLanguage } from "@/lib/LanguageContext";
 
 type ProveedorRow = {
   id: string;
@@ -111,7 +111,7 @@ export default function PedidosPage() {
     lineas: Array<{ producto_id: string; articulo: string; unidad: string | null; cantidad: number }>;
   }>(null);
   const [confirming, setConfirming] = useState(false);
-  const t = useTranslations();
+  const { t } = useLanguage();
 
   const { activeEstablishmentId, activeEstablishmentName } = useActiveEstablishment();
   const nombreLocal = activeEstablishmentName?.trim() || "Piqui Blinders";
@@ -258,10 +258,19 @@ export default function PedidosPage() {
             {grupos.map((g) => {
               const key = g.id;
               const expanded = !!open[key];
-              const searchKey = (search[key] ?? "").trim().toLowerCase();
-              const productosFiltrados = !searchKey
-                ? g.productos
-                : g.productos.filter((p) => p.articulo.toLowerCase().includes(searchKey));
+              const productosFiltrados = (() => {
+                try {
+                  const searchKey = String(search[key] ?? "").trim().toLowerCase();
+                  const base = Array.isArray(g.productos) ? g.productos : [];
+                  if (!searchKey) return base;
+                  return base.filter((p) => String(p.articulo ?? "").toLowerCase().includes(searchKey));
+                } catch (e) {
+                  // No permitimos que el filtrado rompa la UI completa (evita crash en producción).
+                  // eslint-disable-next-line no-console
+                  console.error("Error filtrando pedidos:", e);
+                  return [];
+                }
+              })();
               const lineasWa = g.productos.map((p) => ({
                 articulo: p.articulo,
                 unidad: p.unidad,

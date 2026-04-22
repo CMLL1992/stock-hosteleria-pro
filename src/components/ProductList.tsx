@@ -570,10 +570,10 @@ export function ProductList() {
           const sem = stockSemaforo(p.stock_actual, minimo);
           const stockPill =
             sem === "sin"
-              ? { bg: "#FEF2F2", text: "#991B1B", ring: "ring-1 ring-red-100", label: "Agotado" }
+              ? { bg: "#FEF2F2", text: "#991B1B", ring: "ring-1 ring-red-100", label: t("status.soldOut") }
               : sem === "bajo"
-                ? { bg: "#FFF7ED", text: "#9A3412", ring: "ring-1 ring-orange-100", label: "Bajo mín." }
-                : { bg: "#ECFDF5", text: "#065F46", ring: "ring-1 ring-emerald-100", label: "OK" };
+                ? { bg: "#FFF7ED", text: "#9A3412", ring: "ring-1 ring-orange-100", label: t("status.low") }
+                : { bg: "#ECFDF5", text: "#065F46", ring: "ring-1 ring-emerald-100", label: t("status.ok") };
 
           const key = productTabKey(p);
           const busy = busyId === p.id;
@@ -663,7 +663,7 @@ export function ProductList() {
                     onClick={() => openGestionar(p)}
                     className="inline-flex min-h-12 flex-1 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
                   >
-                    GESTIONAR
+                    {t("stock.manage")}
                   </button>
                   <Link
                     href={`/qr/${encodeURIComponent(p.id)}?print=1`}
@@ -671,7 +671,7 @@ export function ProductList() {
                     rel="noopener noreferrer"
                     className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
                   >
-                    Generar QR
+                    {t("stock.generateQr")}
                   </Link>
                 </div>
               </div>
