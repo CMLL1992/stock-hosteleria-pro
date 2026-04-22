@@ -37,6 +37,7 @@ export function ScanGoClient() {
   const [compareProd, setCompareProd] = useState<null | { id: string; articulo: string; precio_tarifa: number }>(null);
   const [comparePrecio, setComparePrecio] = useState<string>("");
   const [compareMsg, setCompareMsg] = useState<string | null>(null);
+  const [compareResult, setCompareResult] = useState<null | { kind: "subida" | "bajada" | "correcto"; diff: number }>(null);
 
   useEffect(() => {
     // iOS/Safari suele requerir un gesto del usuario para poder reproducir sonido.
@@ -83,6 +84,7 @@ export function ScanGoClient() {
     setCompareProd(null);
     setComparePrecio("");
     setCompareMsg(null);
+    setCompareResult(null);
   }, []);
 
   const compareBeep = useCallback(() => {
@@ -130,6 +132,7 @@ export function ScanGoClient() {
         onClose={() => {
           setCompareOpen(false);
           setCompareMsg(null);
+          setCompareResult(null);
         }}
       >
         <div className="space-y-3 pb-4">
@@ -155,8 +158,10 @@ export function ScanGoClient() {
                       precio_tarifa: Number(row.precio_tarifa ?? 0) || 0
                     });
                     setCompareStep("compare");
+                    setCompareResult(null);
                   } catch (e) {
                     setCompareMsg(supabaseErrToString(e));
+                    setCompareResult(null);
                   }
                 }}
               />
@@ -167,6 +172,24 @@ export function ScanGoClient() {
             <div className="space-y-3">
               {compareMsg ? (
                 <p className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{compareMsg}</p>
+              ) : null}
+              {compareResult ? (
+                <p
+                  className={[
+                    "rounded-2xl border p-3 text-sm font-semibold",
+                    compareResult.kind === "correcto"
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                      : compareResult.kind === "subida"
+                        ? "border-amber-200 bg-amber-50 text-amber-950"
+                        : "border-sky-200 bg-sky-50 text-sky-950"
+                  ].join(" ")}
+                >
+                  {compareResult.kind === "correcto"
+                    ? "Precio Correcto"
+                    : compareResult.kind === "subida"
+                      ? `Subida de ${compareResult.diff.toFixed(2)}€`
+                      : `Bajada de ${compareResult.diff.toFixed(2)}€`}
+                </p>
               ) : null}
               <p className="text-sm font-semibold text-slate-900">{compareProd.articulo}</p>
               <p className="text-sm text-slate-600">
@@ -191,14 +214,21 @@ export function ScanGoClient() {
                   const n = Number(String(comparePrecio).replace(",", "."));
                   if (!Number.isFinite(n) || n <= 0) {
                     setCompareMsg("Introduce un precio válido.");
+                    setCompareResult(null);
                     return;
                   }
-                  const diff = Math.abs(n - compareProd.precio_tarifa);
-                  if (diff < 0.005) {
-                    setCompareMsg("OK: el precio coincide con el escandallo.");
-                  } else {
-                    setCompareMsg(`ALERTA: el precio ha cambiado. Albarán ${n.toFixed(2)}€ vs guardado ${compareProd.precio_tarifa.toFixed(2)}€.`);
+                  setCompareMsg(null);
+                  const signed = n - compareProd.precio_tarifa;
+                  const abs = Math.abs(signed);
+                  if (abs < 0.005) {
+                    setCompareResult({ kind: "correcto", diff: 0 });
+                    return;
                   }
+                  if (signed > 0) {
+                    setCompareResult({ kind: "subida", diff: abs });
+                    return;
+                  }
+                  setCompareResult({ kind: "bajada", diff: abs });
                 }}
               >
                 Comparar
@@ -212,6 +242,7 @@ export function ScanGoClient() {
                   setCompareProd(null);
                   setComparePrecio("");
                   setCompareMsg(null);
+                  setCompareResult(null);
                 }}
               >
                 Escanear otro

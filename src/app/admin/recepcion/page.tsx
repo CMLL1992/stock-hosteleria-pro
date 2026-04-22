@@ -60,6 +60,7 @@ export default function RecepcionPage() {
   const [compareProd, setCompareProd] = useState<null | { id: string; articulo: string; precio_tarifa: number }>(null);
   const [comparePrecio, setComparePrecio] = useState<string>("");
   const [compareMsg, setCompareMsg] = useState<string | null>(null);
+  const [compareResult, setCompareResult] = useState<null | { kind: "subida" | "bajada" | "correcto"; diff: number }>(null);
 
   function extractProductId(decodedText: string): string | null {
     const raw = decodedText.trim();
@@ -242,6 +243,7 @@ export default function RecepcionPage() {
             setCompareProd(null);
             setComparePrecio("");
             setCompareMsg(null);
+            setCompareResult(null);
           }}
           className="mb-4 inline-flex min-h-12 w-full items-center justify-center rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
         >
@@ -342,6 +344,7 @@ export default function RecepcionPage() {
         onClose={() => {
           setCompareOpen(false);
           setCompareMsg(null);
+          setCompareResult(null);
         }}
       >
         <div className="space-y-3 pb-4">
@@ -367,8 +370,10 @@ export default function RecepcionPage() {
                       precio_tarifa: Number(row.precio_tarifa ?? 0) || 0
                     });
                     setCompareStep("compare");
+                    setCompareResult(null);
                   } catch (e) {
                     setCompareMsg(supabaseErrToString(e));
+                    setCompareResult(null);
                   }
                 }}
               />
@@ -379,6 +384,24 @@ export default function RecepcionPage() {
             <div className="space-y-3">
               {compareMsg ? (
                 <p className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{compareMsg}</p>
+              ) : null}
+              {compareResult ? (
+                <p
+                  className={[
+                    "rounded-2xl border p-3 text-sm font-semibold",
+                    compareResult.kind === "correcto"
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                      : compareResult.kind === "subida"
+                        ? "border-amber-200 bg-amber-50 text-amber-950"
+                        : "border-sky-200 bg-sky-50 text-sky-950"
+                  ].join(" ")}
+                >
+                  {compareResult.kind === "correcto"
+                    ? "Precio Correcto"
+                    : compareResult.kind === "subida"
+                      ? `Subida de ${compareResult.diff.toFixed(2)}€`
+                      : `Bajada de ${compareResult.diff.toFixed(2)}€`}
+                </p>
               ) : null}
               <p className="text-sm font-semibold text-slate-900">{compareProd.articulo}</p>
               <p className="text-sm text-slate-600">
@@ -403,14 +426,21 @@ export default function RecepcionPage() {
                   const n = Number(String(comparePrecio).replace(",", "."));
                   if (!Number.isFinite(n) || n <= 0) {
                     setCompareMsg("Introduce un precio válido.");
+                    setCompareResult(null);
                     return;
                   }
-                  const diff = Math.abs(n - compareProd.precio_tarifa);
-                  if (diff < 0.005) {
-                    setCompareMsg("OK: el precio coincide con el escandallo.");
-                  } else {
-                    setCompareMsg(`ALERTA: el precio ha cambiado. Albarán ${n.toFixed(2)}€ vs guardado ${compareProd.precio_tarifa.toFixed(2)}€.`);
+                  setCompareMsg(null);
+                  const signed = n - compareProd.precio_tarifa;
+                  const abs = Math.abs(signed);
+                  if (abs < 0.005) {
+                    setCompareResult({ kind: "correcto", diff: 0 });
+                    return;
                   }
+                  if (signed > 0) {
+                    setCompareResult({ kind: "subida", diff: abs });
+                    return;
+                  }
+                  setCompareResult({ kind: "bajada", diff: abs });
                 }}
               >
                 Comparar
@@ -424,6 +454,7 @@ export default function RecepcionPage() {
                   setCompareProd(null);
                   setComparePrecio("");
                   setCompareMsg(null);
+                  setCompareResult(null);
                 }}
               >
                 Escanear otro

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Search } from "lucide-react";
 import { Drawer } from "@/components/ui/Drawer";
 import { IconWhatsApp } from "@/components/IconWhatsApp";
 import { supabase } from "@/lib/supabase";
@@ -191,6 +192,7 @@ export function ProductList() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [stockErr, setStockErr] = useState<string | null>(null);
   const [stockDraft, setStockDraft] = useState<Record<string, string>>({});
+  const [search, setSearch] = useState<string>("");
   const [agruparPorProveedor, setAgruparPorProveedor] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [cestaOpen, setCestaOpen] = useState(false);
@@ -269,8 +271,14 @@ export function ProductList() {
     return filtered.filter((p) => (Number(p.stock_vacios ?? 0) || 0) > 0);
   }, [filtered, modoVacios]);
 
+  const filteredBySearch = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return filteredForMode;
+    return filteredForMode.filter((p) => p.articulo.toLowerCase().includes(q));
+  }, [filteredForMode, search]);
+
   const orderedList = useMemo(() => {
-    const list = [...filteredForMode];
+    const list = [...filteredBySearch];
     if (!agruparPorProveedor) return list;
     return list.sort((a, b) => {
       const pa = proveedorNombreOrDefault(a).toLowerCase();
@@ -278,7 +286,7 @@ export function ProductList() {
       if (pa !== pb) return pa.localeCompare(pb);
       return a.articulo.localeCompare(b.articulo);
     });
-  }, [filteredForMode, agruparPorProveedor]);
+  }, [filteredBySearch, agruparPorProveedor]);
 
   const estNombre = activeEstablishmentName?.trim() || "mi establecimiento";
 
@@ -321,15 +329,52 @@ export function ProductList() {
     setBusyId(p.id);
     setStockErr(null);
     try {
-      const { error: upErr } = await supabase()
-        .from("productos")
-        .update({ stock_actual: n })
-        .eq("id", p.id)
-        .eq("establecimiento_id", establecimientoId);
-      if (upErr) throw upErr;
+      const prev = Math.max(0, Math.trunc(Number(p.stock_actual) || 0));
+      const delta = n - prev;
+      if (delta === 0) {
+        setStockDraft((d) => ({ ...d, [p.id]: String(n) }));
+        return;
+      }
+
+      const tipo: "entrada" | "salida" = delta > 0 ? "entrada" : "salida";
+      const cantidad = Math.abs(delta);
+      const usuario_id = await requireUserId();
+      const payload = {
+        client_uuid: newClientUuid(),
+        producto_id: p.id,
+        establecimiento_id: establecimientoId,
+        tipo,
+        cantidad,
+        usuario_id,
+        timestamp: new Date().toISOString()
+      };
+
+      if (typeof navigator !== "undefined" && navigator.onLine) {
+        const { error } = await supabase()
+          .from("movimientos")
+          .upsert(payload, { onConflict: "client_uuid", ignoreDuplicates: true });
+        if (error) throw error;
+      } else {
+        await enqueueMovimiento(payload);
+      }
+
       setStockDraft((d) => ({ ...d, [p.id]: String(n) }));
+
+      // Optimistic UI: ajusta caches inmediatamente
+      const applyOptimistic = (prevList: Producto[]) =>
+        prevList.map((x) => {
+          if (x.id !== p.id) return x;
+          const nextStock = Math.max(0, Math.trunc(Number(x.stock_actual)) + (tipo === "entrada" ? cantidad : -cantidad));
+          return { ...x, stock_actual: nextStock };
+        });
+      queryClient.setQueryData(["productos", establecimientoId], (old) => applyOptimistic(((old as Producto[] | undefined) ?? []) as Producto[]));
+      queryClient.setQueryData(["dashboard", "productos", establecimientoId], (old) =>
+        applyOptimistic(((old as Producto[] | undefined) ?? []) as Producto[])
+      );
+
       await queryClient.invalidateQueries({ queryKey: ["productos", establecimientoId] });
       await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", establecimientoId] });
+      await queryClient.invalidateQueries({ queryKey: ["movimientos", establecimientoId] });
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error(e);
@@ -470,6 +515,18 @@ export function ProductList() {
       {stockErr ? (
         <p className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{stockErr}</p>
       ) : null}
+
+      <div className="relative w-full">
+        <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.currentTarget.value)}
+          placeholder="Buscar producto…"
+          className="min-h-12 w-full rounded-3xl border border-slate-200 bg-white py-3 pl-12 pr-4 text-base text-slate-900 shadow-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+          aria-label="Buscar en stock"
+        />
+      </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <button
@@ -621,7 +678,7 @@ export function ProductList() {
         })}
       </div>
 
-      {filteredForMode.length === 0 ? (
+      {filteredBySearch.length === 0 ? (
         <p className="rounded-3xl border border-slate-200 bg-white p-6 text-center text-base text-slate-600">
           {modoVacios
             ? "No hay envases vacíos pendientes en esta categoría."

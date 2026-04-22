@@ -8,9 +8,14 @@ import { supabaseErrToString } from "@/lib/supabaseErrToString";
 export function QrScanner({ onDetected }: { onDetected: (decodedText: string) => void }) {
   const regionId = useId().replaceAll(":", "_");
   const qrRef = useRef<Html5Qrcode | null>(null);
+  const onDetectedRef = useRef(onDetected);
   const [error, setError] = useState<string | null>(null);
   const [torchSupported, setTorchSupported] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
+
+  useEffect(() => {
+    onDetectedRef.current = onDetected;
+  }, [onDetected]);
 
   useEffect(() => {
     let cancelled = false;
@@ -32,7 +37,7 @@ export function QrScanner({ onDetected }: { onDetected: (decodedText: string) =>
           { facingMode: "environment" },
           { fps: 10, qrbox: { width: 250, height: 250 } },
           (decodedText) => {
-            onDetected(decodedText);
+            onDetectedRef.current(decodedText);
           },
           () => {
             // ignore decode errors (very chatty)
@@ -62,7 +67,7 @@ export function QrScanner({ onDetected }: { onDetected: (decodedText: string) =>
         .catch(() => undefined)
         .finally(() => Promise.resolve((inst as unknown as { clear: () => void | Promise<void> }).clear()).catch(() => undefined));
     };
-  }, [onDetected, regionId]);
+  }, [regionId]);
 
   const toggleTorch = useCallback(async () => {
     const inst = qrRef.current;

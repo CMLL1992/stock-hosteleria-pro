@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AppRole } from "@/lib/session";
-import { fetchMyRole } from "@/lib/session";
+import { fetchMyRole, requireUserId } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { MobileHeader } from "@/components/MobileHeader";
@@ -11,6 +11,7 @@ import { waUrlProductoPedido } from "@/lib/whatsappPedido";
 import { clasesBordeSemaforo, clasesFondoSemaforo, stockSemaforo } from "@/lib/stockSemaforo";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
+import { enqueueMovimiento, newClientUuid } from "@/lib/offlineQueue";
 
 type Row = {
   id: string;
@@ -122,13 +123,26 @@ export default function PedidoRapidoPage() {
     setBusyId(p.id);
     setErr(null);
     try {
-      const next = Math.max(0, p.stock_actual + delta);
-      const { error } = await supabase()
-        .from("productos")
-        .update({ stock_actual: next })
-        .eq("id", p.id)
-        .eq("establecimiento_id", activeEstablishmentId);
-      if (error) throw error;
+      if (!delta) return;
+      const tipo: "entrada" | "salida" = delta > 0 ? "entrada" : "salida";
+      const cantidad = Math.abs(delta);
+      const usuario_id = await requireUserId();
+      const payload = {
+        client_uuid: newClientUuid(),
+        producto_id: p.id,
+        establecimiento_id: activeEstablishmentId,
+        tipo,
+        cantidad,
+        usuario_id,
+        timestamp: new Date().toISOString()
+      };
+
+      if (typeof navigator !== "undefined" && navigator.onLine) {
+        const { error } = await supabase().from("movimientos").upsert(payload, { onConflict: "client_uuid", ignoreDuplicates: true });
+        if (error) throw error;
+      } else {
+        await enqueueMovimiento(payload);
+      }
       await refresh();
     } catch (e) {
       setErr(supabaseErrToString(e));

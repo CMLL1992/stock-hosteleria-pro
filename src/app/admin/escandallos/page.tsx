@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import type { AppRole } from "@/lib/session";
 import { fetchMyRole } from "@/lib/session";
@@ -38,6 +38,94 @@ function normCat(c: string | null | undefined): string {
   return s || "Otros";
 }
 
+const CSV_COLUMNS = [
+  "Producto_ID",
+  "Nombre",
+  "Proveedor",
+  "Precio_Tarifa_Caja",
+  "Uds_Caja",
+  "Descuento",
+  "Rappel",
+  "IVA",
+  "PVP_Botella"
+] as const;
+
+function csvEscape(v: unknown): string {
+  const s = String(v ?? "");
+  if (s.includes('"') || s.includes(",") || s.includes("\n") || s.includes("\r")) {
+    return `"${s.replaceAll('"', '""')}"`;
+  }
+  return s;
+}
+
+function toCsv(rows: Record<string, unknown>[], columns: readonly string[]): string {
+  const head = columns.map(csvEscape).join(",");
+  const lines = rows.map((r) => columns.map((c) => csvEscape(r[c])).join(","));
+  return [head, ...lines].join("\n");
+}
+
+function parseCsv(text: string): Record<string, string>[] {
+  const rows: string[][] = [];
+  let cur: string[] = [];
+  let field = "";
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i] ?? "";
+    const next = text[i + 1] ?? "";
+    if (inQuotes) {
+      if (ch === '"' && next === '"') {
+        field += '"';
+        i++;
+        continue;
+      }
+      if (ch === '"') {
+        inQuotes = false;
+        continue;
+      }
+      field += ch;
+      continue;
+    }
+    if (ch === '"') {
+      inQuotes = true;
+      continue;
+    }
+    if (ch === ",") {
+      cur.push(field);
+      field = "";
+      continue;
+    }
+    if (ch === "\n") {
+      cur.push(field);
+      field = "";
+      rows.push(cur);
+      cur = [];
+      continue;
+    }
+    if (ch === "\r") continue;
+    field += ch;
+  }
+  cur.push(field);
+  rows.push(cur);
+
+  const header = (rows.shift() ?? []).map((h) => h.trim());
+  const cleanHeader = header.map((h) => h.replace(/^\uFEFF/, "")); // BOM
+  const idx = new Map<string, number>();
+  for (let i = 0; i < cleanHeader.length; i++) idx.set(cleanHeader[i] ?? "", i);
+
+  const out: Record<string, string>[] = [];
+  for (const r of rows) {
+    if (!r.some((x) => String(x ?? "").trim())) continue;
+    const obj: Record<string, string> = {};
+    for (const h of cleanHeader) {
+      if (!h) continue;
+      const j = idx.get(h);
+      obj[h] = j == null ? "" : String(r[j] ?? "").trim();
+    }
+    out.push(obj);
+  }
+  return out;
+}
+
 function sortCats(a: string, b: string): number {
   const ia = CAT_ORDER.findIndex((x) => x.toLowerCase() === a.toLowerCase());
   const ib = CAT_ORDER.findIndex((x) => x.toLowerCase() === b.toLowerCase());
@@ -64,6 +152,8 @@ export default function EscandallosPage() {
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const fileRef = useRef<HTMLInputElement | null>(null);
 
   const [items, setItems] = useState<ProductoRow[]>([]);
   const [proveedores, setProveedores] = useState<ProveedorRow[]>([]);
@@ -345,6 +435,146 @@ export default function EscandallosPage() {
         </div>
         <div className="flex items-center gap-2">
           {saved ? <span className="text-sm font-semibold text-emerald-700">Guardado ✓</span> : null}
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.currentTarget.files?.[0];
+              e.currentTarget.value = "";
+              if (!file) return;
+              if (!activeEstablishmentId) {
+                setErr("No hay establecimiento activo.");
+                return;
+              }
+              setErr(null);
+              setImporting(true);
+              const reader = new FileReader();
+              reader.onload = async () => {
+                try {
+                  const text = String(reader.result ?? "");
+                  const parsed = parseCsv(text);
+                  if (parsed.length === 0) throw new Error("El CSV está vacío.");
+
+                  const provByName = new Map<string, string>();
+                  for (const pr of proveedores) provByName.set(pr.nombre.trim().toLowerCase(), pr.id);
+
+                  const updates: {
+                    id: string;
+                    establecimiento_id: string;
+                    proveedor_id?: string | null;
+                    precio_tarifa?: number;
+                    uds_caja?: number;
+                    descuento_valor?: number;
+                    descuento_tipo?: "%" | "€";
+                    rappel_valor?: number;
+                    iva_compra?: number;
+                    pvp?: number;
+                  }[] = [];
+
+                  for (const row of parsed) {
+                    const id = (row.Producto_ID ?? "").trim();
+                    if (!id) continue;
+                    const current = items.find((x) => x.id === id) ?? null;
+
+                    const proveedorNombre = (row.Proveedor ?? "").trim();
+                    const provId =
+                      !proveedorNombre
+                        ? null
+                        : provByName.get(proveedorNombre.toLowerCase()) ?? current?.proveedor_id ?? null;
+
+                    const descRaw = String(row.Descuento ?? "").trim();
+                    const descNum = descRaw ? toNum(descRaw.replace("%", "").replace("€", "").trim()) : 0;
+                    const descTipo: "%" | "€" =
+                      descRaw.includes("€") ? "€" : descRaw.includes("%") ? "%" : ((current?.descuento_tipo ?? "%") as "%" | "€");
+
+                    const precioTarifa = toNum(String(row.Precio_Tarifa_Caja ?? ""));
+                    const udsCaja = Math.trunc(toNum(String(row.Uds_Caja ?? "")));
+                    const rappel = toNum(String(row.Rappel ?? ""));
+                    const iva = Math.trunc(toNum(String(row.IVA ?? ""))) || 10;
+                    const pvp = toNum(String(row.PVP_Botella ?? ""));
+
+                    updates.push({
+                      id,
+                      establecimiento_id: activeEstablishmentId,
+                      proveedor_id: provId,
+                      precio_tarifa: clampNonNeg(precioTarifa),
+                      uds_caja: clampNonNeg(udsCaja),
+                      descuento_valor: clampNonNeg(descNum),
+                      descuento_tipo: descTipo,
+                      rappel_valor: clampNonNeg(rappel),
+                      iva_compra: iva,
+                      pvp: clampNonNeg(pvp)
+                    });
+                  }
+
+                  if (updates.length === 0) throw new Error("No hay filas válidas (asegúrate de que exista la columna Producto_ID).");
+
+                  const chunkSize = 75;
+                  for (let i = 0; i < updates.length; i += chunkSize) {
+                    const chunk = updates.slice(i, i + chunkSize);
+                    const { error } = await supabase().from("productos").upsert(chunk, { onConflict: "id" });
+                    if (error) throw error;
+                  }
+
+                  await load();
+                  setSaved(true);
+                  setTimeout(() => setSaved(false), 1200);
+                } catch (e) {
+                  setErr(supabaseErrToString(e));
+                } finally {
+                  setImporting(false);
+                }
+              };
+              reader.onerror = () => {
+                setErr("No se pudo leer el archivo CSV.");
+                setImporting(false);
+              };
+              reader.readAsText(file);
+            }}
+            aria-label="Importar escandallos CSV"
+          />
+          <Button
+            type="button"
+            className="min-h-11"
+            onClick={() => {
+              if (!items.length) return;
+              const rowsOut = items.map((p) => ({
+                Producto_ID: p.id,
+                Nombre: p.articulo,
+                Proveedor:
+                  (p.proveedor_id ? proveedores.find((x) => x.id === p.proveedor_id)?.nombre : "") ?? "",
+                Precio_Tarifa_Caja: String(p.precio_tarifa ?? 0),
+                Uds_Caja: String(p.uds_caja ?? 0),
+                Descuento: String(p.descuento_valor ?? 0),
+                Rappel: String(p.rappel_valor ?? 0),
+                IVA: String(p.iva_compra ?? 10),
+                PVP_Botella: String(p.pvp ?? 0)
+              }));
+              const csv = toCsv(rowsOut, CSV_COLUMNS);
+              const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = "plantilla-escandallos.csv";
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+              URL.revokeObjectURL(url);
+            }}
+            disabled={!items.length || importing}
+          >
+            Descargar Plantilla CSV
+          </Button>
+          <Button
+            type="button"
+            className="min-h-11"
+            onClick={() => fileRef.current?.click()}
+            disabled={importing}
+          >
+            {importing ? "Importando…" : "Importar Escandallos CSV"}
+          </Button>
         </div>
       </div>
 
