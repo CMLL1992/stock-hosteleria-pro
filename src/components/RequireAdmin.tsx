@@ -25,7 +25,7 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!data?.isAdmin) {
+  if (!data?.isAdmin && !data?.isSuperadmin) {
     return (
       <main className="mx-auto max-w-3xl p-4 pb-28">
         <p className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm">

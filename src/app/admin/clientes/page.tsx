@@ -2,6 +2,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { MobileHeader } from "@/components/MobileHeader";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
@@ -13,6 +14,7 @@ import { useMyRole } from "@/lib/useMyRole";
 type EstRow = { id: string; nombre: string; plan_suscripcion?: string | null };
 
 export default function AdminClientesPage() {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const { data: me, isLoading } = useMyRole();
   const [ests, setEsts] = useState<EstRow[]>([]);
@@ -144,6 +146,8 @@ export default function AdminClientesPage() {
   }
 
   if (!allowed) {
+    // Admin intentando acceder a área exclusiva de superadmin: redirige con mensaje.
+    router.replace("/admin?denied=clientes");
     return (
       <main className="min-h-dvh bg-slate-50 p-4 pb-28 text-slate-900">
         <div className="mx-auto max-w-md rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">

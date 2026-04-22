@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ChevronRight } from "lucide-react";
 import { MobileHeader } from "@/components/MobileHeader";
 import { useMyRole } from "@/lib/useMyRole";
@@ -110,6 +111,8 @@ function filterSections(sections: AdminSection[], isSuperadmin: boolean): AdminS
 
 export function AdminHomeClient() {
   const { data, isLoading, error } = useMyRole();
+  const searchParams = useSearchParams();
+  const denied = searchParams.get("denied");
 
   const content = useMemo(() => {
     if (isLoading) return <p className="px-1 text-sm text-slate-600">Cargando…</p>;
@@ -134,6 +137,11 @@ export function AdminHomeClient() {
 
     return (
       <div className="space-y-6">
+        {denied ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-900">
+            Acceso denegado.
+          </div>
+        ) : null}
         <header className="px-1">
           <h1 className="text-lg font-semibold text-slate-900">Panel de control</h1>
           <p className="mt-0.5 text-sm text-slate-500">Menú de administración por áreas.</p>
@@ -165,7 +173,7 @@ export function AdminHomeClient() {
         ))}
       </div>
     );
-  }, [data?.isAdmin, data?.isSuperadmin, data?.profileReady, data?.role, error, isLoading]);
+  }, [data?.isAdmin, data?.isSuperadmin, data?.profileReady, data?.role, denied, error, isLoading]);
 
   return (
     <div className="min-h-dvh bg-slate-50">

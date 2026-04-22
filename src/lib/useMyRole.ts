@@ -59,6 +59,29 @@ async function fetchMyRoleRobust(): Promise<MyRoleResult> {
 
   // Si no hemos podido leer el rol por RLS/tabla, no bloqueamos UI.
   if (!role) {
+    // Fallback final: pedir al servidor el rol con service key (si existe).
+    try {
+      const token = data.session?.access_token ?? "";
+      if (token) {
+        const res = await fetch("/api/me/role", { headers: { authorization: `Bearer ${token}` } });
+        const json = (await res.json()) as { ok?: boolean; role?: AppRole | null; establecimientoId?: string | null };
+        if (res.ok && json.ok && json.role) {
+          const r = json.role;
+          const isSuperadmin = r === "superadmin";
+          const isAdmin = isSuperadmin || r === "admin";
+          return {
+            role: r,
+            email,
+            isAdmin,
+            isSuperadmin,
+            establecimientoId: json.establecimientoId ?? null,
+            profileReady: true
+          };
+        }
+      }
+    } catch {
+      // ignore
+    }
     return {
       role: superadminByEmail ? "superadmin" : null,
       email,
