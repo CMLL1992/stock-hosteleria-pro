@@ -99,11 +99,21 @@ export default function EscandallosPage() {
     if (res.error) {
       const msg = (res.error.message ?? "").toLowerCase();
       const missing =
-        msg.includes("uds_caja") || msg.includes("rappel_valor") || msg.includes("could not find") || msg.includes("column");
+        msg.includes("precio_tarifa") ||
+        msg.includes("descuento_valor") ||
+        msg.includes("descuento_tipo") ||
+        msg.includes("iva_compra") ||
+        msg.includes("pvp") ||
+        msg.includes("iva_venta") ||
+        msg.includes("uds_caja") ||
+        msg.includes("rappel_valor") ||
+        msg.includes("could not find") ||
+        msg.includes("column");
       if (!missing) throw res.error;
+      // Fallback mínimo: SOLO catálogo para que el selector nunca quede vacío
       const fb = await supabase()
         .from("productos")
-        .select(`id,${t},proveedor_id,precio_tarifa,descuento_valor,descuento_tipo,iva_compra,pvp,iva_venta` as "*")
+        .select(`id,${t},proveedor_id` as "*")
         .eq("establecimiento_id", activeEstablishmentId)
         .order(t, { ascending: true });
       if (fb.error) throw fb.error;
@@ -112,12 +122,14 @@ export default function EscandallosPage() {
           id: String(r.id ?? ""),
           articulo: String(r[t] ?? r.articulo ?? r.nombre ?? "").trim() || "—",
           proveedor_id: r.proveedor_id != null ? String(r.proveedor_id) : null,
-          precio_tarifa: r.precio_tarifa != null ? Number(r.precio_tarifa) : null,
-          descuento_valor: r.descuento_valor != null ? Number(r.descuento_valor) : null,
-          descuento_tipo: (r.descuento_tipo as ProductoRow["descuento_tipo"]) ?? null,
-          iva_compra: r.iva_compra != null ? Number(r.iva_compra) : null,
-          pvp: r.pvp != null ? Number(r.pvp) : null,
-          iva_venta: r.iva_venta != null ? Number(r.iva_venta) : null
+          precio_tarifa: 0,
+          uds_caja: 0,
+          descuento_valor: 0,
+          descuento_tipo: "%",
+          rappel_valor: 0,
+          iva_compra: 10,
+          pvp: 0,
+          iva_venta: 10
         }))
       );
       return;
