@@ -46,6 +46,11 @@ export default function StockError({
             </Link>
           </div>
           <p className="mt-4 break-words text-xs text-slate-500">{error?.message || "Error desconocido"}</p>
+          {error?.stack ? (
+            <pre className="mt-3 max-h-56 overflow-auto whitespace-pre-wrap rounded-2xl border border-slate-200 bg-slate-50 p-3 text-[11px] text-slate-700">
+              {error.stack}
+            </pre>
+          ) : null}
           {error?.digest ? <p className="mt-2 text-xs text-slate-500">Código: {error.digest}</p> : null}
         </div>
       </main>
