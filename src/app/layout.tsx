@@ -5,6 +5,7 @@ import "./globals.css";
 import { Providers } from "@/components/Providers";
 import { NextIntlClientProvider } from "next-intl";
 import { loadMessages, readLocaleCookie } from "@/lib/locale";
+import { LanguageProvider } from "@/lib/LanguageContext";
 
 const inter = Inter({ subsets: ["latin"], display: "swap" });
 
@@ -44,7 +45,9 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         className={`${inter.className} min-h-dvh bg-slate-50 text-slate-900`}
       >
         <NextIntlClientProvider locale={locale} messages={messages}>
-          <Providers>{children}</Providers>
+          <LanguageProvider>
+            <Providers>{children}</Providers>
+          </LanguageProvider>
         </NextIntlClientProvider>
       </body>
     </html>

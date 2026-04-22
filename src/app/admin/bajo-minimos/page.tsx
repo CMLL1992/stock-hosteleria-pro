@@ -7,16 +7,16 @@ import { useMyRole } from "@/lib/useMyRole";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { fetchDashboardProductos } from "@/lib/adminDashboardData";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
-import { useTranslations } from "next-intl";
+import { useLanguage } from "@/lib/LanguageContext";
 
 export default function BajoMinimosPage() {
   const { data: me, isLoading } = useMyRole();
   const { activeEstablishmentId } = useActiveEstablishment();
-  const t = useTranslations();
+  const { t } = useLanguage();
 
   const q = useQuery({
     queryKey: ["admin", "bajo-minimos", activeEstablishmentId],
-    enabled: !!activeEstablishmentId && !!me?.isAdmin,
+    enabled: !!activeEstablishmentId && !!me, // admin o staff
     queryFn: () => fetchDashboardProductos(activeEstablishmentId as string),
     staleTime: 15_000,
     retry: 1
@@ -31,11 +31,11 @@ export default function BajoMinimosPage() {
   }, [q.data]);
 
   if (isLoading) return <main className="p-4 text-base text-slate-600">{t("common.loading")}</main>;
-  if (!me?.isAdmin) {
+  if (!me) {
     return (
       <main className="mx-auto max-w-md p-4">
         <h1 className="text-xl font-semibold text-slate-900">{t("status.low")}</h1>
-        <p className="mt-2 text-sm text-slate-500">Acceso denegado.</p>
+        <p className="mt-2 text-sm text-slate-500">{t("common.accessDenied")}</p>
       </main>
     );
   }

@@ -12,12 +12,12 @@ import { enqueueMovimiento, newClientUuid } from "@/lib/offlineQueue";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { useTranslations } from "next-intl";
+import { useLanguage } from "@/lib/LanguageContext";
 
 export function DashboardClient() {
   const { activeEstablishmentId: establecimientoId, activeEstablishmentName, me } = useActiveEstablishment();
   const queryClient = useQueryClient();
-  const t = useTranslations();
+  const { t } = useLanguage();
   const [envasesOpen, setEnvasesOpen] = useState(false);
   const [confirmProd, setConfirmProd] = useState<null | { id: string; articulo: string; stock_vacios: number }>(null);
   const [confirming, setConfirming] = useState(false);
@@ -212,7 +212,7 @@ export function DashboardClient() {
     <div className="w-full max-w-full space-y-6">
       {me?.isSuperadmin && activeEstablishmentName ? (
         <div className="w-full rounded-3xl border border-slate-100 bg-white p-4 text-base text-slate-600 shadow-sm">
-          Establecimiento activo: <span className="font-semibold text-slate-900">{activeEstablishmentName}</span>
+          {t("dashboard.activeEstablishment")} <span className="font-semibold text-slate-900">{activeEstablishmentName}</span>
         </div>
       ) : null}
 

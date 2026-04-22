@@ -1,0 +1,37 @@
+{
+  "nav": {
+    "home": "Home",
+    "scan": "Scan",
+    "stock": "Stock",
+    "orders": "Orders",
+    "panel": "Panel"
+  },
+  "common": {
+    "language": "Language",
+    "close": "Close",
+    "loading": "Loading…",
+    "searchProduct": "Search product…",
+    "accessDenied": "Access denied."
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "lowStockHint": "Current stock ≤ minimum stock",
+    "lowStockEmpty": "There are no products below minimum.",
+    "stockRatioHint": "Current stock / minimum stock",
+    "activeEstablishment": "Active establishment:"
+  },
+  "status": {
+    "soldOut": "Sold out",
+    "low": "Below minimum",
+    "ok": "OK"
+  },
+  "orders": {
+    "byProvider": "Orders by supplier",
+    "sendWhatsapp": "Send order to {prov} via WhatsApp"
+  },
+  "actions": {
+    "edit": "Edit",
+    "qr": "QR"
+  }
+}
+

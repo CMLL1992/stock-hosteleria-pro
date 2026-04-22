@@ -43,7 +43,8 @@ function getActiveLang(): Lang {
   if (typeof document === "undefined") return "es";
   const m = document.cookie.match(/(?:^|; )ops_lang=([^;]*)/);
   const v = decodeURIComponent(m?.[1] ?? "").trim().toLowerCase();
-  if (v === "en" || v === "ca" || v === "es") return v;
+  if (v === "en" || v === "es") return v;
+  if (v === "cat" || v === "ca") return "ca";
   return "es";
 }
 
@@ -55,8 +56,8 @@ function waText(lang: Lang) {
       product: "*Product:*",
       qty: "*Quantity:*",
       thanks: "Thank you!",
-      replenishmentHead: (prov: string, est: string) => `Hello ${prov}, this is a replenishment order for ${est}:`,
-      basketHead: (prov: string, est: string) => `Hello ${prov}, order for ${est}:`,
+      replenishmentHead: (prov: string) => `Order for ${prov}:`,
+      basketHead: (prov: string) => `Order for ${prov}:`,
       of: "of"
     };
   }
@@ -67,8 +68,8 @@ function waText(lang: Lang) {
       product: "*Producte:*",
       qty: "*Quantitat:*",
       thanks: "Gràcies!",
-      replenishmentHead: (prov: string, est: string) => `Hola ${prov}, aquesta és la comanda de reposició de ${est}:`,
-      basketHead: (prov: string, est: string) => `Hola ${prov}, comanda de ${est}:`,
+      replenishmentHead: (prov: string) => `Comanda per a ${prov}:`,
+      basketHead: (prov: string) => `Comanda per a ${prov}:`,
       of: "de"
     };
   }
@@ -78,8 +79,8 @@ function waText(lang: Lang) {
     product: "*Producto:*",
     qty: "*Cantidad:*",
     thanks: "¡Gracias!",
-    replenishmentHead: (prov: string, est: string) => `Hola ${prov}, este es el pedido de reposición de ${est}:`,
-    basketHead: (prov: string, est: string) => `Hola ${prov}, pedido de ${est}:`,
+    replenishmentHead: (prov: string) => `Pedido para ${prov}:`,
+    basketHead: (prov: string) => `Pedido para ${prov}:`,
     of: "de"
   };
 }
@@ -191,7 +192,8 @@ export function mensajePedidoCestaPorProveedor(opts: {
   const body = opts.lineas.map((l) => {
     return `- ${formatCantidadUnidad(l.cantidad, l.unidad)} ${txt.of} ${l.articulo}`;
   });
-  return [txt.basketHead(prov, est), "", ...body].join("\n");
+  void est; // mantenemos firma sin romper llamadas actuales
+  return [txt.basketHead(prov), "", ...body].join("\n");
 }
 
 /**
@@ -211,7 +213,8 @@ export function mensajePedidoReposicionPorProveedor(opts: {
   const lineas = opts.lineas
     .filter((l) => l.cantidad > 0 && l.articulo.trim())
     .map((l) => `- ${formatCantidadUnidad(l.cantidad, l.unidad)} ${txt.of} ${l.articulo.trim()}`);
-  return [txt.replenishmentHead(prov, est), "", ...lineas].join("\n");
+  void est;
+  return [txt.replenishmentHead(prov), "", ...lineas].join("\n");
 }
 
 export function waUrlPedidoAgrupadoProveedor(opts: {

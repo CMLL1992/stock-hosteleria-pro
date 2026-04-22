@@ -1,0 +1,37 @@
+{
+  "nav": {
+    "home": "Inicio",
+    "scan": "Escanear",
+    "stock": "Stock",
+    "orders": "Pedidos",
+    "panel": "Panel"
+  },
+  "common": {
+    "language": "Idioma",
+    "close": "Cerrar",
+    "loading": "Cargando…",
+    "searchProduct": "Buscar producto…",
+    "accessDenied": "Acceso denegado."
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "lowStockHint": "Stock actual ≤ stock mínimo",
+    "lowStockEmpty": "No hay productos bajo mínimos.",
+    "stockRatioHint": "Stock actual / stock mínimo",
+    "activeEstablishment": "Establecimiento activo:"
+  },
+  "status": {
+    "soldOut": "Agotado",
+    "low": "Bajo mínimos",
+    "ok": "OK"
+  },
+  "orders": {
+    "byProvider": "Pedidos por proveedor",
+    "sendWhatsapp": "Enviar pedido a {prov} por WhatsApp"
+  },
+  "actions": {
+    "edit": "Editar",
+    "qr": "QR"
+  }
+}
+

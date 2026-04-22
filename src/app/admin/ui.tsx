@@ -133,9 +133,21 @@ export function AdminHomeClient({ denied }: { denied?: string | null } = {}) {
     }
     if (!data?.isAdmin) {
       return (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-sm font-semibold text-slate-900">Acceso denegado</p>
-          <p className="mt-1 text-sm text-slate-600">Esta sección es solo para administradores.</p>
+        <div className="space-y-4">
+          <header className="px-1">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h1 className="text-lg font-semibold text-slate-900">Panel de control</h1>
+                <p className="mt-0.5 text-sm text-slate-500">Menú de administración por áreas.</p>
+              </div>
+              <LanguageSelector />
+            </div>
+          </header>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-sm font-semibold text-slate-900">Acceso denegado</p>
+            <p className="mt-1 text-sm text-slate-600">Esta sección es solo para administradores.</p>
+          </div>
         </div>
       );
     }

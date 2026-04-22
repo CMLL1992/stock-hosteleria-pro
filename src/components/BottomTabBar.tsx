@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo } from "react";
 import { useMyRole } from "@/lib/useMyRole";
-import { useTranslations } from "next-intl";
+import { useLanguage } from "@/lib/LanguageContext";
 
 type Tab = {
   href: string;
@@ -34,7 +34,7 @@ export function BottomTabBar() {
   const pathname = usePathname() ?? "";
   const { data } = useMyRole();
   const isAdmin = !!data?.isAdmin;
-  const t = useTranslations();
+  const { t } = useLanguage();
 
   const tabs: Tab[] = useMemo(() => {
     if (!isAdmin) {

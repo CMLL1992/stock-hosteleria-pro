@@ -14,6 +14,7 @@ import { stockSemaforo } from "@/lib/stockSemaforo";
 import { enqueueMovimiento, newClientUuid } from "@/lib/offlineQueue";
 import { requireUserId } from "@/lib/session";
 import { useProductosRealtime } from "@/lib/useProductosRealtime";
+import { useLanguage } from "@/lib/LanguageContext";
 import {
   cantidadSugeridaPedido,
   waUrlPedidoCestaProveedor
@@ -193,6 +194,7 @@ export function ProductList() {
   const [stockErr, setStockErr] = useState<string | null>(null);
   const [stockDraft, setStockDraft] = useState<Record<string, string>>({});
   const [search, setSearch] = useState<string>("");
+  const { t } = useLanguage();
   const [agruparPorProveedor, setAgruparPorProveedor] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [cestaOpen, setCestaOpen] = useState(false);
@@ -522,9 +524,9 @@ export function ProductList() {
           type="search"
           value={search}
           onChange={(e) => setSearch(e.currentTarget.value)}
-          placeholder="Buscar producto…"
+          placeholder={t("common.searchProduct")}
           className="min-h-12 w-full rounded-3xl border border-slate-200 bg-white py-3 pl-12 pr-4 text-base text-slate-900 shadow-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-          aria-label="Buscar en stock"
+          aria-label={t("common.searchProduct")}
         />
       </div>
 

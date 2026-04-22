@@ -1,0 +1,37 @@
+{
+  "nav": {
+    "home": "Inici",
+    "scan": "Escanejar",
+    "stock": "Estoc",
+    "orders": "Comandes",
+    "panel": "Panell"
+  },
+  "common": {
+    "language": "Idioma",
+    "close": "Tancar",
+    "loading": "Carregant…",
+    "searchProduct": "Cercar producte…",
+    "accessDenied": "Accés denegat."
+  },
+  "dashboard": {
+    "title": "Tauler",
+    "lowStockHint": "Stock actual ≤ stock mínim",
+    "lowStockEmpty": "No hi ha productes per sota del mínim.",
+    "stockRatioHint": "Stock actual / stock mínim",
+    "activeEstablishment": "Establiment actiu:"
+  },
+  "status": {
+    "soldOut": "Esgotat",
+    "low": "Per sota del mínim",
+    "ok": "OK"
+  },
+  "orders": {
+    "byProvider": "Comandes per proveïdor",
+    "sendWhatsapp": "Enviar comanda a {prov} per WhatsApp"
+  },
+  "actions": {
+    "edit": "Editar",
+    "qr": "QR"
+  }
+}
+
