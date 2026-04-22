@@ -45,7 +45,7 @@ export function Providers({ children }: { children: ReactNode }) {
       <AuthBootstrap />
       <SessionGuard />
       <OfflineSync />
-      <div className="min-h-dvh bg-slate-50 pb-24 text-slate-900">
+      <div className="min-h-dvh bg-slate-50 pb-[calc(env(safe-area-inset-bottom)+6.5rem)] text-slate-900">
         {children}
         <Footer />
       </div>
