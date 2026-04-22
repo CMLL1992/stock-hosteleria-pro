@@ -995,24 +995,51 @@ export function ProductList() {
                 onChange={(e) => setVaciosSearch(e.currentTarget.value)}
               />
               <div className="max-h-[55vh] overflow-auto rounded-2xl border border-slate-200 bg-white">
-                {vaciosPickList.slice(0, 80).map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    disabled={vaciosBusy}
-                    onClick={() => {
-                      setVaciosProd(p);
-                      setVaciosStep("qty");
-                      setVaciosQty("1");
-                    }}
-                    className="flex w-full items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-left hover:bg-slate-50"
-                  >
-                    <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">{p.articulo}</span>
-                    <span className="shrink-0 text-xs font-semibold text-slate-600">
-                      Vacíos: {Math.max(0, Number(p.stock_vacios ?? 0) || 0)}
-                    </span>
-                  </button>
-                ))}
+                {(() => {
+                  const byFamily = new Map<string, typeof vaciosPickList>();
+                  for (const p of vaciosPickList) {
+                    const fam = (p.categoria ?? p.tipo ?? "Otros").toString().trim() || "Otros";
+                    byFamily.set(fam, [...(byFamily.get(fam) ?? []), p]);
+                  }
+                  const families = Array.from(byFamily.keys()).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+                  let rendered = 0;
+                  return families.map((fam) => {
+                    const items = (byFamily.get(fam) ?? [])
+                      .slice()
+                      .sort((a, b) => a.articulo.localeCompare(b.articulo, "es", { sensitivity: "base" }));
+                    const out: React.ReactNode[] = [];
+                    if (rendered < 80) {
+                      out.push(
+                        <div key={`fam-${fam}`} className="sticky top-0 z-10 border-b border-slate-100 bg-white px-4 py-2">
+                          <p className="text-xs font-bold uppercase tracking-wide text-slate-600">{fam}</p>
+                        </div>
+                      );
+                    }
+                    for (const p of items) {
+                      if (rendered >= 80) break;
+                      rendered++;
+                      out.push(
+                        <button
+                          key={p.id}
+                          type="button"
+                          disabled={vaciosBusy}
+                          onClick={() => {
+                            setVaciosProd(p);
+                            setVaciosStep("qty");
+                            setVaciosQty("1");
+                          }}
+                          className="flex w-full items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-left hover:bg-slate-50"
+                        >
+                          <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">{p.articulo}</span>
+                          <span className="shrink-0 text-xs font-semibold text-slate-600">
+                            Vacíos: {Math.max(0, Number(p.stock_vacios ?? 0) || 0)}
+                          </span>
+                        </button>
+                      );
+                    }
+                    return out;
+                  });
+                })()}
                 {!vaciosPickList.length ? (
                   <p className="p-4 text-sm text-slate-600">No hay productos que coincidan.</p>
                 ) : null}
