@@ -11,9 +11,15 @@ export function Footer() {
         "md:pb-0"
       ].join(" ")}
     >
-      <div className="mx-auto flex max-w-3xl flex-col gap-2 px-4 py-6 text-xs text-slate-600 sm:flex-row sm:items-center sm:justify-between">
-        <p>(c) 2026 OPS por CM11 Asset Management SLU. Todos los derechos reservados.</p>
-        <div className="flex flex-wrap gap-x-3 gap-y-1">
+      <div className="mx-auto max-w-3xl px-4 py-6 text-xs text-slate-600">
+        <div className="flex flex-col items-center gap-3 text-center sm:flex-row sm:items-center sm:justify-between sm:text-left">
+          <p className="max-w-[42ch] sm:max-w-none">
+            (c) 2026 OPS por CM11 Asset Management SLU. Todos los derechos reservados.
+          </p>
+          <nav
+            aria-label="Enlaces legales"
+            className="grid w-full max-w-md grid-cols-2 gap-x-4 gap-y-2 sm:w-auto sm:max-w-none sm:grid-cols-3"
+          >
           <a className="underline hover:text-slate-900" href="/politica-privacidad">
             Política de Privacidad
           </a>
@@ -23,6 +29,7 @@ export function Footer() {
           <a className="underline hover:text-slate-900" href="/cookies">
             Configuración de Cookies
           </a>
+          </nav>
         </div>
       </div>
     </footer>
