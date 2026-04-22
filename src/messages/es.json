@@ -1,26 +1,32 @@
 {
-  "nav.home": "Inicio",
-  "nav.scan": "Escanear",
-  "nav.stock": "Stock",
-  "nav.orders": "Pedidos",
-  "nav.panel": "Panel",
-
-  "actions.entry": "Entrada",
-  "actions.barExit": "Salida a barra",
-  "actions.return": "Devolución",
-  "actions.qr": "QR",
-  "actions.edit": "Editar",
-
-  "status.soldOut": "Agotado",
-  "status.low": "Bajo mínimos",
-  "status.ok": "OK",
-
-  "forms.newCosting": "Nuevo Escandallo",
-  "forms.editProduct": "Edición de producto",
-
-  "common.language": "Idioma",
-  "common.close": "Cerrar",
-  "common.loading": "Cargando…",
-  "common.searchProduct": "Buscar producto…"
+  "nav": {
+    "home": "Inicio",
+    "scan": "Escanear",
+    "stock": "Stock",
+    "orders": "Pedidos",
+    "panel": "Panel"
+  },
+  "actions": {
+    "entry": "Entrada",
+    "barExit": "Salida a barra",
+    "return": "Devolución",
+    "qr": "QR",
+    "edit": "Editar"
+  },
+  "status": {
+    "soldOut": "Agotado",
+    "low": "Bajo mínimos",
+    "ok": "OK"
+  },
+  "forms": {
+    "newCosting": "Nuevo Escandallo",
+    "editProduct": "Edición de producto"
+  },
+  "common": {
+    "language": "Idioma",
+    "close": "Cerrar",
+    "loading": "Cargando…",
+    "searchProduct": "Buscar producto…"
+  }
 }
 

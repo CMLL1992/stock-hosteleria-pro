@@ -1,26 +1,32 @@
 {
-  "nav.home": "Home",
-  "nav.scan": "Scan",
-  "nav.stock": "Stock",
-  "nav.orders": "Orders",
-  "nav.panel": "Panel",
-
-  "actions.entry": "Entry",
-  "actions.barExit": "To bar",
-  "actions.return": "Return",
-  "actions.qr": "QR",
-  "actions.edit": "Edit",
-
-  "status.soldOut": "Sold out",
-  "status.low": "Below minimum",
-  "status.ok": "OK",
-
-  "forms.newCosting": "New costing",
-  "forms.editProduct": "Edit product",
-
-  "common.language": "Language",
-  "common.close": "Close",
-  "common.loading": "Loading…",
-  "common.searchProduct": "Search product…"
+  "nav": {
+    "home": "Home",
+    "scan": "Scan",
+    "stock": "Stock",
+    "orders": "Orders",
+    "panel": "Panel"
+  },
+  "actions": {
+    "entry": "Entry",
+    "barExit": "To bar",
+    "return": "Return",
+    "qr": "QR",
+    "edit": "Edit"
+  },
+  "status": {
+    "soldOut": "Sold out",
+    "low": "Below minimum",
+    "ok": "OK"
+  },
+  "forms": {
+    "newCosting": "New costing",
+    "editProduct": "Edit product"
+  },
+  "common": {
+    "language": "Language",
+    "close": "Close",
+    "loading": "Loading…",
+    "searchProduct": "Search product…"
+  }
 }
 
