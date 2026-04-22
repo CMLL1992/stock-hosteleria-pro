@@ -6,7 +6,8 @@ export type MovimientoTipo =
   | "pedido"
   | "salida_barra"
   | "entrada_vacio"
-  | "devolucion_proveedor";
+  | "devolucion_proveedor"
+  | "entrada_compra";
 
 export type MovimientoDraft = {
   producto_id: string;
@@ -16,6 +17,7 @@ export type MovimientoDraft = {
   usuario_id: string;
   timestamp: string;
   genera_vacio?: boolean;
+  proveedor_id?: string;
 };
 
 const DB_NAME = "stock_hosteleria";

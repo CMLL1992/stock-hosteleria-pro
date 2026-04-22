@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Drawer } from "@/components/ui/Drawer";
@@ -9,6 +9,8 @@ import { IconWhatsApp } from "@/components/IconWhatsApp";
 import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { stockSemaforo } from "@/lib/stockSemaforo";
+import { enqueueMovimiento } from "@/lib/offlineQueue";
+import { requireUserId } from "@/lib/session";
 import {
   cantidadSugeridaPedido,
   waUrlPedidoCestaProveedor
@@ -19,6 +21,7 @@ type Producto = {
   id: string;
   articulo: string;
   stock_actual: number;
+  stock_vacios: number;
   stock_minimo: number | null;
   qr_code_uid: string;
   tipo: string | null;
@@ -32,7 +35,7 @@ async function fetchProductos(establecimientoId: string | null): Promise<Product
   if (!establecimientoId) return [];
   const col = await resolveProductoTituloColumn(establecimientoId);
   const t = tituloColSql(col);
-  const baseSelect = `id,${t},stock_actual,stock_minimo,qr_code_uid`;
+  const baseSelect = `id,${t},stock_actual,stock_vacios,stock_minimo,qr_code_uid`;
   const extendedSelect = `${baseSelect},proveedor_id,tipo,unidad,categoria,proveedor:proveedores(nombre,telefono_whatsapp)`;
 
   const tituloKey = t;
@@ -40,6 +43,7 @@ async function fetchProductos(establecimientoId: string | null): Promise<Product
     id: String(row.id ?? ""),
     articulo: String(row[tituloKey] ?? row.articulo ?? row.nombre ?? "").trim() || "—",
     stock_actual: Number(row.stock_actual ?? 0) || 0,
+    stock_vacios: Number(row.stock_vacios ?? 0) || 0,
     stock_minimo: row.stock_minimo != null ? Number(row.stock_minimo) : null,
     qr_code_uid: String(row.qr_code_uid ?? ""),
     tipo: row.tipo != null ? String(row.tipo) : null,
@@ -67,7 +71,8 @@ async function fetchProductos(establecimientoId: string | null): Promise<Product
         m.includes("unidad") ||
         m.includes("categoria") ||
         m.includes("proveedor") ||
-        m.includes("proveedor_id"))) ||
+        m.includes("proveedor_id") ||
+        m.includes("stock_vacios"))) ||
     m.includes("embed") ||
     m.includes("schema cache");
 
@@ -96,6 +101,7 @@ async function fetchProductos(establecimientoId: string | null): Promise<Product
     id: String(row.id ?? ""),
     articulo: String(row[tituloKey] ?? row.articulo ?? row.nombre ?? "").trim() || "—",
     stock_actual: Number(row.stock_actual ?? 0) || 0,
+    stock_vacios: Number(row.stock_vacios ?? 0) || 0,
     stock_minimo: row.stock_minimo != null ? Number(row.stock_minimo) : null,
     qr_code_uid: String(row.qr_code_uid ?? ""),
     tipo: null,
@@ -143,6 +149,8 @@ function proveedorNombreOrDefault(p: Producto): string {
 const STOCK_INPUT_CLASS =
   "h-14 w-[5.5rem] shrink-0 rounded-2xl border-2 border-slate-800 bg-white px-2 text-center text-2xl font-black tabular-nums text-slate-900 shadow-inner focus:outline-none focus:ring-4 focus:ring-slate-300";
 
+type QuickMovimientoTipo = "entrada" | "salida_barra" | "entrada_vacio" | "devolucion_proveedor";
+
 export function ProductList() {
   const searchParams = useSearchParams();
   const listaCompra = searchParams.get("compra") === "1";
@@ -155,6 +163,14 @@ export function ProductList() {
   const [agruparPorProveedor, setAgruparPorProveedor] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [cestaOpen, setCestaOpen] = useState(false);
+
+  const [movOpen, setMovOpen] = useState(false);
+  const [movProd, setMovProd] = useState<Producto | null>(null);
+  const [movTipo, setMovTipo] = useState<QuickMovimientoTipo>("entrada");
+  const [movCantidad, setMovCantidad] = useState<number>(1);
+  const [movGeneraVacio, setMovGeneraVacio] = useState(true);
+  const [movBusy, setMovBusy] = useState(false);
+  const qtyRef = useRef<HTMLInputElement | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["productos", establecimientoId],
@@ -257,6 +273,67 @@ export function ProductList() {
       setBusyId(null);
     }
   };
+
+  useEffect(() => {
+    if (!movOpen) return;
+    const t = window.setTimeout(() => {
+      qtyRef.current?.focus();
+      qtyRef.current?.select();
+    }, 60);
+    return () => window.clearTimeout(t);
+  }, [movOpen]);
+
+  const openQuickMovimiento = (p: Producto, tipo: QuickMovimientoTipo) => {
+    setMovProd(p);
+    setMovTipo(tipo);
+    setMovCantidad(1);
+    setMovGeneraVacio(true);
+    setMovOpen(true);
+  };
+
+  async function commitQuickMovimiento() {
+    if (!establecimientoId || !movProd) return;
+    const n = Math.max(0, Math.trunc(Number(movCantidad)));
+    if (!Number.isFinite(n) || n <= 0) return;
+    setMovBusy(true);
+    setStockErr(null);
+    try {
+      const usuario_id = await requireUserId();
+      const payload: {
+        producto_id: string;
+        establecimiento_id: string;
+        tipo: QuickMovimientoTipo;
+        cantidad: number;
+        usuario_id: string;
+        timestamp: string;
+        genera_vacio?: boolean;
+      } = {
+        producto_id: movProd.id,
+        establecimiento_id: establecimientoId,
+        tipo: movTipo,
+        cantidad: n,
+        usuario_id,
+        timestamp: new Date().toISOString()
+      };
+      if (movTipo === "salida_barra") payload.genera_vacio = movGeneraVacio;
+
+      if (typeof navigator !== "undefined" && navigator.onLine) {
+        const { error } = await supabase().from("movimientos").insert(payload);
+        if (error) throw error;
+      } else {
+        await enqueueMovimiento(payload);
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ["productos", establecimientoId] });
+      await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", establecimientoId] });
+      setMovOpen(false);
+      setMovProd(null);
+    } catch (e) {
+      setStockErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMovBusy(false);
+    }
+  }
 
   if (me?.role === null && !me?.profileReady) return <p className="text-sm text-slate-600">Cargando perfil…</p>;
   if (isLoading) return <p className="text-sm text-slate-600">Cargando stock…</p>;
@@ -420,6 +497,27 @@ export function ProductList() {
                 </div>
 
                 <div className="mt-4 flex flex-wrap gap-2 pl-9">
+                  <button
+                    type="button"
+                    onClick={() => openQuickMovimiento(p, "entrada")}
+                    className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+                  >
+                    📥
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openQuickMovimiento(p, "salida_barra")}
+                    className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 px-3 text-sm font-semibold text-amber-900 shadow-sm hover:bg-amber-100"
+                  >
+                    🍺
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openQuickMovimiento(p, "devolucion_proveedor")}
+                    className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-sky-200 bg-sky-50 px-3 text-sm font-semibold text-sky-900 shadow-sm hover:bg-sky-100"
+                  >
+                    🚛
+                  </button>
                   <Link
                     href={`/qr/${encodeURIComponent(p.id)}`}
                     className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm"
@@ -501,6 +599,118 @@ export function ProductList() {
               </section>
             );
           })}
+        </div>
+      </Drawer>
+
+      <Drawer
+        open={movOpen}
+        title={movProd ? `Movimiento · ${movProd.articulo}` : "Movimiento"}
+        onClose={() => {
+          if (movBusy) return;
+          setMovOpen(false);
+          setMovProd(null);
+        }}
+      >
+        <div className="space-y-3">
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              type="button"
+              className={[
+                "min-h-12 rounded-2xl border px-3 text-sm font-semibold",
+                movTipo === "entrada" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-800"
+              ].join(" ")}
+              onClick={() => setMovTipo("entrada")}
+              disabled={movBusy}
+            >
+              📥 Entrada
+            </button>
+            <button
+              type="button"
+              className={[
+                "min-h-12 rounded-2xl border px-3 text-sm font-semibold",
+                movTipo === "salida_barra" ? "border-amber-800 bg-amber-600 text-white" : "border-slate-200 bg-white text-slate-800"
+              ].join(" ")}
+              onClick={() => setMovTipo("salida_barra")}
+              disabled={movBusy}
+            >
+              🍺 A barra
+            </button>
+            <button
+              type="button"
+              className={[
+                "min-h-12 rounded-2xl border px-3 text-sm font-semibold",
+                movTipo === "devolucion_proveedor" ? "border-sky-900 bg-sky-700 text-white" : "border-slate-200 bg-white text-slate-800"
+              ].join(" ")}
+              onClick={() => setMovTipo("devolucion_proveedor")}
+              disabled={movBusy}
+            >
+              🚛 Devolver
+            </button>
+          </div>
+
+          {movTipo === "devolucion_proveedor" ? (
+            <button
+              type="button"
+              className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+              onClick={() => setMovTipo("entrada_vacio")}
+              disabled={movBusy}
+            >
+              + Entrada de vacío (en vez de devolver)
+            </button>
+          ) : null}
+
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-slate-900">Cantidad</label>
+            <input
+              className="min-h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base"
+              inputMode="numeric"
+              type="number"
+              min={1}
+              step={1}
+              value={movCantidad}
+              onChange={(e) => setMovCantidad(Number(e.currentTarget.value))}
+              onFocus={(e) => e.currentTarget.select()}
+              ref={qtyRef}
+              disabled={movBusy}
+            />
+          </div>
+
+          {movTipo === "salida_barra" ? (
+            <label className="flex min-h-12 items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900">
+              <input
+                type="checkbox"
+                className="h-5 w-5"
+                checked={movGeneraVacio}
+                onChange={(e) => setMovGeneraVacio(e.currentTarget.checked)}
+                disabled={movBusy}
+              />
+              Genera envase vacío
+            </label>
+          ) : null}
+
+          <div className="grid grid-cols-1 gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                void commitQuickMovimiento();
+              }}
+              disabled={movBusy || !movProd || !establecimientoId}
+              className="min-h-12 w-full rounded-2xl bg-black px-4 text-sm font-semibold text-white hover:bg-slate-900 active:bg-slate-950 disabled:opacity-50"
+            >
+              {movBusy ? "Guardando…" : "Confirmar"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (movBusy) return;
+                setMovOpen(false);
+                setMovProd(null);
+              }}
+              className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+            >
+              Cerrar
+            </button>
+          </div>
         </div>
       </Drawer>
     </div>

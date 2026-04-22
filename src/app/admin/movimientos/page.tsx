@@ -35,6 +35,7 @@ function supabaseErrToString(e: unknown): string {
 
 function labelTipo(t: string): string {
   if (t === "entrada") return "Entrada";
+  if (t === "entrada_compra") return "Entrada (compra)";
   if (t === "salida") return "Salida";
   if (t === "pedido") return "Pedido";
   if (t === "salida_barra") return "Salida a barra";
