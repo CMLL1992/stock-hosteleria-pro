@@ -32,17 +32,26 @@ export function DashboardClient() {
 
   const bajoMinimos = useMemo(() => rows.filter((p) => p.stock_actual <= p.stock_minimo), [rows]);
 
+  function bucketUnidad(p: { unidad: string | null; categoria: string | null; articulo: string }): "caja" | "barril" | "gas" | null {
+    const unidad = (p.unidad ?? "").trim().toLowerCase();
+    const cat = (p.categoria ?? "").trim().toLowerCase();
+    const art = (p.articulo ?? "").trim().toLowerCase();
+    if (cat.includes("gas") || art.includes("gas")) return "gas";
+    // Acepta singular/plural y variantes típicas
+    if (unidad.startsWith("caj")) return "caja"; // caja / cajas
+    if (unidad.startsWith("barril")) return "barril"; // barril / barriles
+    return null;
+  }
+
   const vacios = useMemo(() => {
     const out = { cajas: 0, barriles: 0, gas: 0 };
     for (const p of rows) {
       const n = Number(p.stock_vacios ?? 0) || 0;
       if (n <= 0) continue;
-      const unidad = (p.unidad ?? "").trim().toLowerCase();
-      const cat = (p.categoria ?? "").trim().toLowerCase();
-      const art = (p.articulo ?? "").trim().toLowerCase();
-      if (unidad === "caja") out.cajas += n;
-      else if (unidad === "barril") out.barriles += n;
-      else if (cat.includes("gas") || art.includes("gas")) out.gas += n;
+      const b = bucketUnidad(p);
+      if (b === "caja") out.cajas += n;
+      else if (b === "barril") out.barriles += n;
+      else if (b === "gas") out.gas += n;
     }
     return out;
   }, [rows]);
@@ -52,16 +61,16 @@ export function DashboardClient() {
       .map((p) => ({
         articulo: p.articulo,
         stock_vacios: Number(p.stock_vacios ?? 0) || 0,
-        unidad: (p.unidad ?? "").trim().toLowerCase(),
-        categoria: (p.categoria ?? "").trim().toLowerCase()
+        unidad: p.unidad,
+        categoria: p.categoria
       }))
       .filter((x) => x.stock_vacios > 0)
       .sort((a, b) => b.stock_vacios - a.stock_vacios)
       .slice(0, 3);
 
     return items.map((x) => {
-      const esGas = x.categoria.includes("gas") || x.articulo.toLowerCase().includes("gas");
-      const base = esGas ? "gas" : x.unidad || "uds";
+      const b = bucketUnidad({ unidad: x.unidad, categoria: x.categoria, articulo: x.articulo });
+      const base = b === "gas" ? "gas" : b === "barril" ? "barril" : b === "caja" ? "caja" : (x.unidad ?? "").trim().toLowerCase() || "unidades";
       const plural = x.stock_vacios === 1 ? base : base.endsWith("s") ? base : `${base}s`;
       return `${x.stock_vacios} ${plural} de ${x.articulo}`;
     });
