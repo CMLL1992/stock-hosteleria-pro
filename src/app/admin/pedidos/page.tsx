@@ -30,7 +30,14 @@ type ProductoPedido = {
 };
 
 function parseQty(raw: string): number {
-  const n = Math.trunc(Number(String(raw).replace(",", ".")));
+  // En móvil (iOS/Android) `type="number"` puede dar problemas con coma/teclado.
+  // Parseamos de forma tolerante y nos quedamos con entero >= 0.
+  const s = String(raw ?? "")
+    .trim()
+    .replace(/\s+/g, "")
+    .replace(",", ".")
+    .replace(/[^\d.-]/g, "");
+  const n = Math.trunc(Number(s));
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
@@ -346,13 +353,18 @@ export default function PedidosPage() {
                                     </label>
                                     <input
                                       id={`qty-${p.id}`}
-                                      type="number"
+                                      type="text"
                                       inputMode="numeric"
                                       pattern="[0-9]*"
                                       placeholder="0"
                                       className="h-16 w-24 shrink-0 rounded-2xl border-2 border-slate-800 bg-white px-2 text-center text-3xl font-black tabular-nums text-slate-900 shadow-inner focus:outline-none focus:ring-4 focus:ring-slate-300"
                                       value={qty[p.id] ?? ""}
-                                      onChange={(e) => setQty((prev) => ({ ...prev, [p.id]: e.currentTarget.value }))}
+                                      onChange={(e) => {
+                                        const raw = e.currentTarget.value;
+                                        // Permitimos limpiar o escribir; guardamos solo dígitos para evitar estados inválidos.
+                                        const cleaned = raw.replace(/[^\d]/g, "");
+                                        setQty((prev) => ({ ...prev, [p.id]: cleaned }));
+                                      }}
                                       min={0}
                                     />
                                   </li>
