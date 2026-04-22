@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import type { AppRole } from "@/lib/session";
 import { fetchMyRole } from "@/lib/session";
+import { hasPermission } from "@/lib/permissions";
 import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { MobileHeader } from "@/components/MobileHeader";
@@ -33,6 +34,7 @@ function parseStockField(raw: string): number {
 export default function NuevoProductoPage() {
   const router = useRouter();
   const [role, setRole] = useState<AppRole | null>(null);
+  const canManageCatalog = hasPermission(role, "admin");
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
@@ -68,7 +70,7 @@ export default function NuevoProductoPage() {
   }, []);
 
   useEffect(() => {
-    if (role !== "admin" && role !== "superadmin") return;
+    if (!canManageCatalog) return;
     if (!activeEstablishmentId) return;
     let cancelled = false;
     (async () => {
@@ -89,7 +91,7 @@ export default function NuevoProductoPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeEstablishmentId, role]);
+  }, [activeEstablishmentId, canManageCatalog]);
 
   async function crear() {
     setErr(null);
@@ -136,7 +138,7 @@ export default function NuevoProductoPage() {
 
   if (loading) return <main className="p-4 text-sm text-zinc-600 dark:text-zinc-300">Cargando…</main>;
 
-  if (role !== "admin" && role !== "superadmin") {
+  if (!canManageCatalog) {
     return (
       <main className="mx-auto max-w-md p-4">
         <h1 className="text-xl font-semibold">Crear producto (Admin)</h1>

@@ -9,12 +9,15 @@ import { useProductosRealtime } from "@/lib/useProductosRealtime";
 import { Drawer } from "@/components/ui/Drawer";
 import { requireUserId } from "@/lib/session";
 import { enqueueMovimiento, newClientUuid } from "@/lib/offlineQueue";
+import { getEffectiveRole, hasPermission } from "@/lib/permissions";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 export function DashboardClient() {
   const { activeEstablishmentId: establecimientoId, activeEstablishmentName, me } = useActiveEstablishment();
+  const role = getEffectiveRole(me);
+  const canSeePrices = hasPermission(role, "admin");
   const queryClient = useQueryClient();
   const [envasesOpen, setEnvasesOpen] = useState(false);
   const [confirmProd, setConfirmProd] = useState<null | { id: string; articulo: string; stock_vacios: number }>(null);
@@ -50,7 +53,7 @@ export function DashboardClient() {
 
   const escandallosPrecioQuery = useQuery({
     queryKey: ["dashboard", "escandallos-precio", establecimientoId],
-    enabled: !!establecimientoId && !!(me?.isAdmin || me?.isSuperadmin),
+    enabled: !!establecimientoId && canSeePrices,
     queryFn: async () => {
       const { data, error } = await supabase()
         .from("escandallos")

@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { MobileHeader } from "@/components/MobileHeader";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
+import { hasPermission } from "@/lib/permissions";
 
 function normalizeWhatsappPhone(input: string): string {
   // Mantiene solo dígitos y un '+' inicial si existe.
@@ -19,6 +20,7 @@ function normalizeWhatsappPhone(input: string): string {
 
 export default function NuevoProveedorPage() {
   const [role, setRole] = useState<AppRole | null>(null);
+  const canManage = hasPermission(role, "admin");
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
@@ -73,7 +75,7 @@ export default function NuevoProveedorPage() {
 
   if (loading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
 
-  if (role !== "admin" && role !== "superadmin") {
+  if (!canManage) {
     return (
       <main className="mx-auto max-w-md p-4">
         <h1 className="text-xl font-semibold">Crear proveedor (Admin)</h1>

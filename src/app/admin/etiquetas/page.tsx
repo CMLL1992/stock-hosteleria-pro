@@ -11,6 +11,7 @@ import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { MobileHeader } from "@/components/MobileHeader";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
+import { hasPermission } from "@/lib/permissions";
 
 type ProductoRow = {
   id: string;
@@ -39,6 +40,7 @@ async function loadProductos(establecimientoId: string | null): Promise<Producto
 
 export default function AdminEtiquetasPage() {
   const [role, setRole] = useState<AppRole | null>(null);
+  const canManage = hasPermission(role, "admin");
   const [items, setItems] = useState<ProductoRow[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -67,7 +69,7 @@ export default function AdminEtiquetasPage() {
   }, []);
 
   useEffect(() => {
-    if (role !== "admin" && role !== "superadmin") return;
+    if (!canManage) return;
     let cancelled = false;
     setErr(null);
     loadProductos(activeEstablishmentId ?? null)
@@ -82,13 +84,13 @@ export default function AdminEtiquetasPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeEstablishmentId, role]);
+  }, [activeEstablishmentId, canManage]);
 
   const origin = useMemo(() => getBaseUrl(), []);
 
   if (loading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
 
-  if (role !== "admin" && role !== "superadmin") {
+  if (!canManage) {
     return (
       <main className="mx-auto max-w-md p-4">
         <h1 className="text-xl font-semibold">Etiquetas (Admin)</h1>

@@ -6,6 +6,7 @@ import { MobileHeader } from "@/components/MobileHeader";
 import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { useMyRole } from "@/lib/useMyRole";
+import { getEffectiveRole, hasPermission } from "@/lib/permissions";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 
@@ -24,6 +25,8 @@ type MovRow = {
 export default function AdminMovimientosPage() {
   const { data: me, isLoading: meLoading } = useMyRole();
   const { activeEstablishmentId } = useActiveEstablishment();
+  const role = getEffectiveRole(me ?? null);
+  const canAccessMovimientos = hasPermission(role, "admin");
   const [rows, setRows] = useState<MovRow[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -41,7 +44,7 @@ export default function AdminMovimientosPage() {
   }
 
   const load = useCallback(async () => {
-    if (!activeEstablishmentId || !me?.isAdmin) {
+    if (!activeEstablishmentId || !canAccessMovimientos) {
       setRows([]);
       setLoading(false);
       return;
@@ -68,7 +71,7 @@ export default function AdminMovimientosPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeEstablishmentId, me?.isAdmin]);
+  }, [activeEstablishmentId, canAccessMovimientos]);
 
   useEffect(() => {
     load().catch(() => undefined);
@@ -76,7 +79,7 @@ export default function AdminMovimientosPage() {
 
   if (meLoading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
 
-  if (!me?.isAdmin) {
+  if (!canAccessMovimientos) {
     return (
       <div className="min-h-dvh bg-slate-50">
         <MobileHeader title="Movimientos" showBack backHref="/admin" />

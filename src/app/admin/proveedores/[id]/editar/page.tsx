@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { MobileHeader } from "@/components/MobileHeader";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
+import { hasPermission } from "@/lib/permissions";
 
 function normalizeWhatsappPhone(input: string): string {
   const trimmed = input.trim();
@@ -26,6 +27,7 @@ type Proveedor = {
 
 export default function EditarProveedorPage({ params }: { params: { id: string } }) {
   const [role, setRole] = useState<AppRole | null>(null);
+  const canManage = hasPermission(role, "admin");
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const { activeEstablishmentId } = useActiveEstablishment();
@@ -59,7 +61,7 @@ export default function EditarProveedorPage({ params }: { params: { id: string }
   }, []);
 
   useEffect(() => {
-    if (role !== "admin" && role !== "superadmin") return;
+    if (!canManage) return;
     if (!activeEstablishmentId) return;
     let cancelled = false;
     (async () => {
@@ -86,7 +88,7 @@ export default function EditarProveedorPage({ params }: { params: { id: string }
     return () => {
       cancelled = true;
     };
-  }, [activeEstablishmentId, params.id, role]);
+  }, [activeEstablishmentId, canManage, params.id]);
 
   async function guardar() {
     if (!prov) return;
@@ -135,7 +137,7 @@ export default function EditarProveedorPage({ params }: { params: { id: string }
   }
 
   if (loading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
-  if (role !== "admin" && role !== "superadmin") {
+  if (!canManage) {
     return (
       <main className="mx-auto max-w-md p-4">
         <h1 className="text-xl font-semibold">Editar proveedor (Admin)</h1>

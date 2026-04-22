@@ -7,6 +7,7 @@ import { Drawer } from "@/components/ui/Drawer";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { useMyRole } from "@/lib/useMyRole";
+import { getEffectiveRole, hasPermission } from "@/lib/permissions";
 
 function isMissingEscandallosTable(e: unknown): boolean {
   const anyErr = e as { code?: unknown; message?: unknown };
@@ -37,6 +38,8 @@ function extractProductId(decodedText: string): string | null {
 export function ScanGoClient() {
   const router = useRouter();
   const { data: me } = useMyRole();
+  const role = getEffectiveRole(me ?? null);
+  const canSeePrices = hasPermission(role, "admin");
   const [last, setLast] = useState<string | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
 
@@ -124,7 +127,7 @@ export function ScanGoClient() {
   return (
     <div className="relative">
       <div className="absolute left-0 right-0 top-3 z-10 flex justify-center px-3">
-        {me?.isAdmin ? (
+        {canSeePrices ? (
           <button
             type="button"
             onClick={openCompare}
@@ -137,7 +140,7 @@ export function ScanGoClient() {
 
       <QrScanner onDetected={onDetected} />
 
-      {me?.isAdmin ? (
+      {canSeePrices ? (
         <Drawer
           open={compareOpen}
           title="Comparar albarán (sin guardar)"

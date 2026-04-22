@@ -12,6 +12,7 @@ import { clasesBordeSemaforo, clasesFondoSemaforo, stockSemaforo } from "@/lib/s
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { enqueueMovimiento, newClientUuid } from "@/lib/offlineQueue";
+import { hasPermission } from "@/lib/permissions";
 
 type Row = {
   id: string;
@@ -52,6 +53,7 @@ async function fetchProductos(establecimientoId: string | null): Promise<Row[]> 
 
 export default function PedidoRapidoPage() {
   const [role, setRole] = useState<AppRole | null>(null);
+  const canManage = hasPermission(role, "admin");
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [items, setItems] = useState<Row[]>([]);
@@ -92,7 +94,7 @@ export default function PedidoRapidoPage() {
   }, []);
 
   useEffect(() => {
-    if (role !== "admin" && role !== "superadmin") return;
+    if (!canManage) return;
     let cancelled = false;
     setLoadingItems(true);
     fetchProductos(activeEstablishmentId ?? null)
@@ -111,7 +113,7 @@ export default function PedidoRapidoPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeEstablishmentId, role]);
+  }, [activeEstablishmentId, canManage]);
 
   const totals = useMemo(() => items.length, [items.length]);
 
@@ -153,7 +155,7 @@ export default function PedidoRapidoPage() {
 
   if (loading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
 
-  if (role !== "admin" && role !== "superadmin") {
+  if (!canManage) {
     return (
       <main className="mx-auto max-w-md p-4">
         <h1 className="text-xl font-semibold">Pedido rápido (Admin)</h1>

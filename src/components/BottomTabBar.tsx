@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo } from "react";
 import { useMyRole } from "@/lib/useMyRole";
+import { getEffectiveRole, hasPermission } from "@/lib/permissions";
 
 type Tab = {
   href: string;
@@ -32,7 +33,8 @@ function tabActive(pathname: string, href: string): boolean {
 export function BottomTabBar() {
   const pathname = usePathname() ?? "";
   const { data } = useMyRole();
-  const isAdmin = !!data?.isAdmin;
+  const role = getEffectiveRole(data ?? null);
+  const isAdmin = hasPermission(role, "admin");
 
   const tabs: Tab[] = useMemo(() => {
     if (!isAdmin) {

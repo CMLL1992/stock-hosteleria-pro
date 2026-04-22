@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import type { AppRole } from "@/lib/session";
 import { fetchMyRole } from "@/lib/session";
+import { hasPermission } from "@/lib/permissions";
 import { supabase } from "@/lib/supabase";
 import { costeNeto, formatEUR, margenBeneficioPct, margenBrutoEUR, ventaNetaSinIva } from "@/lib/finance";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
@@ -198,6 +199,7 @@ function clampNonNeg(x: number): number {
 
 export default function EscandallosPage() {
   const [role, setRole] = useState<AppRole | null>(null);
+  const canSeeFinance = hasPermission(role, "admin");
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
@@ -357,14 +359,14 @@ export default function EscandallosPage() {
   }
 
   useEffect(() => {
-    if (role !== "admin" && role !== "superadmin") return;
+    if (!canSeeFinance) return;
     if (!activeEstablishmentId) return;
     load().catch((e) => setErr(supabaseErrToString(e)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeEstablishmentId, role]);
+  }, [activeEstablishmentId, canSeeFinance]);
 
   useEffect(() => {
-    if (role !== "admin" && role !== "superadmin") return;
+    if (!canSeeFinance) return;
     if (!activeEstablishmentId) return;
     let cancelled = false;
     (async () => {
@@ -383,7 +385,7 @@ export default function EscandallosPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeEstablishmentId, role]);
+  }, [activeEstablishmentId, canSeeFinance]);
 
   async function saveRow(p: ProductoRow) {
     setErr(null);
@@ -530,7 +532,7 @@ export default function EscandallosPage() {
   }, [verId, verRow?.p.id]);
 
   if (loading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
-  if (role !== "admin" && role !== "superadmin") {
+  if (!canSeeFinance) {
     return (
       <main className="mx-auto max-w-md p-4">
         <h1 className="text-xl font-semibold">Escandallos (Admin)</h1>

@@ -3,9 +3,12 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { useMyRole } from "@/lib/useMyRole";
+import { getEffectiveRole, hasPermission } from "@/lib/permissions";
 
 export function RequireAdmin({ children }: { children: ReactNode }) {
   const { data, isLoading, error } = useMyRole();
+  const role = getEffectiveRole(data ?? null);
+  const allowed = hasPermission(role, "admin");
 
   if (isLoading) {
     return (
@@ -25,7 +28,7 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!data?.isAdmin && !data?.isSuperadmin) {
+  if (!allowed) {
     return (
       <main className="mx-auto max-w-3xl p-4 pb-28">
         <p className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm">

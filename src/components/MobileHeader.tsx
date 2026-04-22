@@ -4,6 +4,7 @@ import { ArrowLeft, LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { supabase } from "@/lib/supabase";
+import { getEffectiveRole } from "@/lib/permissions";
 
 export function MobileHeader({
   title,
@@ -61,7 +62,12 @@ export function MobileHeader({
           </div>
 
           <p className="mt-1 text-xs font-medium text-slate-500">
-            {me?.isSuperadmin ? "Superadmin" : me?.isAdmin ? "Admin" : "Staff"}
+            {(() => {
+              const role = getEffectiveRole(me);
+              if (role === "superadmin") return "Superadmin";
+              if (role === "admin") return "Admin";
+              return "Staff";
+            })()}
           </p>
           <h1 className="truncate text-lg font-semibold text-slate-900">{title}</h1>
           {isSuperadmin ? (

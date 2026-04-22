@@ -19,6 +19,7 @@ import {
   waUrlPedidoCestaProveedor
 } from "@/lib/whatsappPedido";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
+import { getEffectiveRole, hasPermission, canAdjustStockAbsolute, canGenerateQr } from "@/lib/permissions";
 
 type Producto = {
   id: string;
@@ -187,7 +188,10 @@ export function ProductList() {
   const [deepLinkDone, setDeepLinkDone] = useState(false);
   const queryClient = useQueryClient();
   const { me, activeEstablishmentId: establecimientoId, activeEstablishmentName } = useActiveEstablishment();
-  const canPedidos = !!me?.isAdmin;
+  const role = getEffectiveRole(me);
+  const canPedidos = hasPermission(role, "admin");
+  const canSetStockAbsolute = canAdjustStockAbsolute(role);
+  const canQr = canGenerateQr(role);
   const [tab, setTab] = useState<string>("todos");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [stockErr, setStockErr] = useState<string | null>(null);
@@ -639,11 +643,16 @@ export function ProductList() {
                       inputMode="numeric"
                       pattern="[0-9]*"
                       min={0}
-                      disabled={busy}
+                      disabled={busy || !canSetStockAbsolute}
                       className={STOCK_INPUT_CLASS}
                       value={stockDraft[p.id] ?? String(p.stock_actual)}
                       onChange={(e) => setStockDraft((d) => ({ ...d, [p.id]: e.currentTarget.value }))}
                       onBlur={(e) => {
+                        if (!canSetStockAbsolute) {
+                          // Staff: no puede fijar stock absoluto desde aquí.
+                          setStockDraft((d) => ({ ...d, [p.id]: String(p.stock_actual) }));
+                          return;
+                        }
                         void setStockFromInput(p, e.currentTarget.value);
                       }}
                       onKeyDown={(e) => {
@@ -663,14 +672,16 @@ export function ProductList() {
                   >
                     GESTIONAR
                   </button>
-                  <Link
-                    href={`/qr/${encodeURIComponent(p.id)}?print=1`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
-                  >
-                    Generar QR
-                  </Link>
+                  {canQr ? (
+                    <Link
+                      href={`/qr/${encodeURIComponent(p.id)}?print=1`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+                    >
+                      Generar QR
+                    </Link>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -782,7 +793,7 @@ export function ProductList() {
               >
                 Sacar a Barra
               </button>
-              {me?.isAdmin && movProd ? (
+              {canPedidos && movProd ? (
                 <Link
                   href={`/admin/productos/${encodeURIComponent(movProd.id)}/editar`}
                   className="flex min-h-12 w-full items-center rounded-2xl border border-slate-200 bg-white px-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-50"

@@ -11,6 +11,7 @@ import { requireUserId } from "@/lib/session";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { Drawer } from "@/components/ui/Drawer";
 import { QrScanner } from "@/components/scanner/QrScanner";
+import { getEffectiveRole, hasPermission } from "@/lib/permissions";
 
 function isMissingEscandallosTable(e: unknown): boolean {
   const anyErr = e as { code?: unknown; message?: unknown };
@@ -45,6 +46,8 @@ function toastKindClass(kind: "ok" | "error") {
 export default function RecepcionPage() {
   const { data: me, isLoading: meLoading } = useMyRole();
   const { activeEstablishmentId } = useActiveEstablishment();
+  const role = getEffectiveRole(me ?? null);
+  const canAccessRecepcion = hasPermission(role, "admin");
 
   const [err, setErr] = useState<string | null>(null);
   const [toast, setToast] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
@@ -83,7 +86,7 @@ export default function RecepcionPage() {
   }
 
   useEffect(() => {
-    if (!me?.isAdmin) return;
+    if (!canAccessRecepcion) return;
     if (!activeEstablishmentId) return;
     let cancelled = false;
     (async () => {
@@ -105,10 +108,10 @@ export default function RecepcionPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeEstablishmentId, me?.isAdmin]);
+  }, [activeEstablishmentId, canAccessRecepcion]);
 
   useEffect(() => {
-    if (!me?.isAdmin) return;
+    if (!canAccessRecepcion) return;
     if (!activeEstablishmentId) return;
     if (!proveedorId) {
       setProductos([]);
@@ -155,7 +158,7 @@ export default function RecepcionPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeEstablishmentId, me?.isAdmin, proveedorId]);
+  }, [activeEstablishmentId, canAccessRecepcion, proveedorId]);
 
   const anyQty = useMemo(() => {
     for (const p of productos) {
@@ -222,7 +225,7 @@ export default function RecepcionPage() {
   }
 
   if (meLoading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
-  if (!me?.isAdmin) {
+  if (!canAccessRecepcion) {
     return (
       <div className="min-h-dvh bg-slate-50">
         <MobileHeader title="Recepción" showBack backHref="/admin" />

@@ -21,6 +21,7 @@ import {
 import { updateProductoCategoriaCompat } from "@/lib/productoWriteCompat";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import Link from "next/link";
+import { hasPermission } from "@/lib/permissions";
 
 type Proveedor = { id: string; nombre: string };
 
@@ -39,6 +40,7 @@ export function EditarProductoClient({ id }: { id: string }) {
   const router = useRouter();
   const { activeEstablishmentId } = useActiveEstablishment();
   const [role, setRole] = useState<AppRole | null>(null);
+  const canManage = hasPermission(role, "admin");
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
@@ -76,7 +78,7 @@ export function EditarProductoClient({ id }: { id: string }) {
   }, []);
 
   useEffect(() => {
-    if (role !== "admin" && role !== "superadmin") return;
+    if (!canManage) return;
     if (!activeEstablishmentId) return;
     let cancelled = false;
     (async () => {
@@ -134,7 +136,7 @@ export function EditarProductoClient({ id }: { id: string }) {
     return () => {
       cancelled = true;
     };
-  }, [activeEstablishmentId, id, role]);
+  }, [activeEstablishmentId, canManage, id]);
 
   async function guardar() {
     if (!producto) return;
@@ -188,14 +190,14 @@ export function EditarProductoClient({ id }: { id: string }) {
           <p className="mb-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-3 text-sm font-medium text-emerald-900">{ok}</p>
         ) : null}
 
-        {role !== "admin" && role !== "superadmin" && !loading ? (
+        {!canManage && !loading ? (
           <div className="rounded-3xl border border-gray-100 bg-white p-4 shadow-sm">
             <p className="text-sm font-semibold text-gray-900">Acceso denegado.</p>
             <p className="mt-1 text-sm text-gray-600">Esta sección es solo para administradores.</p>
           </div>
         ) : null}
 
-        {role === "admin" || role === "superadmin" ? (
+        {canManage ? (
           <div className="rounded-3xl border border-gray-100 bg-white p-4 shadow-sm">
             {!producto ? (
               <p className="text-sm text-gray-600">Cargando producto…</p>

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { AppRole } from "@/lib/session";
 import { fetchMyRole } from "@/lib/session";
+import { hasPermission } from "@/lib/permissions";
 import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { MobileHeader } from "@/components/MobileHeader";
@@ -117,6 +118,7 @@ function normSearch(s: unknown): string {
 
 export default function PedidosPage() {
   const [role, setRole] = useState<AppRole | null>(null);
+  const canAccessPedidosAdmin = hasPermission(role, "admin");
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [proveedores, setProveedores] = useState<ProveedorRow[]>([]);
@@ -180,9 +182,9 @@ export default function PedidosPage() {
   }, []);
 
   useEffect(() => {
-    if (role !== "admin" && role !== "superadmin") return;
+    if (!canAccessPedidosAdmin) return;
     refresh();
-  }, [role, refresh]);
+  }, [canAccessPedidosAdmin, refresh]);
 
   const sinProveedor = useMemo(
     () => productos.filter((p) => !p.proveedor_id || !proveedores.some((pr) => pr.id === p.proveedor_id)),
@@ -238,7 +240,7 @@ export default function PedidosPage() {
   }
 
   if (loading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
-  if (role !== "admin" && role !== "superadmin") {
+  if (!canAccessPedidosAdmin) {
     return (
       <main className="mx-auto max-w-md p-4">
         <h1 className="text-xl font-semibold">Pedidos</h1>

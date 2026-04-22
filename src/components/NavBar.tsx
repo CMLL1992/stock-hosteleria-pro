@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useMyRole } from "@/lib/useMyRole";
 import { supabase } from "@/lib/supabase";
+import { getEffectiveRole, hasPermission } from "@/lib/permissions";
 
 function LinkItem({ href, label, activeHref }: { href: string; label: string; activeHref: string | null }) {
   const isActive = activeHref === href;
@@ -23,6 +24,8 @@ function LinkItem({ href, label, activeHref }: { href: string; label: string; ac
 
 export function NavBar() {
   const { data } = useMyRole();
+  const role = getEffectiveRole(data ?? null);
+  const isAdmin = hasPermission(role, "admin");
   const [activeHref, setActiveHref] = useState<string | null>(null);
 
   // Evita mismatch SSR/cliente: solo activamos el "active" tras montar.
@@ -35,20 +38,20 @@ export function NavBar() {
       <div className="mx-auto flex max-w-3xl items-center justify-between gap-2 p-2">
         <div className="flex items-center gap-1">
           <LinkItem href="/" label="Stock" activeHref={activeHref} />
-          {data?.isAdmin ? <LinkItem href="/admin" label="Admin" activeHref={activeHref} /> : null}
-          {data?.isAdmin ? (
+          {isAdmin ? <LinkItem href="/admin" label="Admin" activeHref={activeHref} /> : null}
+          {isAdmin ? (
             <LinkItem href="/admin/etiquetas" label="Gestión de Etiquetas" activeHref={activeHref} />
           ) : null}
-          {data?.isAdmin ? (
+          {isAdmin ? (
             <LinkItem href="/admin/productos" label="Gestionar Productos" activeHref={activeHref} />
           ) : null}
-          {data?.isAdmin ? (
+          {isAdmin ? (
             <LinkItem href="/admin/productos/nuevo" label="Crear Productos" activeHref={activeHref} />
           ) : null}
-          {data?.isAdmin ? (
+          {isAdmin ? (
             <LinkItem href="/admin/importar-csv" label="Importar CSV" activeHref={activeHref} />
           ) : null}
-          {data?.isAdmin ? (
+          {isAdmin ? (
             <LinkItem href="/admin/pedidos" label="Pedidos" activeHref={activeHref} />
           ) : null}
         </div>

@@ -6,6 +6,7 @@ import Papa from "papaparse";
 import { Button } from "@/components/ui/Button";
 import type { AppRole } from "@/lib/session";
 import { fetchMyRole } from "@/lib/session";
+import { hasPermission } from "@/lib/permissions";
 import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { MobileHeader } from "@/components/MobileHeader";
@@ -153,6 +154,7 @@ function downloadTemplate() {
 
 export default function ImportarCsvPage() {
   const [role, setRole] = useState<AppRole | null>(null);
+  const canManage = hasPermission(role, "admin");
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const { activeEstablishmentId } = useActiveEstablishment();
@@ -404,7 +406,7 @@ export default function ImportarCsvPage() {
   }
 
   if (loading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
-  if (role !== "admin" && role !== "superadmin") {
+  if (!canManage) {
     return (
       <main className="mx-auto max-w-md p-4">
         <h1 className="text-xl font-semibold">Importar CSV (Admin)</h1>

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { MobileHeader } from "@/components/MobileHeader";
 import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
+import { getEffectiveRole, hasPermission } from "@/lib/permissions";
 import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import {
@@ -306,6 +307,8 @@ function EditProductDrawer({
 
 export default function AdminProductosPage() {
   const { me, meLoading, activeEstablishmentId } = useActiveEstablishment();
+  const role = getEffectiveRole(me);
+  const canManageCatalog = hasPermission(role, "admin");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast>(null);
@@ -383,7 +386,7 @@ export default function AdminProductosPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeEstablishmentId, me?.isAdmin, me?.profileReady, me?.role]);
+  }, [activeEstablishmentId, canManageCatalog, me?.profileReady, me?.role]);
 
   useEffect(() => {
     if (!activeEstablishmentId) return;
@@ -640,8 +643,7 @@ export default function AdminProductosPage() {
 
   if (meLoading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
   if (me?.role === null && !me?.profileReady) return <main className="p-4 text-sm text-slate-600">Cargando perfil…</main>;
-  const isAdmin = !!me?.isAdmin;
-  if (!isAdmin) {
+  if (!canManageCatalog) {
     return (
       <main className="mx-auto max-w-md p-4">
         <h1 className="text-xl font-semibold">Gestionar productos</h1>

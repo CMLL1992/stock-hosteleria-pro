@@ -8,6 +8,7 @@ import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { MobileHeader } from "@/components/MobileHeader";
 import { Pencil } from "lucide-react";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
+import { hasPermission } from "@/lib/permissions";
 
 type Proveedor = {
   id: string;
@@ -18,6 +19,7 @@ type Proveedor = {
 
 export default function ProveedoresPage() {
   const [role, setRole] = useState<AppRole | null>(null);
+  const canManage = hasPermission(role, "admin");
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [items, setItems] = useState<Proveedor[]>([]);
@@ -46,7 +48,7 @@ export default function ProveedoresPage() {
   }, []);
 
   useEffect(() => {
-    if (role !== "admin" && role !== "superadmin") return;
+    if (!canManage) return;
     if (!activeEstablishmentId) return;
     let cancelled = false;
     (async () => {
@@ -67,10 +69,10 @@ export default function ProveedoresPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeEstablishmentId, role]);
+  }, [activeEstablishmentId, canManage]);
 
   if (loading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
-  if (role !== "admin" && role !== "superadmin") {
+  if (!canManage) {
     return (
       <main className="mx-auto max-w-md p-4">
         <h1 className="text-xl font-semibold">Proveedores (Admin)</h1>

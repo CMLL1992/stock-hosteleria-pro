@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { MobileHeader } from "@/components/MobileHeader";
 import { useMyRole } from "@/lib/useMyRole";
+import { getEffectiveRole, hasPermission } from "@/lib/permissions";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 
 type AdminNavItem = {
@@ -128,7 +129,9 @@ export function AdminHomeClient({ denied }: { denied?: string | null } = {}) {
         </p>
       );
     }
-    if (!data?.isAdmin) {
+    const role = getEffectiveRole(data ?? null);
+    const isAdmin = hasPermission(role, "admin");
+    if (!isAdmin) {
       return (
         <div className="space-y-4">
           <header className="px-1">
@@ -148,7 +151,7 @@ export function AdminHomeClient({ denied }: { denied?: string | null } = {}) {
       );
     }
 
-    const visible = filterSections(SECTIONS, !!data.isSuperadmin);
+    const visible = filterSections(SECTIONS, !!data?.isSuperadmin);
 
     return (
       <div className="space-y-6">
@@ -192,7 +195,7 @@ export function AdminHomeClient({ denied }: { denied?: string | null } = {}) {
         ))}
       </div>
     );
-  }, [data?.isAdmin, data?.isSuperadmin, data?.profileReady, data?.role, denied, error, isLoading]);
+  }, [data?.isSuperadmin, data?.profileReady, data?.role, denied, error, isLoading]);
 
   return (
     <div className="min-h-dvh bg-slate-50">
