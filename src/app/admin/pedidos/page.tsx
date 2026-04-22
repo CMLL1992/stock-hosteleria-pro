@@ -116,6 +116,17 @@ function normSearch(s: unknown): string {
   }
 }
 
+function readEvtValue(
+  e: { currentTarget?: { value?: unknown }; target?: { value?: unknown } } | null | undefined
+): string {
+  try {
+    const v = e?.currentTarget?.value ?? e?.target?.value;
+    return typeof v === "string" ? v : String(v ?? "");
+  } catch {
+    return "";
+  }
+}
+
 export default function PedidosPage() {
   const [role, setRole] = useState<AppRole | null>(null);
   const canAccessPedidosAdmin = hasPermission(role, "admin");
@@ -331,7 +342,7 @@ export default function PedidosPage() {
                         <input
                           type="search"
                           value={search[key] ?? ""}
-                          onChange={(e) => setSearch((prev) => ({ ...prev, [key]: e.currentTarget.value }))}
+                          onChange={(e) => setSearch((prev) => ({ ...prev, [key]: readEvtValue(e) }))}
                           placeholder="Buscar producto…"
                           className="min-h-12 w-full rounded-3xl border border-slate-200 bg-white py-3 pl-12 pr-4 text-base text-slate-900 shadow-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
                           aria-label="Buscar producto…"
@@ -362,7 +373,7 @@ export default function PedidosPage() {
                                       className="h-16 w-24 shrink-0 rounded-2xl border-2 border-slate-800 bg-white px-2 text-center text-3xl font-black tabular-nums text-slate-900 shadow-inner focus:outline-none focus:ring-4 focus:ring-slate-300"
                                       value={qty[p.id] ?? ""}
                                       onChange={(e) => {
-                                        const raw = e.currentTarget.value;
+                                        const raw = readEvtValue(e);
                                         // Permitimos limpiar o escribir; guardamos solo dígitos para evitar estados inválidos.
                                         const cleaned = raw.replace(/[^\d]/g, "");
                                         setQty((prev) => ({ ...prev, [p.id]: cleaned }));
