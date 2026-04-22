@@ -23,9 +23,28 @@ export default function QrProductPage({ params }: { params: { id: string } }) {
     setErr(null);
     (async () => {
       try {
-        const { data, error } = await supabase().from("productos").select("articulo,nombre").eq("id", params.id).maybeSingle();
-        if (error) throw error;
-        const row = (data ?? null) as null | { articulo?: string | null; nombre?: string | null };
+        // Compat: en algunas BD la columna es `articulo`, en otras `nombre`.
+        // Probamos ambas sin romper la UI.
+        const trySelect = async (sel: string) => {
+          const res = await supabase().from("productos").select(sel).eq("id", params.id).maybeSingle();
+          if (res.error) throw res.error;
+          return (res.data ?? null) as Record<string, unknown> | null;
+        };
+
+        let row: Record<string, unknown> | null = null;
+        try {
+          row = await trySelect("articulo,nombre");
+        } catch (e) {
+          const msg = String((e as { message?: unknown })?.message ?? "").toLowerCase();
+          if (msg.includes("column productos.articulo does not exist")) {
+            row = await trySelect("nombre");
+          } else if (msg.includes("column productos.nombre does not exist")) {
+            row = await trySelect("articulo");
+          } else {
+            throw e;
+          }
+        }
+
         const titulo = String(row?.articulo ?? row?.nombre ?? "").trim();
         if (!cancelled && titulo) setNombre(titulo);
       } catch (e) {

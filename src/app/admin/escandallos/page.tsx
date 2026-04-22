@@ -14,6 +14,7 @@ import { supabaseErrToString } from "@/lib/supabaseErrToString";
 type ProductoRow = {
   id: string;
   articulo: string;
+  categoria?: string | null;
   proveedor_id: string | null;
   precio_tarifa: number | null;
   uds_caja?: number | null;
@@ -29,6 +30,24 @@ type ProveedorRow = { id: string; nombre: string };
 
 const IVA_OPTIONS = [4, 10, 21] as const;
 const DESC_OPTIONS = ["%", "€"] as const;
+
+const CAT_ORDER = ["Cervezas", "Refrescos", "Agua", "Vinos", "Cavas", "Licores", "Destilados", "Cafés", "Otros"];
+
+function normCat(c: string | null | undefined): string {
+  const s = String(c ?? "").trim();
+  return s || "Otros";
+}
+
+function sortCats(a: string, b: string): number {
+  const ia = CAT_ORDER.findIndex((x) => x.toLowerCase() === a.toLowerCase());
+  const ib = CAT_ORDER.findIndex((x) => x.toLowerCase() === b.toLowerCase());
+  if (ia !== -1 || ib !== -1) {
+    const ra = ia === -1 ? 999 : ia;
+    const rb = ib === -1 ? 999 : ib;
+    if (ra !== rb) return ra - rb;
+  }
+  return a.localeCompare(b, "es");
+}
 
 function toNum(v: string): number {
   const n = Number(v.replace(",", "."));
@@ -89,7 +108,7 @@ export default function EscandallosPage() {
     if (!activeEstablishmentId) return;
     const col = await resolveProductoTituloColumn(activeEstablishmentId);
     const t = tituloColSql(col);
-    const fullSel = `id,${t},proveedor_id,precio_tarifa,uds_caja,descuento_valor,descuento_tipo,rappel_valor,iva_compra,pvp,iva_venta`;
+    const fullSel = `id,${t},categoria,proveedor_id,precio_tarifa,uds_caja,descuento_valor,descuento_tipo,rappel_valor,iva_compra,pvp,iva_venta`;
     const res = await supabase()
       .from("productos")
       .select(fullSel as "*")
@@ -113,7 +132,7 @@ export default function EscandallosPage() {
       // Fallback mínimo: SOLO catálogo para que el selector nunca quede vacío
       const fb = await supabase()
         .from("productos")
-        .select(`id,${t},proveedor_id` as "*")
+        .select(`id,${t},categoria,proveedor_id` as "*")
         .eq("establecimiento_id", activeEstablishmentId)
         .order(t, { ascending: true });
       if (fb.error) throw fb.error;
@@ -121,6 +140,7 @@ export default function EscandallosPage() {
         ((fb.data ?? []) as unknown as Record<string, unknown>[]).map((r) => ({
           id: String(r.id ?? ""),
           articulo: String(r[t] ?? r.articulo ?? r.nombre ?? "").trim() || "—",
+          categoria: r.categoria != null ? String(r.categoria) : null,
           proveedor_id: r.proveedor_id != null ? String(r.proveedor_id) : null,
           precio_tarifa: 0,
           uds_caja: 0,
@@ -139,6 +159,7 @@ export default function EscandallosPage() {
       ((res.data ?? []) as unknown as Record<string, unknown>[]).map((r) => ({
         id: String(r.id ?? ""),
         articulo: String(r[t] ?? r.articulo ?? r.nombre ?? "").trim() || "—",
+        categoria: r.categoria != null ? String(r.categoria) : null,
         proveedor_id: r.proveedor_id != null ? String(r.proveedor_id) : null,
         precio_tarifa: r.precio_tarifa != null ? Number(r.precio_tarifa) : null,
         uds_caja: r.uds_caja != null ? Number(r.uds_caja) : null,
@@ -351,11 +372,26 @@ export default function EscandallosPage() {
               aria-label="Producto"
             >
               <option value="">(Selecciona…)</option>
-              {items.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.articulo}
-                </option>
-              ))}
+              {Array.from(
+                items.reduce((m, p) => {
+                  const c = normCat(p.categoria);
+                  m.set(c, [...(m.get(c) ?? []), p]);
+                  return m;
+                }, new Map<string, ProductoRow[]>())
+              )
+                .sort(([a], [b]) => sortCats(a, b))
+                .map(([cat, prods]) => (
+                  <optgroup key={cat} label={cat}>
+                    {prods
+                      .slice()
+                      .sort((a, b) => a.articulo.localeCompare(b.articulo, "es"))
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.articulo}
+                        </option>
+                      ))}
+                  </optgroup>
+                ))}
             </select>
           </label>
 

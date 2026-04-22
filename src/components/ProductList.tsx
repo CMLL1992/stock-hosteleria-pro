@@ -707,16 +707,6 @@ export function ProductList() {
                   Editar Producto
                 </Link>
               ) : null}
-              {movProd ? (
-                <Link
-                  href={`/qr/${encodeURIComponent(movProd.id)}?print=1`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex min-h-12 w-full items-center rounded-2xl border border-slate-200 bg-white px-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-50"
-                >
-                  Generar QR
-                </Link>
-              ) : null}
             </div>
           ) : (
             <div className="space-y-3">
