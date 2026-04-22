@@ -232,9 +232,9 @@ export default function EscandallosPage() {
   const [nuevoDescuentoValor, setNuevoDescuentoValor] = useState<string>("0");
   const [nuevoDescuentoTipo, setNuevoDescuentoTipo] = useState<"%" | "€">("%");
   const [nuevoRappel, setNuevoRappel] = useState<string>("0");
-  const [nuevoIvaCompra, setNuevoIvaCompra] = useState<number>(10);
+  const [nuevoIvaCompra, setNuevoIvaCompra] = useState<string>("10");
   const [nuevoPvp, setNuevoPvp] = useState<string>("0");
-  const [nuevoIvaVenta, setNuevoIvaVenta] = useState<number>(10);
+  const [nuevoIvaVenta, setNuevoIvaVenta] = useState<string>("10");
 
   function readEvtValue(e: { currentTarget?: { value?: unknown } } | null | undefined): string {
     try {
@@ -708,9 +708,9 @@ export default function EscandallosPage() {
                   setNuevoDescuentoValor(String(p.descuento_valor ?? 0));
                   setNuevoDescuentoTipo((p.descuento_tipo ?? "%") as "%" | "€");
                   setNuevoRappel(String(p.rappel_valor ?? 0));
-                  setNuevoIvaCompra(Number(p.iva_compra ?? 10));
+                  setNuevoIvaCompra(String(normalizeIva(Number(p.iva_compra ?? 10))));
                   setNuevoPvp(String(p.pvp ?? 0));
-                  setNuevoIvaVenta(Number(p.iva_venta ?? 10));
+                  setNuevoIvaVenta(String(normalizeIva(Number(p.iva_venta ?? 10))));
                 }
               }}
               aria-label="Producto"
@@ -827,7 +827,7 @@ export default function EscandallosPage() {
             <select
               className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
               value={nuevoIvaCompra}
-              onChange={(e) => setNuevoIvaCompra(Number(readEvtValue(e)))}
+              onChange={(e) => setNuevoIvaCompra(readEvtValue(e))}
             >
               {IVA_OPTIONS.map((v) => (
                 <option key={v} value={v}>
@@ -855,7 +855,7 @@ export default function EscandallosPage() {
             <select
               className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
               value={nuevoIvaVenta}
-              onChange={(e) => setNuevoIvaVenta(Number(readEvtValue(e)))}
+              onChange={(e) => setNuevoIvaVenta(readEvtValue(e))}
             >
               {IVA_OPTIONS.map((v) => (
                 <option key={v} value={v}>

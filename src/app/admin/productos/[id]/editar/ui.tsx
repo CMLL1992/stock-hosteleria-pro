@@ -51,9 +51,9 @@ export function EditarProductoClient({ id }: { id: string }) {
   const [articulo, setArticulo] = useState("");
   const [categoriaVal, setCategoriaVal] = useState<CategoriaProductoValor>("otros");
   const [unidadVal, setUnidadVal] = useState<UnidadProductoValor>("botella");
-  const [stockMinimo, setStockMinimo] = useState<number>(0);
+  const [stockMinimo, setStockMinimo] = useState<string>("0");
   const [proveedorId, setProveedorId] = useState<string>("");
-  const [unidadesPorCaja, setUnidadesPorCaja] = useState<number>(1);
+  const [unidadesPorCaja, setUnidadesPorCaja] = useState<string>("1");
 
   useEffect(() => {
     let cancelled = false;
@@ -116,9 +116,9 @@ export function EditarProductoClient({ id }: { id: string }) {
         const catRaw = prod.categoria ?? prod.tipo;
         setCategoriaVal(mapCategoriaDbToValor(catRaw));
         setUnidadVal(mapUnidadDbToValor(prod.unidad));
-        setStockMinimo(typeof prod.stock_minimo === "number" ? prod.stock_minimo : 0);
+        setStockMinimo(String(typeof prod.stock_minimo === "number" ? prod.stock_minimo : 0));
         setProveedorId(prod.proveedor_id ?? "");
-        setUnidadesPorCaja(Math.max(1, Math.trunc(Number(prod.unidades_por_caja ?? 1) || 1)));
+        setUnidadesPorCaja(String(Math.max(1, Math.trunc(Number(prod.unidades_por_caja ?? 1) || 1))));
 
         const { data: provs, error: provErr } = await supabase()
           .from("proveedores")
@@ -153,9 +153,9 @@ export function EditarProductoClient({ id }: { id: string }) {
       ...tituloWritePayload(col, articulo.trim()),
       unidad: unidadVal,
       categoria: categoriaVal,
-      stock_minimo: Number.isFinite(stockMinimo) ? stockMinimo : 0,
+      stock_minimo: Math.max(0, Math.trunc(Number(String(stockMinimo).replace(",", ".")) || 0)),
       proveedor_id: proveedorId || null,
-      unidades_por_caja: Math.max(1, Math.trunc(Number(unidadesPorCaja) || 1))
+      unidades_por_caja: Math.max(1, Math.trunc(Number(String(unidadesPorCaja).replace(",", ".")) || 1))
     };
 
     const { error } = await updateProductoCategoriaCompat(
@@ -262,10 +262,9 @@ export function EditarProductoClient({ id }: { id: string }) {
                     className={FORM_CONTROL_CLASS_GRAY}
                     inputMode="numeric"
                     pattern="[0-9]*"
-                    type="number"
                     min={1}
                     value={unidadesPorCaja}
-                    onChange={(e) => setUnidadesPorCaja(Math.max(1, Math.trunc(Number(e.currentTarget.value) || 1)))}
+                    onChange={(e) => setUnidadesPorCaja(e.currentTarget.value)}
                   />
                   <p className="text-xs text-gray-600">Si recibes 5 cajas y aquí pone 24, el stock sube 120 unidades.</p>
                 </div>
@@ -274,10 +273,12 @@ export function EditarProductoClient({ id }: { id: string }) {
                   <label className="text-sm font-semibold text-gray-900">Stock mínimo</label>
                   <input
                     className={FORM_CONTROL_CLASS_GRAY}
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     min={0}
                     value={stockMinimo}
-                    onChange={(e) => setStockMinimo(Number(e.currentTarget.value))}
+                    onChange={(e) => setStockMinimo(e.currentTarget.value)}
                   />
                 </div>
 
