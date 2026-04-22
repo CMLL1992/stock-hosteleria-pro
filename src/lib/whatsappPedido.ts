@@ -27,7 +27,7 @@ export function mensajePedidoStockProfesional(nombre: string, stockActual: numbe
   const cant = diff > 0 ? diff : Math.max(1, stockMinimo - stockActual);
   const u = unidadLegible(unidad);
   return [
-    "📦 *PEDIDO DE STOCK* 📦",
+    "*PEDIDO DE STOCK*",
     "Hola, necesito reponer:",
     `- *Producto:* ${nombre}`,
     `- *Cantidad:* ${cant} ${u}`,
@@ -57,7 +57,7 @@ export function mensajePedidoGlobalLineas(
     const u = unidadLegible(l.unidad);
     return [`- *Producto:* ${l.articulo}`, `- *Cantidad:* ${cant} ${u}`].join("\n");
   });
-  return ["📦 *PEDIDO DE STOCK* 📦", "Hola, necesito reponer:", ...bloques, "¡Gracias!"].join("\n");
+  return ["*PEDIDO DE STOCK*", "Hola, necesito reponer:", ...bloques, "¡Gracias!"].join("\n");
 }
 
 export type ProductoPedidoWa = {

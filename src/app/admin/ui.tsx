@@ -9,7 +9,6 @@ import { useMyRole } from "@/lib/useMyRole";
 type AdminNavItem = {
   id: string;
   href: string;
-  emoji: string;
   title: string;
   subtitle: string;
   /** Solo superadmin (establecimientos, usuarios del tenant global, etc.) */
@@ -25,12 +24,11 @@ type AdminSection = {
 const SECTIONS: AdminSection[] = [
   {
     id: "institucional",
-    heading: "🏢 Institucional y Accesos",
+    heading: "Institucional y accesos",
     items: [
       {
         id: "establecimientos",
         href: "/admin/clientes",
-        emoji: "🏪",
         title: "Establecimientos",
         subtitle: "Gestionar locales y sedes.",
         superadminOnly: true
@@ -38,7 +36,6 @@ const SECTIONS: AdminSection[] = [
       {
         id: "usuarios",
         href: "/admin/users",
-        emoji: "👥",
         title: "Usuarios",
         subtitle: "Control de personal y accesos.",
         superadminOnly: true
@@ -46,7 +43,6 @@ const SECTIONS: AdminSection[] = [
       {
         id: "roles",
         href: "/superadmin/roles",
-        emoji: "🔐",
         title: "Roles",
         subtitle: "Superadmin, Admin y Staff en un solo lugar.",
         superadminOnly: true
@@ -55,26 +51,23 @@ const SECTIONS: AdminSection[] = [
   },
   {
     id: "catalogo",
-    heading: "📦 Catálogo e Inventario",
+    heading: "Catálogo e inventario",
     items: [
       {
         id: "productos",
         href: "/admin/productos",
-        emoji: "🏷️",
         title: "Productos",
         subtitle: "Listado maestro y edición (clave artículo)."
       },
       {
         id: "importar-csv",
         href: "/admin/importar-csv",
-        emoji: "📥",
         title: "Importar CSV",
         subtitle: "Carga masiva con validador (;)."
       },
       {
         id: "escandallos",
         href: "/admin/escandallos",
-        emoji: "📑",
         title: "Escandallos",
         subtitle: "Gestión de recetas y costes."
       }
@@ -82,26 +75,23 @@ const SECTIONS: AdminSection[] = [
   },
   {
     id: "operaciones",
-    heading: "🔄 Operaciones y Movimientos",
+    heading: "Operaciones y movimientos",
     items: [
       {
         id: "pedidos",
         href: "/admin/pedidos",
-        emoji: "🛒",
         title: "Pedidos",
         subtitle: "Pedidos agrupados por proveedor y WhatsApp."
       },
       {
         id: "proveedores",
         href: "/admin/proveedores",
-        emoji: "🚚",
         title: "Proveedores",
         subtitle: "Directorio de contactos y pedidos."
       },
       {
         id: "movimientos",
         href: "/admin/movimientos",
-        emoji: "📊",
         title: "Movimientos",
         subtitle: "Histórico de entradas y salidas de stock."
       }
@@ -163,12 +153,6 @@ export function AdminHomeClient() {
                     idx < section.items.length - 1 ? "border-b border-slate-100" : ""
                   ].join(" ")}
                 >
-                  <span
-                    className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-slate-100 text-lg leading-none"
-                    aria-hidden
-                  >
-                    {item.emoji}
-                  </span>
                   <div className="min-w-0 flex-1">
                     <p className="font-medium text-slate-800">{item.title}</p>
                     <p className="mt-0.5 text-xs leading-snug text-slate-500">{item.subtitle}</p>

@@ -381,8 +381,8 @@ export default function ImportarCsvPage() {
       setImportProgress(100);
       setResult(
         usedRowByRowFallback
-          ? `✅ ${okCount} productos importados (modo compatible: sin índice único en la BD se aplicó fila a fila; puedes añadir un UNIQUE(establecimiento_id, ${tituloCol}) para acelerar).`
-          : `✅ ${okCount} productos importados correctamente (bloques de ${BATCH_SIZE}, upsert).`
+          ? `${okCount} productos importados (modo compatible: sin índice único en la BD se aplicó fila a fila; puedes añadir un UNIQUE(establecimiento_id, ${tituloCol}) para acelerar).`
+          : `${okCount} productos importados correctamente (bloques de ${BATCH_SIZE}, upsert).`
       );
       await cargarMapaNombres();
     } catch (e) {
@@ -470,7 +470,7 @@ export default function ImportarCsvPage() {
               disabled={busy}
             >
               <span className="text-3xl" aria-hidden>
-                📁
+                Archivo
               </span>
               <span className="text-base font-bold text-slate-900">Seleccionar archivo desde el móvil</span>
               <span className="text-sm text-slate-600">CSV con delimitador ; (nombre o artículo)</span>
@@ -536,7 +536,7 @@ export default function ImportarCsvPage() {
               <p className="flex items-center gap-2">
                 <span className="inline-block h-3 w-3 rounded-sm bg-amber-400" aria-hidden />
                 <span className="text-slate-800">
-                  Fila naranja: <strong>actualización</strong> (🔄).
+                  Fila naranja: <strong>actualización</strong>.
                 </span>
               </p>
               <p className="flex items-center gap-2">

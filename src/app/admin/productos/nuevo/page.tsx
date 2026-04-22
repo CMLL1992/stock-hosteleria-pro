@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import type { AppRole } from "@/lib/session";
 import { fetchMyRole } from "@/lib/session";
@@ -42,6 +43,7 @@ function parseStockField(raw: string): number {
 }
 
 export default function NuevoProductoPage() {
+  const router = useRouter();
   const [role, setRole] = useState<AppRole | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -138,7 +140,8 @@ export default function NuevoProductoPage() {
       setErr(supabaseErrToString(error));
       return;
     }
-    window.location.href = "/";
+    // Redirección limpia sin “saltos” de scroll por recarga completa.
+    router.replace("/admin/productos?toast=guardado");
   }
 
   if (loading) return <main className="p-4 text-sm text-zinc-600 dark:text-zinc-300">Cargando…</main>;
@@ -210,7 +213,7 @@ export default function NuevoProductoPage() {
                 className={FORM_CONTROL_CLASS}
                 type="number"
                 min={0}
-                inputMode="decimal"
+                inputMode="numeric"
                 value={stockActual}
                 onChange={(e) => setStockActual(e.currentTarget.value)}
               />
@@ -221,7 +224,7 @@ export default function NuevoProductoPage() {
                 className={FORM_CONTROL_CLASS}
                 type="number"
                 min={0}
-                inputMode="decimal"
+                inputMode="numeric"
                 value={stockMinimo}
                 onChange={(e) => setStockMinimo(e.currentTarget.value)}
               />

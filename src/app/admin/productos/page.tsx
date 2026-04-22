@@ -12,7 +12,6 @@ import {
   type CategoriaProductoValor,
   type UnidadProductoValor,
   UNIDAD_OPTIONS,
-  emojiCategoria,
   etiquetaCategoriaMostrada,
   mapCategoriaDbToValor,
   mapUnidadDbToValor
@@ -655,9 +654,6 @@ export default function AdminProductosPage() {
                     <p className="text-lg font-bold leading-snug text-slate-900">{p.articulo}</p>
                     <p className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-slate-600">
                       <span className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-800">
-                        <span aria-hidden className="text-[1.05rem] leading-none">
-                          {emojiCategoria(p.categoria ?? p.tipo)}
-                        </span>
                         <span className="capitalize">{etiquetaCategoriaMostrada(p.categoria ?? p.tipo)}</span>
                       </span>
                       <span className="text-slate-400" aria-hidden>

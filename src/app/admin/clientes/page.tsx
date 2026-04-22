@@ -295,7 +295,7 @@ export default function AdminClientesPage() {
         open={!!confirmDeleteEst}
         title="Eliminar establecimiento"
         message={
-          "⚠️ ATENCIÓN: Se borrará el establecimiento y TODOS sus datos asociados (usuarios, productos, movimientos, proveedores). ¿Deseas continuar?"
+          "ATENCIÓN: Se borrará el establecimiento y todos sus datos asociados (usuarios, productos, movimientos, proveedores). ¿Deseas continuar?"
         }
         confirmLabel="Sí, eliminar todo"
         danger

@@ -6,6 +6,7 @@ import { fetchMyRole } from "@/lib/session";
 import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { MobileHeader } from "@/components/MobileHeader";
+import { Pencil } from "lucide-react";
 
 type Proveedor = {
   id: string;
@@ -119,7 +120,7 @@ export default function ProveedoresPage() {
               aria-label="Editar proveedor"
               title="Editar"
             >
-              ✎
+              <Pencil className="h-5 w-5 text-slate-700" aria-hidden />
             </a>
           </div>
         ))}

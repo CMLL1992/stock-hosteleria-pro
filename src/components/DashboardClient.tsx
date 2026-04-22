@@ -2,22 +2,14 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Search } from "lucide-react";
-import { IconWhatsApp } from "@/components/IconWhatsApp";
+import { Search } from "lucide-react";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { useQuery } from "@tanstack/react-query";
 import { fetchDashboardProductos } from "@/lib/adminDashboardData";
-import { deficitPedido, waUrlPedidoGlobal, waUrlProductoPedido } from "@/lib/whatsappPedido";
-
-function unidadTitulo(u: string | null | undefined): string {
-  const t = (u ?? "uds").trim() || "uds";
-  return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
-}
 
 export function DashboardClient() {
   const { activeEstablishmentId: establecimientoId, activeEstablishmentName, me } = useActiveEstablishment();
   const [search, setSearch] = useState("");
-  const [modoPedidoReposicion, setModoPedidoReposicion] = useState(false);
 
   const productosQuery = useQuery({
     queryKey: ["dashboard", "productos", establecimientoId],
@@ -46,8 +38,6 @@ export function DashboardClient() {
     return out;
   }, [rows]);
 
-  const pedidoGlobalUrl = useMemo(() => waUrlPedidoGlobal(bajoMinimos), [bajoMinimos]);
-
   const urgentes = useMemo(() => {
     const q = search.trim().toLowerCase();
     const base = bajoMinimos;
@@ -71,104 +61,6 @@ export function DashboardClient() {
   }
   if (!establecimientoId) {
     return <p className="text-base text-slate-500">Selecciona un establecimiento para ver el inventario.</p>;
-  }
-
-  if (modoPedidoReposicion) {
-    return (
-      <div className="w-full max-w-full space-y-4">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setModoPedidoReposicion(false)}
-            className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-800 shadow-sm active:bg-slate-50"
-            aria-label="Volver al resumen"
-          >
-            <ArrowLeft className="h-6 w-6" />
-          </button>
-          <div className="min-w-0 flex-1">
-            <h2 className="text-lg font-bold text-slate-900">Pedido de reposición</h2>
-            <p className="text-sm text-slate-500">
-              {urgentes.length} artículo{urgentes.length === 1 ? "" : "s"} bajo mínimos
-              {search.trim() ? " (filtrado)" : ""}
-            </p>
-          </div>
-        </div>
-
-        <div className="relative w-full">
-          <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.currentTarget.value)}
-            placeholder="Buscar producto…"
-            className="min-h-12 w-full rounded-3xl border border-slate-200 bg-white py-3 pl-12 pr-4 text-base text-slate-900 shadow-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-            aria-label="Buscar en pedido de reposición"
-          />
-        </div>
-
-        {pedidoGlobalUrl ? (
-          <button
-            type="button"
-            onClick={() => window.open(pedidoGlobalUrl, "_blank", "noopener,noreferrer")}
-            className="inline-flex min-h-14 w-full items-center justify-center gap-3 rounded-3xl border-2 border-emerald-600 bg-emerald-500 px-4 py-4 text-base font-bold text-white shadow-md hover:bg-emerald-600"
-          >
-            <IconWhatsApp className="h-8 w-8 shrink-0 text-white" />
-            WhatsApp: pedido completo
-          </button>
-        ) : bajoMinimos.length > 0 ? (
-          <p className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-            Para un mensaje con todos los artículos, añade teléfono WhatsApp a un proveedor. Mientras tanto, usa el botón de cada línea.
-          </p>
-        ) : null}
-
-        {urgentes.length === 0 ? (
-          <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center text-base text-slate-600 shadow-sm">
-            {bajoMinimos.length === 0
-              ? "No hay productos bajo mínimos. Buen trabajo."
-              : "Ningún resultado coincide con la búsqueda."}
-          </div>
-        ) : (
-          <ul className="flex flex-col gap-3">
-            {urgentes.map((p) => {
-              const hrefWa = waUrlProductoPedido(p);
-              const diff = deficitPedido(p.stock_actual, p.stock_minimo);
-              const cant = diff > 0 ? diff : Math.max(1, p.stock_minimo - p.stock_actual);
-              return (
-                <li
-                  key={p.id}
-                  className="flex flex-col gap-3 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-100 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-lg font-bold leading-snug text-slate-900">{p.articulo}</p>
-                    <p className="mt-1 text-sm text-slate-600">
-                      Stock <span className="font-mono font-semibold tabular-nums">{p.stock_actual}</span>
-                      {" · "}
-                      Mín. <span className="font-mono font-semibold tabular-nums">{p.stock_minimo}</span>
-                      {p.unidad ? <span> · {unidadTitulo(p.unidad)}</span> : null}
-                    </p>
-                    {p.proveedor?.nombre ? <p className="mt-1 text-xs text-slate-500">Proveedor: {p.proveedor.nombre}</p> : null}
-                    <p className="mt-2 text-sm font-semibold text-orange-700">A pedir: {cant}</p>
-                  </div>
-                  {hrefWa ? (
-                    <a
-                      href={hrefWa}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex min-h-[52px] w-full shrink-0 items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-5 text-base font-bold text-white shadow-sm hover:bg-emerald-600 sm:w-auto sm:min-w-[160px]"
-                    >
-                      <IconWhatsApp className="h-7 w-7 text-white" />
-                      WhatsApp
-                    </a>
-                  ) : (
-                    <p className="text-sm text-amber-800">No se pudo generar el enlace.</p>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
-    );
   }
 
   return (
@@ -205,21 +97,6 @@ export function DashboardClient() {
           <p className="mt-3 text-xs text-slate-500">Gas: detectado por “gas” en categoría o nombre.</p>
         </div>
       </div>
-
-      <button
-        type="button"
-        onClick={() => {
-          setModoPedidoReposicion(true);
-          setSearch("");
-        }}
-        className="flex min-h-[4.5rem] w-full flex-col items-center justify-center gap-1 rounded-3xl border-2 border-slate-900 bg-slate-900 px-4 py-5 text-center shadow-xl active:scale-[0.99]"
-      >
-        <span className="text-2xl leading-none" aria-hidden>
-          🛒
-        </span>
-        <span className="text-lg font-extrabold tracking-tight text-white">Generar Pedido de Reposición</span>
-        <span className="text-xs font-medium text-slate-300">Filtra artículos bajo mínimos y abre WhatsApp</span>
-      </button>
 
       <Link
         href="/stock?compra=1"

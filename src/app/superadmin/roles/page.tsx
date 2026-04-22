@@ -9,26 +9,20 @@ import { supabase } from "@/lib/supabase";
 import { useMyRole } from "@/lib/useMyRole";
 import type { UsuarioListItem, UsuarioRol } from "@/types/ops";
 
-const LOAD_FAILED_MESSAGE = "⚠️ No se pudieron cargar los roles. Contacta con soporte.";
+const LOAD_FAILED_MESSAGE = "No se pudieron cargar los roles. Contacta con soporte.";
 
 type EstRow = { id: string; nombre: string };
 
-const ROLE_INFO: Record<
-  UsuarioRol,
-  { title: string; subtitle: string; emoji: string }
-> = {
+const ROLE_INFO: Record<UsuarioRol, { title: string; subtitle: string }> = {
   superadmin: {
-    emoji: "⭐",
     title: "Superadmin",
     subtitle: "Acceso total: Institucional, Catálogo y Operaciones."
   },
   admin: {
-    emoji: "🛡️",
     title: "Admin",
     subtitle: "Catálogo y Operaciones de su establecimiento."
   },
   staff: {
-    emoji: "🧑‍🍳",
     title: "Staff",
     subtitle: "Pedido rápido y visualización de stock."
   }
@@ -150,7 +144,7 @@ export default function SuperadminRolesPage() {
                   >
                     <span className="truncate text-base font-semibold text-slate-900">{u.email ?? u.id}</span>
                     <span className="text-sm text-slate-600">
-                      {info.emoji} {info.title} · {estNombreById.get(u.establecimiento_id) ?? "Establecimiento"}
+                      {info.title} · {estNombreById.get(u.establecimiento_id) ?? "Establecimiento"}
                     </span>
                     {isSelf ? <span className="text-xs font-medium text-slate-500">Tu cuenta (el rol no se puede cambiar aquí)</span> : null}
                   </button>
@@ -184,9 +178,7 @@ export default function SuperadminRolesPage() {
                     myId !== null && selected.id === myId ? "cursor-not-allowed opacity-50" : ""
                   ].join(" ")}
                 >
-                  <span className="text-lg font-bold text-slate-900">
-                    {r.emoji} {r.title}
-                  </span>
+                  <span className="text-lg font-bold text-slate-900">{r.title}</span>
                   <span className="text-sm text-slate-600">{r.subtitle}</span>
                   {current ? <span className="mt-1 text-xs font-semibold text-emerald-700">Rol actual</span> : null}
                 </button>

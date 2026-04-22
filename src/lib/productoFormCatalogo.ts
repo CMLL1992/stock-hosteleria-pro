@@ -11,27 +11,24 @@ export type UnidadProductoValor = (typeof UNIDAD_PRODUCTO)[number];
 
 export const CATEGORIA_OPTIONS: ReadonlyArray<{
   value: CategoriaProductoValor;
-  emoji: string;
-  /** Texto visible (emoji + nombre) */
   label: string;
 }> = [
-  { value: "vino", emoji: "🍷", label: "🍷 Vino" },
-  { value: "cerveza", emoji: "🍺", label: "🍺 Cerveza" },
-  { value: "agua", emoji: "💧", label: "💧 Agua" },
-  { value: "refresco", emoji: "🥤", label: "🥤 Refresco" },
-  { value: "licor", emoji: "🥃", label: "🥃 Licor" },
-  { value: "otros", emoji: "📦", label: "📦 Otros" }
+  { value: "vino", label: "Vino" },
+  { value: "cerveza", label: "Cerveza" },
+  { value: "agua", label: "Agua" },
+  { value: "refresco", label: "Refresco" },
+  { value: "licor", label: "Licor" },
+  { value: "otros", label: "Otros" }
 ];
 
 export const UNIDAD_OPTIONS: ReadonlyArray<{
   value: UnidadProductoValor;
-  emoji: string;
   label: string;
 }> = [
-  { value: "caja", emoji: "📦", label: "📦 Caja" },
-  { value: "barril", emoji: "🛢️", label: "🛢️ Barril" },
-  { value: "gas", emoji: "💨", label: "💨 Gas" },
-  { value: "botella", emoji: "🍾", label: "🍾 Botella" }
+  { value: "caja", label: "Caja" },
+  { value: "barril", label: "Barril" },
+  { value: "gas", label: "Gas" },
+  { value: "botella", label: "Botella" }
 ];
 
 /** Clase Tailwind: ≥48px de alto y 16px de fuente (evita zoom en iOS). */
@@ -47,13 +44,6 @@ function norm(s: string | null | undefined): string {
     .toLowerCase()
     .normalize("NFD")
     .replace(/\p{M}/gu, "");
-}
-
-/** Emoji para una clave de categoría conocida o datos legacy. */
-export function emojiCategoria(raw: string | null | undefined): string {
-  const k = mapCategoriaDbToValor(raw);
-  const hit = CATEGORIA_OPTIONS.find((o) => o.value === k);
-  return hit?.emoji ?? "📦";
 }
 
 /** Mapea texto guardado en BD a un valor del selector. */
@@ -102,5 +92,5 @@ export function mapUnidadDbToValor(raw: string | null | undefined): UnidadProduc
 export function etiquetaCategoriaMostrada(raw: string | null | undefined): string {
   const v = mapCategoriaDbToValor(raw);
   const opt = CATEGORIA_OPTIONS.find((o) => o.value === v);
-  return opt?.label.split(" ").slice(1).join(" ") ?? v;
+  return opt?.label ?? v;
 }

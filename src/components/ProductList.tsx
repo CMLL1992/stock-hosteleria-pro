@@ -122,15 +122,6 @@ const TAB_ORDER = [
   { key: "otros", label: "Otros" }
 ] as const;
 
-const CATEGORY_COLORS: Record<string, { bg: string }> = {
-  cerveza: { bg: "#FEF3C7" },
-  licor: { bg: "#F3E8FF" },
-  refresco: { bg: "#DBEAFE" },
-  vino: { bg: "#FFE4E6" },
-  agua: { bg: "#CCFBF1" },
-  otros: { bg: "#F4F4F5" }
-};
-
 function normalizeKey(s: string | null): string {
   return (s ?? "").trim().toLowerCase();
 }
@@ -385,23 +376,15 @@ export function ProductList() {
       <div className="flex gap-2 overflow-x-auto pb-1">
         {TAB_ORDER.map((t) => {
           const active = tab === t.key;
-          const pastel = CATEGORY_COLORS[t.key] ?? CATEGORY_COLORS.otros;
           return (
             <button
               key={t.key}
               type="button"
               onClick={() => setTab(t.key)}
               className={[
-                "min-h-12 whitespace-nowrap rounded-full px-4 text-base font-semibold",
-                active ? "text-slate-900 shadow-sm" : "text-slate-700 border border-slate-200 bg-white"
+                "min-h-12 whitespace-nowrap rounded-full border px-4 text-base font-semibold",
+                active ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-800"
               ].join(" ")}
-              style={
-                t.key === "todos"
-                  ? active
-                    ? { backgroundColor: "#111827", color: "white" }
-                    : undefined
-                  : { backgroundColor: pastel.bg }
-              }
             >
               {t.label}
             </button>
@@ -421,7 +404,6 @@ export function ProductList() {
                 : { bg: "#ECFDF5", text: "#065F46", ring: "ring-1 ring-emerald-100", label: "OK" };
 
           const key = productTabKey(p);
-          const chipBg = (CATEGORY_COLORS[key] ?? CATEGORY_COLORS.otros).bg;
           const busy = busyId === p.id;
           const provLabel = proveedorNombreOrDefault(p);
           const prev = idx > 0 ? orderedList[idx - 1] : null;
@@ -456,8 +438,7 @@ export function ProductList() {
                         <p className="text-lg font-bold leading-snug text-slate-900">{p.articulo}</p>
                       </Link>
                       <span
-                        className="inline-flex min-h-8 items-center rounded-full px-2 text-xs font-semibold text-gray-900"
-                        style={{ backgroundColor: chipBg }}
+                        className="inline-flex min-h-8 items-center rounded-full border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700"
                       >
                         {key === "todos" ? "otros" : key}
                       </span>
@@ -502,21 +483,21 @@ export function ProductList() {
                     onClick={() => openQuickMovimiento(p, "entrada")}
                     className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
                   >
-                    📥
+                    Entrada
                   </button>
                   <button
                     type="button"
                     onClick={() => openQuickMovimiento(p, "salida_barra")}
-                    className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 px-3 text-sm font-semibold text-amber-900 shadow-sm hover:bg-amber-100"
+                    className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
                   >
-                    🍺
+                    A barra
                   </button>
                   <button
                     type="button"
                     onClick={() => openQuickMovimiento(p, "devolucion_proveedor")}
-                    className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-sky-200 bg-sky-50 px-3 text-sm font-semibold text-sky-900 shadow-sm hover:bg-sky-100"
+                    className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
                   >
-                    🚛
+                    Devolver
                   </button>
                   <Link
                     href={`/qr/${encodeURIComponent(p.id)}`}
@@ -552,7 +533,7 @@ export function ProductList() {
           style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
           onClick={() => setCestaOpen(true)}
         >
-          🛒 Pedido ({selectedIds.size})
+          Pedido ({selectedIds.size})
         </button>
       ) : null}
 
@@ -622,29 +603,29 @@ export function ProductList() {
               onClick={() => setMovTipo("entrada")}
               disabled={movBusy}
             >
-              📥 Entrada
+              Entrada
             </button>
             <button
               type="button"
               className={[
                 "min-h-12 rounded-2xl border px-3 text-sm font-semibold",
-                movTipo === "salida_barra" ? "border-amber-800 bg-amber-600 text-white" : "border-slate-200 bg-white text-slate-800"
+                movTipo === "salida_barra" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-800"
               ].join(" ")}
               onClick={() => setMovTipo("salida_barra")}
               disabled={movBusy}
             >
-              🍺 A barra
+              A barra
             </button>
             <button
               type="button"
               className={[
                 "min-h-12 rounded-2xl border px-3 text-sm font-semibold",
-                movTipo === "devolucion_proveedor" ? "border-sky-900 bg-sky-700 text-white" : "border-slate-200 bg-white text-slate-800"
+                movTipo === "devolucion_proveedor" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-800"
               ].join(" ")}
               onClick={() => setMovTipo("devolucion_proveedor")}
               disabled={movBusy}
             >
-              🚛 Devolver
+              Devolver
             </button>
           </div>
 

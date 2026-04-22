@@ -194,7 +194,7 @@ export default function RecepcionPage() {
         }
       }
 
-      setToast({ kind: "ok", msg: `✅ Mercancía de ${proveedorNombre || "proveedor"} registrada` });
+      setToast({ kind: "ok", msg: `Mercancía de ${proveedorNombre || "proveedor"} registrada` });
       setRecibido((prev) => {
         const next = { ...prev };
         for (const p of productos) next[p.id] = "";
@@ -329,7 +329,7 @@ export default function RecepcionPage() {
                 anyQty && !confirming ? "bg-emerald-500 text-white hover:bg-emerald-600" : "bg-slate-200 text-slate-500"
               ].join(" ")}
             >
-              📥 Confirmar Recepción
+              Confirmar recepción
             </button>
             <p className="text-center text-xs text-slate-500">
               Se registran movimientos por cada línea con cantidad &gt; 0.

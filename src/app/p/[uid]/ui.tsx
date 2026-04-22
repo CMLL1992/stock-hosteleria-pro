@@ -244,7 +244,7 @@ export function ProductByUidClient({ uid }: { uid: string }) {
           <div className="grid grid-cols-1 gap-2">
             <div className="grid grid-cols-3 gap-2">
               <Button onClick={() => { setModo("entrada"); setMovOpen(true); }} className="bg-slate-900 hover:bg-slate-950">
-                📥 Entrada
+                Entrada
               </Button>
               <Button
                 onClick={() => {
@@ -252,9 +252,9 @@ export function ProductByUidClient({ uid }: { uid: string }) {
                   setGeneraVacio(true);
                   setMovOpen(true);
                 }}
-                className="bg-amber-600 hover:bg-amber-700 active:bg-amber-800"
+                className="bg-slate-900 hover:bg-slate-950"
               >
-                🍺 A barra
+                A barra
               </Button>
               <Button
                 onClick={async () => {
@@ -264,9 +264,9 @@ export function ProductByUidClient({ uid }: { uid: string }) {
                   setModo("devolucion_proveedor");
                   setMovOpen(true);
                 }}
-                className="bg-sky-700 hover:bg-sky-800 active:bg-sky-900"
+                className="bg-slate-900 hover:bg-slate-950"
               >
-                🚛 Devolver vacío
+                Devolver vacío
               </Button>
             </div>
             <Button
@@ -364,7 +364,7 @@ export function ProductByUidClient({ uid }: { uid: string }) {
               className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50"
               onClick={() => setModo("entrada_vacio")}
             >
-              + Entrada de vacío (en vez de devolver)
+              Entrada de vacío (en vez de devolver)
             </button>
           ) : null}
 
