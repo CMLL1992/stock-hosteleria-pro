@@ -61,6 +61,12 @@ const SECTIONS: AdminSection[] = [
         subtitle: "Listado maestro y edición (clave artículo)."
       },
       {
+        id: "precios-envases",
+        href: "/admin/precios-envases",
+        title: "Precios de envases",
+        subtitle: "Define coste/fianza por caja, barril o gas."
+      },
+      {
         id: "importar-csv",
         href: "/admin/importar-csv",
         title: "Importar CSV",
