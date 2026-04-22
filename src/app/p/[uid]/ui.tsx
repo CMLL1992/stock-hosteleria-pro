@@ -85,13 +85,13 @@ export function ProductByUidClient({ uid }: { uid: string }) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [modo, setModo] = useState<"entrada" | "salida">("entrada");
-  const [cantidad, setCantidad] = useState<number>(0);
+  const [cantidad, setCantidad] = useState<string>("0");
   const qtyRef = useRef<HTMLInputElement | null>(null);
   const [saved, setSaved] = useState(false);
 
   const [movOpen, setMovOpen] = useState(false);
   const [pedidoOpen, setPedidoOpen] = useState(false);
-  const [pedidoCantidad, setPedidoCantidad] = useState<number>(1);
+  const [pedidoCantidad, setPedidoCantidad] = useState<string>("1");
 
   useEffect(() => {
     let cancelled = false;
@@ -276,7 +276,7 @@ export function ProductByUidClient({ uid }: { uid: string }) {
             </Button>
             <Button
               onClick={() => {
-                setPedidoCantidad(1);
+                setPedidoCantidad("1");
                 setPedidoOpen(true);
               }}
               className="bg-green-600 hover:bg-green-700 active:bg-green-800"
@@ -328,10 +328,10 @@ export function ProductByUidClient({ uid }: { uid: string }) {
             <input
               className="min-h-12 w-full rounded-2xl border border-gray-100 bg-gray-50 px-4 text-base"
               inputMode="numeric"
-              type="number"
-              step={1}
+              type="text"
+              pattern="[0-9]*"
               value={cantidad}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => setCantidad(Number(e.currentTarget.value))}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => setCantidad(e.currentTarget.value)}
               onFocus={(e) => e.currentTarget.select()}
               ref={qtyRef}
             />
@@ -340,7 +340,7 @@ export function ProductByUidClient({ uid }: { uid: string }) {
           <div className="grid grid-cols-1 gap-2">
             <Button
               onClick={async () => {
-                const n = Number(cantidad);
+                const n = Number(String(cantidad).replace(",", "."));
                 if (!Number.isFinite(n) || n === 0) return;
                 setSaved(false);
                 if (modo === "entrada") {
@@ -379,23 +379,27 @@ export function ProductByUidClient({ uid }: { uid: string }) {
           <input
             className="min-h-12 w-full rounded-2xl border border-gray-100 bg-gray-50 px-4 text-base"
             inputMode="numeric"
-            type="number"
-            min={1}
+            type="text"
+            pattern="[0-9]*"
             value={pedidoCantidad}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => setPedidoCantidad(Number(e.currentTarget.value))}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => setPedidoCantidad(e.currentTarget.value)}
           />
           <div className="grid grid-cols-1 gap-2">
             <Button
               onClick={async () => {
                 try {
-                  await registrar("pedido", pedidoCantidad);
+                  const n = Math.max(0, Math.trunc(Number(String(pedidoCantidad).replace(",", "."))));
+                  if (!Number.isFinite(n) || n < 1) return;
+                  await registrar("pedido", n);
                   setPedidoOpen(false);
                   if (waLink) window.open(waLink, "_blank", "noreferrer");
                 } catch (e) {
                   setErr(supabaseErrToString(e));
                 }
               }}
-              disabled={!pedidoCantidad || pedidoCantidad < 1 || !producto?.proveedor?.telefono_whatsapp}
+              disabled={
+                Math.max(0, Math.trunc(Number(String(pedidoCantidad).replace(",", ".")))) < 1 || !producto?.proveedor?.telefono_whatsapp
+              }
               className="bg-green-600 hover:bg-green-700 active:bg-green-800"
             >
               Confirmar y abrir WhatsApp

@@ -220,7 +220,7 @@ export function ProductList() {
   const [movProd, setMovProd] = useState<Producto | null>(null);
   const [movStep, setMovStep] = useState<"menu" | "cantidad">("menu");
   const [movTipo, setMovTipo] = useState<QuickMovimientoTipo>("entrada_compra");
-  const [movCantidad, setMovCantidad] = useState<number>(1);
+  const [movCantidad, setMovCantidad] = useState<string>("1");
   const [movBusy, setMovBusy] = useState(false);
   const qtyRef = useRef<HTMLInputElement | null>(null);
 
@@ -486,14 +486,14 @@ export function ProductList() {
 
   const openGestionar = (p: Producto) => {
     setMovProd(p);
-    setMovCantidad(1);
+    setMovCantidad("1");
     setMovStep("menu");
     setMovOpen(true);
   };
 
   async function commitQuickMovimiento() {
     if (!establecimientoId || !movProd) return;
-    const n = Math.max(0, Math.trunc(Number(movCantidad)));
+    const n = Math.max(0, Math.trunc(Number(String(movCantidad).replace(",", "."))));
     if (!Number.isFinite(n) || n <= 0) return;
     setMovBusy(true);
     setStockErr(null);
@@ -922,11 +922,10 @@ export function ProductList() {
                 <input
                   className="min-h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base"
                   inputMode="numeric"
-                  type="number"
-                  min={1}
-                  step={1}
+                  type="text"
+                  pattern="[0-9]*"
                   value={movCantidad}
-                  onChange={(e) => setMovCantidad(Number(e.currentTarget.value))}
+                  onChange={(e) => setMovCantidad(e.currentTarget.value)}
                   onFocus={(e) => e.currentTarget.select()}
                   ref={qtyRef}
                   disabled={movBusy}
@@ -934,7 +933,9 @@ export function ProductList() {
                 {movTipo === "entrada_compra" && movProd?.unidades_por_caja && movProd.unidades_por_caja > 1 ? (
                   <p className="text-xs text-slate-500">
                     Unidades por caja: <span className="font-semibold text-slate-700">{movProd.unidades_por_caja}</span> · Equivale a{" "}
-                    <span className="font-semibold text-slate-700">{movCantidad * movProd.unidades_por_caja} uds</span>
+                    <span className="font-semibold text-slate-700">
+                      {Math.max(0, Math.trunc(Number(String(movCantidad).replace(",", ".")))) * movProd.unidades_por_caja} uds
+                    </span>
                   </p>
                 ) : null}
               </div>
