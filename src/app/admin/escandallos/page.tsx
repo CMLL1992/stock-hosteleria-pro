@@ -834,6 +834,21 @@ export default function EscandallosPage() {
                 />
               </label>
               <label className="col-span-1 flex flex-col gap-1 text-xs font-semibold text-slate-600">
+                Uds / caja
+                <input
+                  className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                  inputMode="numeric"
+                  value={String(verRow.p.uds_caja ?? 1)}
+                  onChange={(e) =>
+                    setItems((prev) =>
+                      prev.map((x) =>
+                        x.id === verRow.p.id ? { ...x, uds_caja: Math.max(1, Math.trunc(toNum(e.currentTarget.value))) } : x
+                      )
+                    )
+                  }
+                />
+              </label>
+              <label className="col-span-1 flex flex-col gap-1 text-xs font-semibold text-slate-600">
                 Descuento
                 <input
                   className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
@@ -842,6 +857,19 @@ export default function EscandallosPage() {
                   onChange={(e) =>
                     setItems((prev) =>
                       prev.map((x) => (x.id === verRow.p.id ? { ...x, descuento_valor: toNum(e.currentTarget.value) } : x))
+                    )
+                  }
+                />
+              </label>
+              <label className="col-span-1 flex flex-col gap-1 text-xs font-semibold text-slate-600">
+                Rappel
+                <input
+                  className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                  inputMode="decimal"
+                  value={String(verRow.p.rappel_valor ?? 0)}
+                  onChange={(e) =>
+                    setItems((prev) =>
+                      prev.map((x) => (x.id === verRow.p.id ? { ...x, rappel_valor: toNum(e.currentTarget.value) } : x))
                     )
                   }
                 />
