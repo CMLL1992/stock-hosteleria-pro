@@ -19,6 +19,7 @@ function normalizeWhatsappPhone(input: string): string {
 
 type Proveedor = {
   id: string;
+  establecimiento_id: string;
   nombre: string;
   telefono_whatsapp: string | null;
   categoria?: string | null;
@@ -68,7 +69,7 @@ export default function EditarProveedorPage({ params }: { params: { id: string }
       try {
         const { data, error } = await supabase()
           .from("proveedores")
-          .select("id,nombre,telefono_whatsapp,categoria,notas")
+          .select("id,establecimiento_id,nombre,telefono_whatsapp,categoria,notas")
           .eq("id", params.id)
           .eq("establecimiento_id", activeEstablishmentId)
           .single();
@@ -96,6 +97,12 @@ export default function EditarProveedorPage({ params }: { params: { id: string }
       setErr("No hay establecimiento activo.");
       return;
     }
+    if (prov.establecimiento_id && prov.establecimiento_id !== activeEstablishmentId) {
+      setErr(
+        "El establecimiento activo no coincide con el del proveedor. Cambia al establecimiento correcto en el selector y vuelve a intentarlo."
+      );
+      return;
+    }
     setErr(null);
     const telefono_whatsapp = telefono.trim() ? normalizeWhatsappPhone(telefono) : null;
     const { error, count } = await supabase()
@@ -110,7 +117,7 @@ export default function EditarProveedorPage({ params }: { params: { id: string }
         { count: "exact" }
       )
       .eq("id", prov.id)
-      .eq("establecimiento_id", activeEstablishmentId);
+      .eq("establecimiento_id", prov.establecimiento_id || activeEstablishmentId);
     if (error) {
       setErr(error.message);
       return;
@@ -128,6 +135,12 @@ export default function EditarProveedorPage({ params }: { params: { id: string }
       setErr("No hay establecimiento activo.");
       return;
     }
+    if (prov.establecimiento_id && prov.establecimiento_id !== activeEstablishmentId) {
+      setErr(
+        "El establecimiento activo no coincide con el del proveedor. Cambia al establecimiento correcto en el selector y vuelve a intentarlo."
+      );
+      return;
+    }
     const ok = window.confirm(`¿Eliminar el proveedor "${prov.nombre}"?`);
     if (!ok) return;
     setErr(null);
@@ -135,7 +148,7 @@ export default function EditarProveedorPage({ params }: { params: { id: string }
       .from("proveedores")
       .delete({ count: "exact" })
       .eq("id", prov.id)
-      .eq("establecimiento_id", activeEstablishmentId);
+      .eq("establecimiento_id", prov.establecimiento_id || activeEstablishmentId);
     if (error) {
       setErr(error.message);
       return;
