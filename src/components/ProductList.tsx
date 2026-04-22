@@ -142,7 +142,7 @@ function proveedorNombreOrDefault(p: Producto): string {
 const STOCK_INPUT_CLASS =
   "h-14 w-[5.5rem] shrink-0 rounded-2xl border-2 border-slate-800 bg-white px-2 text-center text-2xl font-black tabular-nums text-slate-900 shadow-inner focus:outline-none focus:ring-4 focus:ring-slate-300";
 
-type QuickMovimientoTipo = "entrada_compra" | "salida_barra" | "devolucion_proveedor";
+type QuickMovimientoTipo = "entrada_compra" | "salida_barra";
 
 function errMsg(e: unknown): string {
   if (e instanceof Error) return e.message;
@@ -324,30 +324,6 @@ export function ProductList() {
     }
   };
 
-  const deltaStock = async (p: Producto, delta: number) => {
-    if (!establecimientoId) return;
-    setBusyId(p.id);
-    setStockErr(null);
-    try {
-      const next = Math.max(0, Math.trunc(Number(p.stock_actual)) + delta);
-      const { error: upErr } = await supabase()
-        .from("productos")
-        .update({ stock_actual: next })
-        .eq("id", p.id)
-        .eq("establecimiento_id", establecimientoId);
-      if (upErr) throw upErr;
-      setStockDraft((d) => ({ ...d, [p.id]: String(next) }));
-      await queryClient.invalidateQueries({ queryKey: ["productos", establecimientoId] });
-      await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", establecimientoId] });
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.error(e);
-      setStockErr(errMsg(e));
-    } finally {
-      setBusyId(null);
-    }
-  };
-
   useEffect(() => {
     if (!movOpen) return;
     const t = window.setTimeout(() => {
@@ -400,6 +376,25 @@ export function ProductList() {
       } else {
         await enqueueMovimiento(payload);
       }
+
+      // Optimistic UI: actualiza caches inmediatamente (sin esperar realtime/refetch)
+      const applyOptimistic = (prev: Producto[]) =>
+        prev.map((x) => {
+          if (x.id !== movProd.id) return x;
+          const deltaStock = movTipo === "entrada_compra" ? n : movTipo === "salida_barra" ? -n : 0;
+          const nextStock = Math.max(0, Math.trunc(Number(x.stock_actual)) + deltaStock);
+          const nextVacios = movTipo === "salida_barra" ? Math.max(0, Math.trunc(Number(x.stock_vacios ?? 0)) + n) : x.stock_vacios;
+          return { ...x, stock_actual: nextStock, stock_vacios: nextVacios };
+        });
+
+      queryClient.setQueryData(["productos", establecimientoId], (old) => {
+        const prev = (old as Producto[] | undefined) ?? [];
+        return applyOptimistic(prev);
+      });
+      queryClient.setQueryData(["dashboard", "productos", establecimientoId], (old) => {
+        const prev = (old as Producto[] | undefined) ?? [];
+        return applyOptimistic(prev);
+      });
 
       await queryClient.invalidateQueries({ queryKey: ["productos", establecimientoId] });
       await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", establecimientoId] });
@@ -580,24 +575,6 @@ export function ProductList() {
                 <div className="mt-4 flex flex-wrap items-stretch gap-2 pl-9">
                   <button
                     type="button"
-                    disabled={busy || p.stock_actual <= 0}
-                    onClick={() => void deltaStock(p, -1)}
-                    className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 text-lg font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-40"
-                    aria-label="Restar una unidad"
-                  >
-                    −
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void deltaStock(p, +1)}
-                    className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 text-lg font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-40"
-                    aria-label="Sumar una unidad"
-                  >
-                    +
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => openGestionar(p)}
                     className="inline-flex min-h-12 flex-1 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
                   >
@@ -719,17 +696,6 @@ export function ProductList() {
                 className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-50"
               >
                 Sacar a Barra
-              </button>
-              <button
-                type="button"
-                disabled={movBusy}
-                onClick={() => {
-                  setMovTipo("devolucion_proveedor");
-                  setMovStep("cantidad");
-                }}
-                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-50"
-              >
-                Devolver a Proveedor
               </button>
               {me?.isAdmin && movProd ? (
                 <Link

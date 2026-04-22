@@ -9,30 +9,26 @@ import { costeNeto, formatEUR, margenBeneficioPct, margenBrutoEUR, ventaNetaSinI
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { MobileHeader } from "@/components/MobileHeader";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
+import { supabaseErrToString } from "@/lib/supabaseErrToString";
 
 type ProductoRow = {
   id: string;
   articulo: string;
+  proveedor_id: string | null;
   precio_tarifa: number | null;
+  uds_caja?: number | null;
   descuento_valor: number | null;
   descuento_tipo: "%" | "€" | null;
+  rappel_valor?: number | null;
   iva_compra: number | null;
   pvp: number | null;
   iva_venta: number | null;
 };
 
+type ProveedorRow = { id: string; nombre: string };
+
 const IVA_OPTIONS = [4, 10, 21] as const;
 const DESC_OPTIONS = ["%", "€"] as const;
-
-function errMsg(e: unknown): string {
-  if (e instanceof Error) return e.message;
-  if (typeof e === "string") return e;
-  try {
-    return JSON.stringify(e);
-  } catch {
-    return String(e);
-  }
-}
 
 function toNum(v: string): number {
   const n = Number(v.replace(",", "."));
@@ -51,7 +47,20 @@ export default function EscandallosPage() {
   const [saved, setSaved] = useState(false);
 
   const [items, setItems] = useState<ProductoRow[]>([]);
+  const [proveedores, setProveedores] = useState<ProveedorRow[]>([]);
   const { activeEstablishmentId } = useActiveEstablishment();
+
+  // "Nuevo escandallo" (form)
+  const [nuevoId, setNuevoId] = useState<string>("");
+  const [nuevoProveedorId, setNuevoProveedorId] = useState<string>("");
+  const [nuevoPrecioTarifa, setNuevoPrecioTarifa] = useState<string>("0");
+  const [nuevoUdsCaja, setNuevoUdsCaja] = useState<string>("0");
+  const [nuevoDescuentoValor, setNuevoDescuentoValor] = useState<string>("0");
+  const [nuevoDescuentoTipo, setNuevoDescuentoTipo] = useState<"%" | "€">("%");
+  const [nuevoRappel, setNuevoRappel] = useState<string>("0");
+  const [nuevoIvaCompra, setNuevoIvaCompra] = useState<number>(10);
+  const [nuevoPvp, setNuevoPvp] = useState<string>("0");
+  const [nuevoIvaVenta, setNuevoIvaVenta] = useState<number>(10);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,7 +73,7 @@ export default function EscandallosPage() {
       })
       .catch((e) => {
         if (cancelled) return;
-        setErr(errMsg(e));
+        setErr(supabaseErrToString(e));
       })
       .finally(() => {
         if (cancelled) return;
@@ -80,19 +89,50 @@ export default function EscandallosPage() {
     if (!activeEstablishmentId) return;
     const col = await resolveProductoTituloColumn(activeEstablishmentId);
     const t = tituloColSql(col);
-    const { data, error } = await supabase()
+    const fullSel = `id,${t},proveedor_id,precio_tarifa,uds_caja,descuento_valor,descuento_tipo,rappel_valor,iva_compra,pvp,iva_venta`;
+    const res = await supabase()
       .from("productos")
-      .select(`id,${t},precio_tarifa,descuento_valor,descuento_tipo,iva_compra,pvp,iva_venta` as "*")
+      .select(fullSel as "*")
       .eq("establecimiento_id", activeEstablishmentId)
       .order(t, { ascending: true });
-    if (error) throw error;
+
+    if (res.error) {
+      const msg = (res.error.message ?? "").toLowerCase();
+      const missing =
+        msg.includes("uds_caja") || msg.includes("rappel_valor") || msg.includes("could not find") || msg.includes("column");
+      if (!missing) throw res.error;
+      const fb = await supabase()
+        .from("productos")
+        .select(`id,${t},proveedor_id,precio_tarifa,descuento_valor,descuento_tipo,iva_compra,pvp,iva_venta` as "*")
+        .eq("establecimiento_id", activeEstablishmentId)
+        .order(t, { ascending: true });
+      if (fb.error) throw fb.error;
+      setItems(
+        ((fb.data ?? []) as unknown as Record<string, unknown>[]).map((r) => ({
+          id: String(r.id ?? ""),
+          articulo: String(r[t] ?? r.articulo ?? r.nombre ?? "").trim() || "—",
+          proveedor_id: r.proveedor_id != null ? String(r.proveedor_id) : null,
+          precio_tarifa: r.precio_tarifa != null ? Number(r.precio_tarifa) : null,
+          descuento_valor: r.descuento_valor != null ? Number(r.descuento_valor) : null,
+          descuento_tipo: (r.descuento_tipo as ProductoRow["descuento_tipo"]) ?? null,
+          iva_compra: r.iva_compra != null ? Number(r.iva_compra) : null,
+          pvp: r.pvp != null ? Number(r.pvp) : null,
+          iva_venta: r.iva_venta != null ? Number(r.iva_venta) : null
+        }))
+      );
+      return;
+    }
+
     setItems(
-      ((data ?? []) as unknown as Record<string, unknown>[]).map((r) => ({
+      ((res.data ?? []) as unknown as Record<string, unknown>[]).map((r) => ({
         id: String(r.id ?? ""),
         articulo: String(r[t] ?? r.articulo ?? r.nombre ?? "").trim() || "—",
+        proveedor_id: r.proveedor_id != null ? String(r.proveedor_id) : null,
         precio_tarifa: r.precio_tarifa != null ? Number(r.precio_tarifa) : null,
+        uds_caja: r.uds_caja != null ? Number(r.uds_caja) : null,
         descuento_valor: r.descuento_valor != null ? Number(r.descuento_valor) : null,
         descuento_tipo: (r.descuento_tipo as ProductoRow["descuento_tipo"]) ?? null,
+        rappel_valor: r.rappel_valor != null ? Number(r.rappel_valor) : null,
         iva_compra: r.iva_compra != null ? Number(r.iva_compra) : null,
         pvp: r.pvp != null ? Number(r.pvp) : null,
         iva_venta: r.iva_venta != null ? Number(r.iva_venta) : null
@@ -103,8 +143,30 @@ export default function EscandallosPage() {
   useEffect(() => {
     if (role !== "admin" && role !== "superadmin") return;
     if (!activeEstablishmentId) return;
-    load().catch((e) => setErr(errMsg(e)));
+    load().catch((e) => setErr(supabaseErrToString(e)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeEstablishmentId, role]);
+
+  useEffect(() => {
+    if (role !== "admin" && role !== "superadmin") return;
+    if (!activeEstablishmentId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await supabase()
+          .from("proveedores")
+          .select("id,nombre")
+          .eq("establecimiento_id", activeEstablishmentId)
+          .order("nombre", { ascending: true });
+        if (res.error) throw res.error;
+        if (!cancelled) setProveedores((res.data as ProveedorRow[]) ?? []);
+      } catch (e) {
+        if (!cancelled) setErr(supabaseErrToString(e));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [activeEstablishmentId, role]);
 
   async function saveRow(p: ProductoRow) {
@@ -114,21 +176,97 @@ export default function EscandallosPage() {
     try {
       if (!activeEstablishmentId) throw new Error("No hay establecimiento activo.");
       const payload = {
+        proveedor_id: p.proveedor_id,
         precio_tarifa: clampNonNeg(Number(p.precio_tarifa ?? 0)),
+        uds_caja: clampNonNeg(Number(p.uds_caja ?? 0)),
         descuento_valor: clampNonNeg(Number(p.descuento_valor ?? 0)),
         descuento_tipo: (p.descuento_tipo ?? "%") as "%" | "€",
+        rappel_valor: clampNonNeg(Number(p.rappel_valor ?? 0)),
         iva_compra: Number(p.iva_compra ?? 10),
         pvp: clampNonNeg(Number(p.pvp ?? 0)),
         iva_venta: Number(p.iva_venta ?? 10)
       };
-      const { error } = await supabase()
+      const res = await supabase()
         .from("productos")
         .update(payload)
         .eq("id", p.id)
         .eq("establecimiento_id", activeEstablishmentId);
-      if (error) throw error;
+      if (!res.error) {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 1200);
+        return;
+      }
+      // Compat: si faltan columnas nuevas en BD, reintentamos sin ellas.
+      const msg = (res.error.message ?? "").toLowerCase();
+      const missing = msg.includes("uds_caja") || msg.includes("rappel_valor");
+      if (!missing) throw res.error;
+      const { error: fbErr } = await supabase()
+        .from("productos")
+        .update({
+          proveedor_id: p.proveedor_id,
+          precio_tarifa: clampNonNeg(Number(p.precio_tarifa ?? 0)),
+          descuento_valor: clampNonNeg(Number(p.descuento_valor ?? 0)),
+          descuento_tipo: (p.descuento_tipo ?? "%") as "%" | "€",
+          iva_compra: Number(p.iva_compra ?? 10),
+          pvp: clampNonNeg(Number(p.pvp ?? 0)),
+          iva_venta: Number(p.iva_venta ?? 10)
+        })
+        .eq("id", p.id)
+        .eq("establecimiento_id", activeEstablishmentId);
+      if (fbErr) throw fbErr;
       setSaved(true);
       setTimeout(() => setSaved(false), 1200);
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  async function guardarNuevo() {
+    if (!activeEstablishmentId) return;
+    if (!nuevoId) return;
+    setErr(null);
+    setSaving(nuevoId);
+    try {
+      const payload = {
+        proveedor_id: nuevoProveedorId || null,
+        precio_tarifa: clampNonNeg(toNum(nuevoPrecioTarifa)),
+        uds_caja: clampNonNeg(Math.trunc(toNum(nuevoUdsCaja))),
+        descuento_valor: clampNonNeg(toNum(nuevoDescuentoValor)),
+        descuento_tipo: nuevoDescuentoTipo,
+        rappel_valor: clampNonNeg(toNum(nuevoRappel)),
+        iva_compra: Number(nuevoIvaCompra),
+        pvp: clampNonNeg(toNum(nuevoPvp)),
+        iva_venta: Number(nuevoIvaVenta)
+      };
+      const res = await supabase().from("productos").update(payload).eq("id", nuevoId).eq("establecimiento_id", activeEstablishmentId);
+      if (!res.error) {
+        await load();
+        setSaved(true);
+        setTimeout(() => setSaved(false), 1200);
+        return;
+      }
+      const msg = (res.error.message ?? "").toLowerCase();
+      const missing = msg.includes("uds_caja") || msg.includes("rappel_valor");
+      if (!missing) throw res.error;
+      const { error: fbErr } = await supabase()
+        .from("productos")
+        .update({
+          proveedor_id: nuevoProveedorId || null,
+          precio_tarifa: clampNonNeg(toNum(nuevoPrecioTarifa)),
+          descuento_valor: clampNonNeg(toNum(nuevoDescuentoValor)),
+          descuento_tipo: nuevoDescuentoTipo,
+          iva_compra: Number(nuevoIvaCompra),
+          pvp: clampNonNeg(toNum(nuevoPvp)),
+          iva_venta: Number(nuevoIvaVenta)
+        })
+        .eq("id", nuevoId)
+        .eq("establecimiento_id", activeEstablishmentId);
+      if (fbErr) throw fbErr;
+      await load();
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1200);
+    } catch (e) {
+      setErr(supabaseErrToString(e));
     } finally {
       setSaving(null);
     }
@@ -172,6 +310,162 @@ export default function EscandallosPage() {
       {err ? (
         <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{err}</p>
       ) : null}
+
+      {/* Nuevo Escandallo (UX guiada) */}
+      <section className="mb-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-100">
+        <h2 className="text-base font-bold text-slate-900">Nuevo escandallo</h2>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
+            Producto
+            <select
+              className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+              value={nuevoId}
+              onChange={(e) => {
+                const id = e.currentTarget.value;
+                setNuevoId(id);
+                const p = items.find((x) => x.id === id);
+                if (p) {
+                  setNuevoProveedorId(p.proveedor_id ?? "");
+                  setNuevoPrecioTarifa(String(p.precio_tarifa ?? 0));
+                  setNuevoUdsCaja(String(p.uds_caja ?? 0));
+                  setNuevoDescuentoValor(String(p.descuento_valor ?? 0));
+                  setNuevoDescuentoTipo((p.descuento_tipo ?? "%") as "%" | "€");
+                  setNuevoRappel(String(p.rappel_valor ?? 0));
+                  setNuevoIvaCompra(Number(p.iva_compra ?? 10));
+                  setNuevoPvp(String(p.pvp ?? 0));
+                  setNuevoIvaVenta(Number(p.iva_venta ?? 10));
+                }
+              }}
+              aria-label="Producto"
+            >
+              <option value="">(Selecciona…)</option>
+              {items.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.articulo}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
+            Proveedor
+            <select
+              className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+              value={nuevoProveedorId}
+              onChange={(e) => setNuevoProveedorId(e.currentTarget.value)}
+              aria-label="Proveedor"
+            >
+              <option value="">(Sin proveedor)</option>
+              {proveedores.map((pr) => (
+                <option key={pr.id} value={pr.id}>
+                  {pr.nombre}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
+            Precio tarifa / caja
+            <input
+              className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+              inputMode="decimal"
+              value={nuevoPrecioTarifa}
+              onChange={(e) => setNuevoPrecioTarifa(e.currentTarget.value)}
+            />
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
+            Uds / caja
+            <input
+              className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+              inputMode="numeric"
+              value={nuevoUdsCaja}
+              onChange={(e) => setNuevoUdsCaja(e.currentTarget.value)}
+            />
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
+            Descuento
+            <input
+              className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+              inputMode="decimal"
+              value={nuevoDescuentoValor}
+              onChange={(e) => setNuevoDescuentoValor(e.currentTarget.value)}
+            />
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
+            Tipo descuento
+            <select
+              className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+              value={nuevoDescuentoTipo}
+              onChange={(e) => setNuevoDescuentoTipo(e.currentTarget.value as "%" | "€")}
+            >
+              {DESC_OPTIONS.map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
+            Rappel
+            <input
+              className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+              inputMode="decimal"
+              value={nuevoRappel}
+              onChange={(e) => setNuevoRappel(e.currentTarget.value)}
+            />
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
+            IVA (compra)
+            <select
+              className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+              value={nuevoIvaCompra}
+              onChange={(e) => setNuevoIvaCompra(Number(e.currentTarget.value))}
+            >
+              {IVA_OPTIONS.map((v) => (
+                <option key={v} value={v}>
+                  {v}%
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
+            PVP por botella
+            <input
+              className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+              inputMode="decimal"
+              value={nuevoPvp}
+              onChange={(e) => setNuevoPvp(e.currentTarget.value)}
+            />
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
+            IVA (venta)
+            <select
+              className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+              value={nuevoIvaVenta}
+              onChange={(e) => setNuevoIvaVenta(Number(e.currentTarget.value))}
+            >
+              {IVA_OPTIONS.map((v) => (
+                <option key={v} value={v}>
+                  {v}%
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="mt-4">
+          <Button onClick={() => void guardarNuevo()} disabled={!nuevoId || saving === nuevoId} className="min-h-11 w-full sm:w-auto">
+            {saving === nuevoId ? "Guardando…" : "Guardar escandallo"}
+          </Button>
+        </div>
+      </section>
 
       <div className="flex flex-col gap-3">
         {rows.map(({ p, cn, vn, mb, mp, healthy }) => (

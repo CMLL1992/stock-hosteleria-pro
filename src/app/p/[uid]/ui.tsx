@@ -69,7 +69,7 @@ async function createMovimientoOnline(input: {
   client_uuid: string;
   producto_id: string;
   establecimiento_id: string;
-  tipo: "entrada" | "salida" | "pedido" | "salida_barra" | "entrada_vacio" | "devolucion_proveedor";
+  tipo: "entrada" | "salida" | "pedido" | "salida_barra" | "entrada_vacio";
   cantidad: number;
   usuario_id: string;
   timestamp: string;
@@ -84,7 +84,7 @@ export function ProductByUidClient({ uid }: { uid: string }) {
   const [producto, setProducto] = useState<Producto | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
-  const [modo, setModo] = useState<"entrada" | "salida" | "devolucion_proveedor">("entrada");
+  const [modo, setModo] = useState<"entrada" | "salida">("entrada");
   const [cantidad, setCantidad] = useState<number>(0);
   const qtyRef = useRef<HTMLInputElement | null>(null);
   const [saved, setSaved] = useState(false);
@@ -167,7 +167,7 @@ export function ProductByUidClient({ uid }: { uid: string }) {
   }, [pedidoCantidad, producto?.articulo, producto?.proveedor?.nombre, producto?.proveedor?.telefono_whatsapp]);
 
   async function registrar(
-    tipo: "entrada" | "salida" | "pedido" | "salida_barra" | "entrada_vacio" | "devolucion_proveedor",
+    tipo: "entrada" | "salida" | "pedido" | "salida_barra" | "entrada_vacio",
     cantidadMovimiento: number,
     opts?: { genera_vacio?: boolean }
   ) {
@@ -258,18 +258,9 @@ export function ProductByUidClient({ uid }: { uid: string }) {
               >
                 A barra
               </Button>
-              <Button
-                onClick={async () => {
-                  setErr(null);
-                  setCantidad(1);
-                  setSaved(false);
-                  setModo("devolucion_proveedor");
-                  setMovOpen(true);
-                }}
-                className="bg-slate-900 hover:bg-slate-950"
-              >
-                Devolver vacío
-              </Button>
+              <div className="min-h-12 rounded-2xl border border-gray-100 bg-gray-50 px-3 text-sm font-semibold text-gray-500 flex items-center justify-center">
+                Envases: desde Dashboard
+              </div>
             </div>
             <Button
               onClick={() => setMovOpen(true)}
@@ -302,7 +293,7 @@ export function ProductByUidClient({ uid }: { uid: string }) {
         }}
       >
         <div className="space-y-3">
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             <button
               className={[
                 "min-h-12 rounded-2xl border px-3 text-sm font-semibold",
@@ -320,15 +311,6 @@ export function ProductByUidClient({ uid }: { uid: string }) {
               onClick={() => setModo("salida")}
             >
               A barra
-            </button>
-            <button
-              className={[
-                "min-h-12 rounded-2xl border px-3 text-sm font-semibold",
-                modo === "devolucion_proveedor" ? "border-gray-900 bg-gray-900 text-white" : "border-gray-100 bg-white text-gray-700"
-              ].join(" ")}
-              onClick={() => setModo("devolucion_proveedor")}
-            >
-              Devolver vacío
             </button>
           </div>
 
@@ -366,9 +348,6 @@ export function ProductByUidClient({ uid }: { uid: string }) {
                   window.setTimeout(() => setSaved(false), 1200);
                   return;
                 }
-                await registrar("devolucion_proveedor", Math.abs(n));
-                setSaved(true);
-                window.setTimeout(() => setSaved(false), 1200);
               }}
             >
               Confirmar movimiento

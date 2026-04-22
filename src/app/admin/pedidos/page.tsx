@@ -25,6 +25,7 @@ type ProductoPedido = {
   articulo: string;
   unidad: string | null;
   proveedor_id: string | null;
+  categoria: string | null;
 };
 
 function parseQty(raw: string): number {
@@ -35,7 +36,7 @@ function parseQty(raw: string): number {
 async function loadData(establecimientoId: string): Promise<{ proveedores: ProveedorRow[]; productos: ProductoPedido[] }> {
   const col = await resolveProductoTituloColumn(establecimientoId);
   const t = tituloColSql(col);
-  const prodSelect = `id,${t},proveedor_id,unidad,proveedor:proveedores(nombre,telefono_whatsapp)`;
+  const prodSelect = `id,${t},proveedor_id,unidad,categoria,proveedor:proveedores(nombre,telefono_whatsapp)`;
 
   const provRes = await supabase()
     .from("proveedores")
@@ -56,7 +57,8 @@ async function loadData(establecimientoId: string): Promise<{ proveedores: Prove
       id: String(r.id ?? ""),
       articulo: String(r[t] ?? r.articulo ?? r.nombre ?? "").trim() || "—",
       unidad: r.unidad != null ? String(r.unidad) : null,
-      proveedor_id: r.proveedor_id != null ? String(r.proveedor_id) : null
+      proveedor_id: r.proveedor_id != null ? String(r.proveedor_id) : null,
+      categoria: r.categoria != null ? String(r.categoria) : null
     }));
     return { proveedores: (provRes.data as ProveedorRow[]) ?? [], productos };
   }
@@ -69,7 +71,7 @@ async function loadData(establecimientoId: string): Promise<{ proveedores: Prove
 
   const fb = await supabase()
     .from("productos")
-    .select(`id,${t},proveedor_id,unidad` as "*")
+    .select(`id,${t},proveedor_id,unidad,categoria` as "*")
     .eq("establecimiento_id", establecimientoId)
     .order(t, { ascending: true });
   if (fb.error) throw fb.error;
@@ -77,9 +79,28 @@ async function loadData(establecimientoId: string): Promise<{ proveedores: Prove
     id: String(r.id ?? ""),
     articulo: String(r[t] ?? r.articulo ?? r.nombre ?? "").trim() || "—",
     unidad: r.unidad != null ? String(r.unidad) : null,
-    proveedor_id: r.proveedor_id != null ? String(r.proveedor_id) : null
+    proveedor_id: r.proveedor_id != null ? String(r.proveedor_id) : null,
+    categoria: r.categoria != null ? String(r.categoria) : null
   }));
   return { proveedores: (provRes.data as ProveedorRow[]) ?? [], productos };
+}
+
+function normCat(c: string | null | undefined): string {
+  const s = String(c ?? "").trim();
+  return s || "Otros";
+}
+
+const CAT_ORDER = ["Cervezas", "Refrescos", "Agua", "Vinos", "Cavas", "Licores", "Destilados", "Cafés", "Otros"];
+
+function sortCats(a: string, b: string): number {
+  const ia = CAT_ORDER.findIndex((x) => x.toLowerCase() === a.toLowerCase());
+  const ib = CAT_ORDER.findIndex((x) => x.toLowerCase() === b.toLowerCase());
+  if (ia !== -1 || ib !== -1) {
+    const ra = ia === -1 ? 999 : ia;
+    const rb = ib === -1 ? 999 : ib;
+    if (ra !== rb) return ra - rb;
+  }
+  return a.localeCompare(b, "es");
 }
 
 export default function PedidosPage() {
@@ -255,6 +276,13 @@ export default function PedidosPage() {
               });
               const tieneLineas = lineasWa.some((l) => l.cantidad > 0);
 
+              const porCat = new Map<string, ProductoPedido[]>();
+              for (const p of g.productos) {
+                const cat = normCat(p.categoria);
+                porCat.set(cat, [...(porCat.get(cat) ?? []), p]);
+              }
+              const cats = Array.from(porCat.keys()).sort(sortCats);
+
               return (
                 <li key={key} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-100">
                   <button
@@ -271,29 +299,36 @@ export default function PedidosPage() {
 
                   {expanded ? (
                     <div className="space-y-4 border-t border-slate-100 px-4 pb-4 pt-3">
-                      <ul className="flex flex-col gap-4">
-                        {g.productos.map((p) => (
-                          <li key={p.id} className="flex items-center gap-3">
-                            <div className="min-w-0 flex-1">
-                              <p className="font-semibold leading-snug text-slate-900">{p.articulo}</p>
-                            </div>
-                            <label className="sr-only" htmlFor={`qty-${p.id}`}>
-                              Cantidad para {p.articulo}
-                            </label>
-                            <input
-                              id={`qty-${p.id}`}
-                              type="number"
-                              inputMode="numeric"
-                              pattern="[0-9]*"
-                              placeholder="0"
-                              className="h-16 w-24 shrink-0 rounded-2xl border-2 border-slate-800 bg-white px-2 text-center text-3xl font-black tabular-nums text-slate-900 shadow-inner focus:outline-none focus:ring-4 focus:ring-slate-300"
-                              value={qty[p.id] ?? ""}
-                              onChange={(e) => setQty((prev) => ({ ...prev, [p.id]: e.target.value }))}
-                              min={0}
-                            />
-                          </li>
+                      <div className="space-y-4">
+                        {cats.map((cat) => (
+                          <section key={cat} className="space-y-2">
+                            <p className="text-xs font-bold uppercase tracking-wide text-slate-600">{cat}</p>
+                            <ul className="flex flex-col gap-4">
+                              {(porCat.get(cat) ?? []).map((p) => (
+                                <li key={p.id} className="flex items-center gap-3">
+                                  <div className="min-w-0 flex-1">
+                                    <p className="font-semibold leading-snug text-slate-900">{p.articulo}</p>
+                                  </div>
+                                  <label className="sr-only" htmlFor={`qty-${p.id}`}>
+                                    Cantidad para {p.articulo}
+                                  </label>
+                                  <input
+                                    id={`qty-${p.id}`}
+                                    type="number"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    placeholder="0"
+                                    className="h-16 w-24 shrink-0 rounded-2xl border-2 border-slate-800 bg-white px-2 text-center text-3xl font-black tabular-nums text-slate-900 shadow-inner focus:outline-none focus:ring-4 focus:ring-slate-300"
+                                    value={qty[p.id] ?? ""}
+                                    onChange={(e) => setQty((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                                    min={0}
+                                  />
+                                </li>
+                              ))}
+                            </ul>
+                          </section>
                         ))}
-                      </ul>
+                      </div>
 
                       <a
                         href={urlWa}

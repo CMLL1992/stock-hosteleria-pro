@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { MobileHeader } from "@/components/MobileHeader";
 import { useMyRole } from "@/lib/useMyRole";
+import { supabaseErrToString } from "@/lib/supabaseErrToString";
 
 type AdminNavItem = {
   id: string;
@@ -117,7 +118,7 @@ export function AdminHomeClient({ denied }: { denied?: string | null } = {}) {
     if (error) {
       return (
         <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-          {(error as Error).message}
+          {supabaseErrToString(error)}
         </p>
       );
     }

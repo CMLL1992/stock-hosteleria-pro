@@ -1,15 +1,23 @@
 "use client";
 
-import { useMemo } from "react";
-import Link from "next/link";
+import { useMemo, useState } from "react";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchDashboardProductos } from "@/lib/adminDashboardData";
 import { useProductosRealtime } from "@/lib/useProductosRealtime";
+import { Drawer } from "@/components/ui/Drawer";
+import { requireUserId } from "@/lib/session";
+import { enqueueMovimiento, newClientUuid } from "@/lib/offlineQueue";
+import { supabase } from "@/lib/supabase";
+import { supabaseErrToString } from "@/lib/supabaseErrToString";
 
 export function DashboardClient() {
   const { activeEstablishmentId: establecimientoId, activeEstablishmentName, me } = useActiveEstablishment();
   const queryClient = useQueryClient();
+  const [envasesOpen, setEnvasesOpen] = useState(false);
+  const [confirmProd, setConfirmProd] = useState<null | { id: string; articulo: string; stock_vacios: number }>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [envasesErr, setEnvasesErr] = useState<string | null>(null);
 
   useProductosRealtime({
     establecimientoId,
@@ -76,6 +84,60 @@ export function DashboardClient() {
     });
   }, [rows]);
 
+  const productosConVacios = useMemo(() => {
+    return rows
+      .filter((p) => Number(p.stock_vacios ?? 0) > 0)
+      .sort((a, b) => Number(b.stock_vacios ?? 0) - Number(a.stock_vacios ?? 0));
+  }, [rows]);
+
+  async function confirmarDevolucionTotal() {
+    if (!establecimientoId || !confirmProd) return;
+    const cantidad = Math.max(0, Math.trunc(Number(confirmProd.stock_vacios ?? 0)));
+    if (cantidad <= 0) {
+      setConfirmProd(null);
+      return;
+    }
+    setConfirming(true);
+    setEnvasesErr(null);
+    try {
+      const usuario_id = await requireUserId();
+      const payload = {
+        client_uuid: newClientUuid(),
+        producto_id: confirmProd.id,
+        establecimiento_id: establecimientoId,
+        tipo: "devolucion_proveedor" as const,
+        cantidad,
+        usuario_id,
+        timestamp: new Date().toISOString()
+      };
+
+      if (typeof navigator !== "undefined" && navigator.onLine) {
+        const { error } = await supabase().from("movimientos").upsert(payload, { onConflict: "client_uuid", ignoreDuplicates: true });
+        if (error) throw error;
+      } else {
+        await enqueueMovimiento(payload);
+      }
+
+      // Optimistic: asumimos devolución completa
+      queryClient.setQueryData(["dashboard", "productos", establecimientoId], (old) => {
+        const prev = (old as typeof rows | undefined) ?? [];
+        return prev.map((p) => (p.id === confirmProd.id ? { ...p, stock_vacios: 0 } : p));
+      });
+      queryClient.setQueryData(["productos", establecimientoId], (old) => {
+        const prev = (old as typeof rows | undefined) ?? [];
+        return prev.map((p) => (p.id === confirmProd.id ? { ...p, stock_vacios: 0 } : p));
+      });
+
+      await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", establecimientoId] });
+      await queryClient.invalidateQueries({ queryKey: ["productos", establecimientoId] });
+      setConfirmProd(null);
+    } catch (e) {
+      setEnvasesErr(supabaseErrToString(e));
+    } finally {
+      setConfirming(false);
+    }
+  }
+
   if (productosQuery.isLoading) {
     return <p className="text-base text-slate-500">Cargando stock…</p>;
   }
@@ -104,9 +166,10 @@ export function DashboardClient() {
           <p className="mt-1 text-center text-[11px] text-red-600/90">Stock actual ≤ stock mínimo</p>
           <p className="mt-4 text-center text-5xl font-black tabular-nums tracking-tight text-red-600">{bajoMinimos.length}</p>
         </div>
-        <Link
-          href="/stock?vacios=1"
-          className="block rounded-3xl border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm hover:bg-slate-50"
+        <button
+          type="button"
+          onClick={() => setEnvasesOpen(true)}
+          className="block rounded-3xl border border-slate-200 bg-white p-6 text-left text-sm text-slate-600 shadow-sm hover:bg-slate-50"
         >
           <p className="font-semibold text-slate-900">Envases para devolver</p>
           <p className="mt-2 text-sm text-slate-600">Total en stock de vacíos (solo positivos).</p>
@@ -134,20 +197,67 @@ export function DashboardClient() {
                   </li>
                 ))}
               </ul>
-              <p className="mt-2 text-xs text-slate-500">Toca para ver inventario de vacíos.</p>
+              <p className="mt-2 text-xs text-slate-500">Toca para devolver envases.</p>
             </div>
           ) : (
             <p className="mt-4 text-xs text-slate-500">Sin envases pendientes.</p>
           )}
-        </Link>
+        </button>
       </div>
 
-      <Link
-        href="/stock?compra=1"
-        className="flex min-h-12 w-full items-center justify-center rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
-      >
-        Ver lista de compra en inventario
-      </Link>
+      <Drawer open={envasesOpen} title="Envases para devolver" onClose={() => setEnvasesOpen(false)}>
+        <div className="space-y-3 pb-4">
+          {envasesErr ? (
+            <p className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{envasesErr}</p>
+          ) : null}
+
+          {productosConVacios.length === 0 ? (
+            <p className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">Sin envases pendientes.</p>
+          ) : (
+            <ul className="space-y-2">
+              {productosConVacios.map((p) => (
+                <li key={p.id}>
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-sm hover:bg-slate-50"
+                    onClick={() => setConfirmProd({ id: p.id, articulo: p.articulo, stock_vacios: p.stock_vacios })}
+                  >
+                    <span className="min-w-0 flex-1 truncate font-semibold text-slate-900">{p.articulo}</span>
+                    <span className="shrink-0 font-bold tabular-nums text-slate-900">{p.stock_vacios}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {confirmProd ? (
+            <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-sm font-semibold text-slate-900">Confirmar devolución</p>
+              <p className="mt-1 text-sm text-slate-700">
+                Total de envases a devolver de este producto: <span className="font-bold">{confirmProd.stock_vacios}</span>
+              </p>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 hover:bg-slate-50"
+                  onClick={() => setConfirmProd(null)}
+                  disabled={confirming}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="min-h-12 rounded-2xl bg-black px-4 text-sm font-semibold text-white hover:bg-slate-900 disabled:opacity-50"
+                  onClick={() => void confirmarDevolucionTotal()}
+                  disabled={confirming}
+                >
+                  {confirming ? "Registrando…" : "Confirmar"}
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </Drawer>
     </div>
   );
 }

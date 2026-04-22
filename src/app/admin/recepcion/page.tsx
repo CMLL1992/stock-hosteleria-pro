@@ -9,6 +9,8 @@ import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTitulo
 import { enqueueMovimiento, newClientUuid } from "@/lib/offlineQueue";
 import { requireUserId } from "@/lib/session";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
+import { Drawer } from "@/components/ui/Drawer";
+import { QrScanner } from "@/components/scanner/QrScanner";
 
 type ProveedorRow = { id: string; nombre: string };
 
@@ -19,7 +21,7 @@ type ProductoRow = {
   stock_vacios: number;
 };
 
-type RecepcionItem = { producto_id: string; recibido: number; vacios: number };
+type RecepcionItem = { producto_id: string; recibido: number };
 type ConfirmRecepcionResult = { ok?: boolean };
 
 function toInt(v: unknown): number {
@@ -49,9 +51,28 @@ export default function RecepcionPage() {
 
   const [productos, setProductos] = useState<ProductoRow[]>([]);
   const [recibido, setRecibido] = useState<Record<string, string>>({});
-  const [vacios, setVacios] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [confirming, setConfirming] = useState(false);
+
+  // Escanear albarán (comparar) - modo consulta (NO guarda nada)
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [compareStep, setCompareStep] = useState<"scan" | "compare">("scan");
+  const [compareProd, setCompareProd] = useState<null | { id: string; articulo: string; precio_tarifa: number }>(null);
+  const [comparePrecio, setComparePrecio] = useState<string>("");
+  const [compareMsg, setCompareMsg] = useState<string | null>(null);
+
+  function extractProductId(decodedText: string): string | null {
+    const raw = decodedText.trim();
+    if (!raw) return null;
+    try {
+      const u = new URL(raw);
+      const id = u.searchParams.get("id");
+      if (id) return decodeURIComponent(id);
+    } catch {
+      // ignore
+    }
+    return raw;
+  }
 
   useEffect(() => {
     if (!me?.isAdmin) return;
@@ -114,11 +135,6 @@ export default function RecepcionPage() {
           for (const p of rows) if (next[p.id] === undefined) next[p.id] = "";
           return next;
         });
-        setVacios((prev) => {
-          const next = { ...prev };
-          for (const p of rows) if (next[p.id] === undefined) next[p.id] = "";
-          return next;
-        });
       } catch (e) {
         if (cancelled) return;
         setErr(supabaseErrToString(e));
@@ -136,10 +152,9 @@ export default function RecepcionPage() {
   const anyQty = useMemo(() => {
     for (const p of productos) {
       if (toInt(recibido[p.id]) > 0) return true;
-      if (toInt(vacios[p.id]) > 0) return true;
     }
     return false;
-  }, [productos, recibido, vacios]);
+  }, [productos, recibido]);
 
   async function confirmar() {
     if (!activeEstablishmentId || !proveedorId) return;
@@ -150,10 +165,9 @@ export default function RecepcionPage() {
       const items = productos
         .map((p) => ({
           producto_id: p.id,
-          recibido: toInt(recibido[p.id]),
-          vacios: toInt(vacios[p.id])
+          recibido: toInt(recibido[p.id])
         }))
-        .filter((x) => x.recibido > 0 || x.vacios > 0);
+        .filter((x) => x.recibido > 0);
 
       if (items.length === 0) return;
 
@@ -182,28 +196,11 @@ export default function RecepcionPage() {
               proveedor_id: proveedorId
             });
           }
-          if (it.vacios > 0) {
-            await enqueueMovimiento({
-              client_uuid: newClientUuid(),
-              producto_id: it.producto_id,
-              establecimiento_id: activeEstablishmentId,
-              tipo: "devolucion_proveedor",
-              cantidad: it.vacios,
-              usuario_id,
-              timestamp: ts,
-              proveedor_id: proveedorId
-            });
-          }
         }
       }
 
       setToast({ kind: "ok", msg: `Mercancía de ${proveedorNombre || "proveedor"} registrada` });
       setRecibido((prev) => {
-        const next = { ...prev };
-        for (const p of productos) next[p.id] = "";
-        return next;
-      });
-      setVacios((prev) => {
         const next = { ...prev };
         for (const p of productos) next[p.id] = "";
         return next;
@@ -236,6 +233,20 @@ export default function RecepcionPage() {
           <h1 className="text-xl font-semibold">Recepción de pedidos</h1>
           <p className="mt-1 text-sm text-slate-600">Selecciona proveedor, introduce cantidades y confirma.</p>
         </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            setCompareOpen(true);
+            setCompareStep("scan");
+            setCompareProd(null);
+            setComparePrecio("");
+            setCompareMsg(null);
+          }}
+          className="mb-4 inline-flex min-h-12 w-full items-center justify-center rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+        >
+          Escanear Albarán (Comparar)
+        </button>
 
         {toast ? (
           <div className={["mb-3 rounded-2xl border p-3 text-sm font-semibold", toastKindClass(toast.kind)].join(" ")}>
@@ -276,21 +287,18 @@ export default function RecepcionPage() {
           </p>
         ) : (
           <section className="mt-4 space-y-3">
-            <div className="grid grid-cols-[1fr_96px_96px] gap-2 px-1 text-xs font-bold uppercase tracking-wide text-slate-600">
+            <div className="grid grid-cols-[1fr_96px] gap-2 px-1 text-xs font-bold uppercase tracking-wide text-slate-600">
               <span>Producto</span>
               <span className="text-center">Recibido</span>
-              <span className="text-center">Vacíos</span>
             </div>
 
             <ul className="flex flex-col gap-3">
               {productos.map((p) => (
                 <li key={p.id} className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="grid grid-cols-[1fr_96px_96px] items-center gap-2">
+                  <div className="grid grid-cols-[1fr_96px] items-center gap-2">
                     <div className="min-w-0">
                       <p className="truncate text-base font-bold text-slate-900">{p.articulo}</p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {p.unidad ?? "—"} · Vacíos actuales: <span className="font-mono font-semibold">{p.stock_vacios}</span>
-                      </p>
+                      <p className="mt-1 text-xs text-slate-500">{p.unidad ?? "—"}</p>
                     </div>
 
                     <input
@@ -304,19 +312,6 @@ export default function RecepcionPage() {
                       onChange={(e) => setRecibido((prev) => ({ ...prev, [p.id]: e.currentTarget.value }))}
                       disabled={confirming}
                       aria-label={`Cantidad recibida para ${p.articulo}`}
-                    />
-
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      min={0}
-                      placeholder="0"
-                      className="h-16 w-24 rounded-2xl border-2 border-sky-900 bg-white px-2 text-center text-3xl font-black tabular-nums text-sky-900 shadow-inner focus:outline-none focus:ring-4 focus:ring-sky-200"
-                      value={vacios[p.id] ?? ""}
-                      onChange={(e) => setVacios((prev) => ({ ...prev, [p.id]: e.currentTarget.value }))}
-                      disabled={confirming}
-                      aria-label={`Vacíos devueltos para ${p.articulo}`}
                     />
                   </div>
                 </li>
@@ -340,6 +335,103 @@ export default function RecepcionPage() {
           </section>
         )}
       </main>
+
+      <Drawer
+        open={compareOpen}
+        title="Comparar precio (sin guardar)"
+        onClose={() => {
+          setCompareOpen(false);
+          setCompareMsg(null);
+        }}
+      >
+        <div className="space-y-3 pb-4">
+          {compareStep === "scan" ? (
+            <div className="overflow-hidden rounded-2xl border border-slate-200">
+              <QrScanner
+                onDetected={async (txt) => {
+                  const pid = extractProductId(txt);
+                  if (!pid || !activeEstablishmentId) return;
+                  try {
+                    const { data, error } = await supabase()
+                      .from("productos")
+                      .select("id,articulo,nombre,precio_tarifa")
+                      .eq("id", pid)
+                      .eq("establecimiento_id", activeEstablishmentId)
+                      .maybeSingle();
+                    if (error) throw error;
+                    const row = (data ?? null) as null | { id?: string; articulo?: string | null; nombre?: string | null; precio_tarifa?: unknown };
+                    if (!row?.id) throw new Error("Producto no encontrado para este establecimiento.");
+                    setCompareProd({
+                      id: String(row.id),
+                      articulo: String(row.articulo ?? row.nombre ?? "—").trim() || "—",
+                      precio_tarifa: Number(row.precio_tarifa ?? 0) || 0
+                    });
+                    setCompareStep("compare");
+                  } catch (e) {
+                    setCompareMsg(supabaseErrToString(e));
+                  }
+                }}
+              />
+            </div>
+          ) : null}
+
+          {compareStep === "compare" && compareProd ? (
+            <div className="space-y-3">
+              {compareMsg ? (
+                <p className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{compareMsg}</p>
+              ) : null}
+              <p className="text-sm font-semibold text-slate-900">{compareProd.articulo}</p>
+              <p className="text-sm text-slate-600">
+                Precio guardado (tarifa): <span className="font-semibold tabular-nums text-slate-900">{compareProd.precio_tarifa.toFixed(2)}€</span>
+              </p>
+
+              <label className="block text-sm font-semibold text-slate-900">
+                Precio en albarán
+                <input
+                  className="mt-1 min-h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base tabular-nums text-slate-900"
+                  inputMode="decimal"
+                  value={comparePrecio}
+                  onChange={(e) => setComparePrecio(e.currentTarget.value)}
+                  placeholder="0,00"
+                />
+              </label>
+
+              <button
+                type="button"
+                className="min-h-12 w-full rounded-2xl bg-black px-4 text-sm font-semibold text-white hover:bg-slate-900"
+                onClick={() => {
+                  const n = Number(String(comparePrecio).replace(",", "."));
+                  if (!Number.isFinite(n) || n <= 0) {
+                    setCompareMsg("Introduce un precio válido.");
+                    return;
+                  }
+                  const diff = Math.abs(n - compareProd.precio_tarifa);
+                  if (diff < 0.005) {
+                    setCompareMsg("OK: el precio coincide con el escandallo.");
+                  } else {
+                    setCompareMsg(`ALERTA: el precio ha cambiado. Albarán ${n.toFixed(2)}€ vs guardado ${compareProd.precio_tarifa.toFixed(2)}€.`);
+                  }
+                }}
+              >
+                Comparar
+              </button>
+
+              <button
+                type="button"
+                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 hover:bg-slate-50"
+                onClick={() => {
+                  setCompareStep("scan");
+                  setCompareProd(null);
+                  setComparePrecio("");
+                  setCompareMsg(null);
+                }}
+              >
+                Escanear otro
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </Drawer>
     </div>
   );
 }

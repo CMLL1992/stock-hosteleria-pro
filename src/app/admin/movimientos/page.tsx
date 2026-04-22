@@ -7,9 +7,9 @@ import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { useMyRole } from "@/lib/useMyRole";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
+import { supabaseErrToString } from "@/lib/supabaseErrToString";
 
 type ProdEmbed = { articulo?: string | null; nombre?: string | null };
-type UsuarioEmbed = { email?: string | null };
 
 type MovRow = {
   id: string;
@@ -17,21 +17,9 @@ type MovRow = {
   cantidad: number;
   timestamp: string;
   genera_vacio?: boolean | null;
-  usuarios?: UsuarioEmbed | UsuarioEmbed[] | null;
+  usuario_id?: string | null;
   productos: ProdEmbed | ProdEmbed[] | null;
 };
-
-function supabaseErrToString(e: unknown): string {
-  if (e instanceof Error) return e.message;
-  if (typeof e === "object" && e) {
-    const anyErr = e as { message?: unknown; details?: unknown; hint?: unknown };
-    const msg = typeof anyErr.message === "string" ? anyErr.message : "";
-    const details = typeof anyErr.details === "string" ? anyErr.details : "";
-    const hint = typeof anyErr.hint === "string" ? anyErr.hint : "";
-    return [msg, details, hint].filter(Boolean).join(" · ") || "Error desconocido";
-  }
-  return String(e);
-}
 
 function labelTipo(t: string): string {
   if (t === "entrada") return "Entrada";
@@ -64,7 +52,8 @@ export default function AdminMovimientosPage() {
       const t = tituloColSql(col);
       const resArticulo = await supabase()
         .from("movimientos")
-        .select(`id,tipo,cantidad,timestamp,genera_vacio,productos(${t}),usuarios(email)` as "*")
+        // Nota: no hacemos join con 'usuarios' porque no existe relación en Supabase.
+        .select(`id,tipo,cantidad,timestamp,genera_vacio,usuario_id,productos(${t})` as "*")
         .eq("establecimiento_id", activeEstablishmentId)
         .order("timestamp", { ascending: false })
         .limit(150);
@@ -123,9 +112,8 @@ export default function AdminMovimientosPage() {
               const articuloEtiqueta =
                 String(prod?.articulo ?? prod?.nombre ?? "")
                   .trim() || "—";
-              const rawU = r.usuarios ?? null;
-              const u = Array.isArray(rawU) ? rawU[0] ?? null : rawU;
-              const email = String(u?.email ?? "").trim();
+              const uid = String(r.usuario_id ?? "").trim();
+              const uidShort = uid ? `${uid.slice(0, 6)}…${uid.slice(-4)}` : "";
               const ts = new Date(r.timestamp);
               return (
                 <li
@@ -137,7 +125,7 @@ export default function AdminMovimientosPage() {
                     <p className="mt-1 text-xs text-slate-500">
                       {ts.toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" })} · {labelTipo(r.tipo)}
                       {r.tipo === "salida_barra" && r.genera_vacio ? " · genera vacío" : ""}
-                      {email ? ` · ${email}` : ""}
+                      {uidShort ? ` · ${uidShort}` : ""}
                     </p>
                   </div>
                   <p className="shrink-0 text-lg font-bold tabular-nums text-slate-900">{r.cantidad}</p>
