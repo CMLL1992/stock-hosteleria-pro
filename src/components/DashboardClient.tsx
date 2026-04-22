@@ -10,6 +10,7 @@ import { requireUserId } from "@/lib/session";
 import { enqueueMovimiento, newClientUuid } from "@/lib/offlineQueue";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
+import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 export function DashboardClient() {
   const { activeEstablishmentId: establecimientoId, activeEstablishmentName, me } = useActiveEstablishment();
@@ -89,6 +90,58 @@ export function DashboardClient() {
       .filter((p) => Number(p.stock_vacios ?? 0) > 0)
       .sort((a, b) => Number(b.stock_vacios ?? 0) - Number(a.stock_vacios ?? 0));
   }, [rows]);
+
+  const valorStock = useMemo(() => {
+    // Valor del stock actual a coste (tarifa/caja ya es "coste"; si no está, 0).
+    let total = 0;
+    for (const p of rows) {
+      const price = Number((p as unknown as { precio_tarifa?: unknown }).precio_tarifa ?? 0) || 0;
+      total += Math.max(0, Number(p.stock_actual ?? 0) || 0) * Math.max(0, price);
+    }
+    return total;
+  }, [rows]);
+
+  const envasePreciosQuery = useQuery({
+    queryKey: ["config", "precios-envases", establecimientoId],
+    enabled: !!establecimientoId,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("config_precios_envases")
+        .select("tipo,precio")
+        .eq("establecimiento_id", establecimientoId as string);
+      if (error) throw error;
+      const rows = (data ?? []) as unknown as Array<{ tipo: string; precio: unknown }>;
+      const map = new Map<string, number>();
+      for (const r of rows) map.set(String(r.tipo), Number(r.precio ?? 0) || 0);
+      return map;
+    },
+    staleTime: 30_000,
+    retry: 1
+  });
+
+  const valorEnvases = useMemo(() => {
+    const map = envasePreciosQuery.data ?? new Map<string, number>();
+    let total = 0;
+    for (const p of rows) {
+      const b = bucketUnidad(p);
+      if (!b) continue;
+      const precioEnvase = Math.max(0, map.get(b) ?? 0);
+      const qty = Math.max(0, Number(p.stock_actual ?? 0) || 0) + Math.max(0, Number(p.stock_vacios ?? 0) || 0);
+      total += qty * precioEnvase;
+    }
+    return total;
+  }, [envasePreciosQuery.data, rows]);
+
+  const barrasResumen = useMemo(() => {
+    return [
+      { key: "stock", label: "Stock", value: Math.round((valorStock + Number.EPSILON) * 100) / 100 },
+      { key: "envases", label: "Envases", value: Math.round((valorEnvases + Number.EPSILON) * 100) / 100 }
+    ];
+  }, [valorEnvases, valorStock]);
+
+  function formatEUR(n: number): string {
+    return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(n);
+  }
 
   async function confirmarDevolucionTotal() {
     if (!establecimientoId || !confirmProd) return;
@@ -204,6 +257,41 @@ export function DashboardClient() {
           )}
         </button>
       </div>
+
+      <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+        <p className="text-sm font-semibold text-slate-900">Valoración</p>
+        <p className="mt-1 text-sm text-slate-600">Valor del stock (coste) y valor de envases (coste/fianza).</p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div className="rounded-2xl bg-slate-50 p-4">
+            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Valor stock</p>
+            <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{formatEUR(valorStock)}</p>
+          </div>
+          <div className="rounded-2xl bg-slate-50 p-4">
+            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Valor envases</p>
+            <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{formatEUR(valorEnvases)}</p>
+          </div>
+        </div>
+        <div className="mt-4 h-44 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={barrasResumen} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+              <XAxis dataKey="label" tick={{ fill: "#334155", fontSize: 12 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: "#64748B", fontSize: 12 }} axisLine={false} tickLine={false} width={72} />
+              <Tooltip
+                formatter={(v) => formatEUR(Number(v) || 0)}
+                contentStyle={{ borderRadius: 12, borderColor: "#E2E8F0" }}
+              />
+              <Bar dataKey="value" radius={[10, 10, 10, 10]}>
+                {barrasResumen.map((d) => (
+                  <Cell key={d.key} fill={d.key === "stock" ? "#0F172A" : "#334155"} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <p className="mt-2 text-xs text-slate-500">
+          Configura precios de envases en <span className="font-semibold">Panel → Precios de envases</span>.
+        </p>
+      </section>
 
       <Drawer open={envasesOpen} title="Envases para devolver" onClose={() => setEnvasesOpen(false)}>
         <div className="space-y-3 pb-4">

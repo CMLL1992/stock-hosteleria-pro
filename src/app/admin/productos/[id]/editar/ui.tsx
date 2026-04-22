@@ -32,6 +32,7 @@ type Producto = {
   tipo: string | null;
   stock_minimo: number | null;
   proveedor_id: string | null;
+  unidades_por_caja: number | null;
 };
 
 export function EditarProductoClient({ id }: { id: string }) {
@@ -50,6 +51,7 @@ export function EditarProductoClient({ id }: { id: string }) {
   const [unidadVal, setUnidadVal] = useState<UnidadProductoValor>("botella");
   const [stockMinimo, setStockMinimo] = useState<number>(0);
   const [proveedorId, setProveedorId] = useState<string>("");
+  const [unidadesPorCaja, setUnidadesPorCaja] = useState<number>(1);
 
   useEffect(() => {
     let cancelled = false;
@@ -85,7 +87,7 @@ export function EditarProductoClient({ id }: { id: string }) {
         const t = tituloColSql(col);
         const { data: p, error: pErr } = await supabase()
           .from("productos")
-          .select(`id,${t},unidad,categoria,tipo,stock_minimo,proveedor_id` as "*")
+          .select(`id,${t},unidad,categoria,tipo,stock_minimo,proveedor_id,unidades_por_caja` as "*")
           .eq("id", id)
           .eq("establecimiento_id", activeEstablishmentId)
           .maybeSingle();
@@ -104,7 +106,8 @@ export function EditarProductoClient({ id }: { id: string }) {
           categoria: raw.categoria != null ? String(raw.categoria) : null,
           tipo: raw.tipo != null ? String(raw.tipo) : null,
           stock_minimo: raw.stock_minimo != null ? Number(raw.stock_minimo) : null,
-          proveedor_id: raw.proveedor_id != null ? String(raw.proveedor_id) : null
+          proveedor_id: raw.proveedor_id != null ? String(raw.proveedor_id) : null,
+          unidades_por_caja: raw.unidades_por_caja != null ? Number(raw.unidades_por_caja) : null
         };
         setProducto(prod);
         setArticulo(prod.articulo ?? "");
@@ -113,6 +116,7 @@ export function EditarProductoClient({ id }: { id: string }) {
         setUnidadVal(mapUnidadDbToValor(prod.unidad));
         setStockMinimo(typeof prod.stock_minimo === "number" ? prod.stock_minimo : 0);
         setProveedorId(prod.proveedor_id ?? "");
+        setUnidadesPorCaja(Math.max(1, Math.trunc(Number(prod.unidades_por_caja ?? 1) || 1)));
 
         const { data: provs, error: provErr } = await supabase()
           .from("proveedores")
@@ -148,7 +152,8 @@ export function EditarProductoClient({ id }: { id: string }) {
       unidad: unidadVal,
       categoria: categoriaVal,
       stock_minimo: Number.isFinite(stockMinimo) ? stockMinimo : 0,
-      proveedor_id: proveedorId || null
+      proveedor_id: proveedorId || null,
+      unidades_por_caja: Math.max(1, Math.trunc(Number(unidadesPorCaja) || 1))
     };
 
     const { error } = await updateProductoCategoriaCompat(
@@ -247,6 +252,20 @@ export function EditarProductoClient({ id }: { id: string }) {
                       </option>
                     ))}
                   </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-gray-900">Unidades por caja</label>
+                  <input
+                    className={FORM_CONTROL_CLASS_GRAY}
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    type="number"
+                    min={1}
+                    value={unidadesPorCaja}
+                    onChange={(e) => setUnidadesPorCaja(Math.max(1, Math.trunc(Number(e.currentTarget.value) || 1)))}
+                  />
+                  <p className="text-xs text-gray-600">Si recibes 5 cajas y aquí pone 24, el stock sube 120 unidades.</p>
                 </div>
 
                 <div className="space-y-1">

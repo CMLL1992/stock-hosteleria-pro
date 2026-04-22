@@ -44,6 +44,7 @@ export default function NuevoProductoPage() {
   const [stockActual, setStockActual] = useState<string>("0");
   const [stockMinimo, setStockMinimo] = useState<string>("0");
   const [proveedorId, setProveedorId] = useState<string>("");
+  const [unidadesPorCaja, setUnidadesPorCaja] = useState<string>("1");
 
   useEffect(() => {
     let cancelled = false;
@@ -112,6 +113,7 @@ export default function NuevoProductoPage() {
       stock_actual: sa,
       stock_minimo: sm,
       proveedor_id: proveedorId || null,
+      unidades_por_caja: Math.max(1, Math.trunc(parseStockField(unidadesPorCaja)) || 1),
       qr_code_uid: uid,
       establecimiento_id: activeEstablishmentId
     };
@@ -192,6 +194,19 @@ export default function NuevoProductoPage() {
                 </option>
               ))}
             </select>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-sm font-semibold text-slate-900">Unidades por caja</label>
+            <input
+              className={FORM_CONTROL_CLASS}
+              type="number"
+              min={1}
+              inputMode="numeric"
+              value={unidadesPorCaja}
+              onChange={(e) => setUnidadesPorCaja(e.currentTarget.value)}
+            />
+            <p className="text-xs text-slate-600">Ejemplo: si una caja tiene 24, pon 24.</p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

@@ -29,6 +29,7 @@ type Producto = {
   tipo: string | null;
   unidad: string | null;
   categoria: string | null;
+  unidades_por_caja?: number | null;
   proveedor_id: string | null;
   proveedor: { nombre: string; telefono_whatsapp: string | null } | null;
 };
@@ -38,7 +39,7 @@ async function fetchProductos(establecimientoId: string | null): Promise<Product
   const col = await resolveProductoTituloColumn(establecimientoId);
   const t = tituloColSql(col);
   const baseSelect = `id,${t},stock_actual,stock_vacios,stock_minimo,qr_code_uid`;
-  const extendedSelect = `${baseSelect},proveedor_id,tipo,unidad,categoria,proveedor:proveedores(nombre,telefono_whatsapp)`;
+  const extendedSelect = `${baseSelect},unidades_por_caja,proveedor_id,tipo,unidad,categoria,proveedor:proveedores(nombre,telefono_whatsapp)`;
 
   const tituloKey = t;
   const mapRow = (row: Record<string, unknown>): Producto => ({
@@ -51,6 +52,7 @@ async function fetchProductos(establecimientoId: string | null): Promise<Product
     tipo: row.tipo != null ? String(row.tipo) : null,
     unidad: row.unidad != null ? String(row.unidad) : null,
     categoria: row.categoria != null ? String(row.categoria) : null,
+    unidades_por_caja: row.unidades_por_caja != null ? Number(row.unidades_por_caja) : null,
     proveedor_id: row.proveedor_id != null ? String(row.proveedor_id) : null,
     proveedor: row.proveedor as Producto["proveedor"]
   });
@@ -72,6 +74,7 @@ async function fetchProductos(establecimientoId: string | null): Promise<Product
       (m.includes("tipo") ||
         m.includes("unidad") ||
         m.includes("categoria") ||
+        m.includes("unidades_por_caja") ||
         m.includes("proveedor") ||
         m.includes("proveedor_id") ||
         m.includes("stock_vacios"))) ||
@@ -80,7 +83,7 @@ async function fetchProductos(establecimientoId: string | null): Promise<Product
 
   if (!looksLikeMissingColumn) throw error;
 
-  const midSelect = `${baseSelect},proveedor_id,tipo,unidad,categoria`;
+  const midSelect = `${baseSelect},unidades_por_caja,proveedor_id,tipo,unidad,categoria`;
   const fb1 = await supabase()
     .from("productos")
     .select(midSelect as "*")
@@ -109,6 +112,7 @@ async function fetchProductos(establecimientoId: string | null): Promise<Product
     tipo: null,
     unidad: null,
     categoria: null,
+    unidades_por_caja: null,
     proveedor_id: null,
     proveedor: null
   }));
@@ -137,6 +141,17 @@ function productTabKey(p: Producto): string {
 
 function proveedorNombreOrDefault(p: Producto): string {
   return (p.proveedor?.nombre ?? "").trim() || "Sin proveedor";
+}
+
+function equivCajasTexto(stock: number, udsCaja: number | null | undefined): string | null {
+  const u = Math.max(1, Math.trunc(Number(udsCaja ?? 1) || 1));
+  if (u <= 1) return null;
+  const total = Math.max(0, Math.trunc(Number(stock) || 0));
+  const cajas = Math.floor(total / u);
+  const uds = total % u;
+  if (cajas <= 0) return null;
+  if (uds === 0) return `${cajas} cajas`;
+  return `${cajas} cajas + ${uds} uds`;
 }
 
 const STOCK_INPUT_CLASS =
@@ -549,6 +564,12 @@ export function ProductList() {
                     <p className="mt-1 text-sm text-slate-600">
                       {p.unidad ?? "—"} · {provLabel}
                     </p>
+                    {equivCajasTexto(p.stock_actual, p.unidades_por_caja) ? (
+                      <p className="mt-1 text-xs text-slate-500">
+                        Equivale a{" "}
+                        <span className="font-semibold text-slate-700">{equivCajasTexto(p.stock_actual, p.unidades_por_caja)}</span>
+                      </p>
+                    ) : null}
                   </div>
 
                   <div className="flex shrink-0 flex-col items-center gap-1">
@@ -733,6 +754,12 @@ export function ProductList() {
                   ref={qtyRef}
                   disabled={movBusy}
                 />
+                {movTipo === "entrada_compra" && movProd?.unidades_por_caja && movProd.unidades_por_caja > 1 ? (
+                  <p className="text-xs text-slate-500">
+                    Unidades por caja: <span className="font-semibold text-slate-700">{movProd.unidades_por_caja}</span> · Equivale a{" "}
+                    <span className="font-semibold text-slate-700">{movCantidad * movProd.unidades_por_caja} uds</span>
+                  </p>
+                ) : null}
               </div>
 
               <div className="grid grid-cols-1 gap-2">
