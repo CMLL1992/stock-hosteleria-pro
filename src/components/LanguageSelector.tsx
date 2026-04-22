@@ -2,7 +2,7 @@
 
 import { startTransition, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { LOCALE_COOKIE } from "@/lib/locale";
+import { LOCALE_COOKIE } from "@/lib/localeShared";
 import type { Lang } from "@/lib/i18n";
 import { useTranslations } from "next-intl";
 

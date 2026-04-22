@@ -1,7 +1,6 @@
 import type { Lang } from "@/lib/i18n";
 import { cookies } from "next/headers";
-
-export const LOCALE_COOKIE = "ops_lang";
+import { LOCALE_COOKIE } from "@/lib/localeShared";
 
 export function readLocaleCookie(): Lang {
   const c = cookies().get(LOCALE_COOKIE)?.value?.trim()?.toLowerCase() ?? "";
