@@ -31,8 +31,6 @@ type ProveedorRow = { id: string; nombre: string };
 const IVA_OPTIONS = [4, 10, 21] as const;
 const DESC_OPTIONS = ["%", "€"] as const;
 
-const CAT_ORDER = ["Cervezas", "Refrescos", "Agua", "Vinos", "Cavas", "Licores", "Destilados", "Cafés", "Otros"];
-
 function normCat(c: string | null | undefined): string {
   const s = String(c ?? "").trim();
   return s || "Otros";
@@ -127,14 +125,7 @@ function parseCsv(text: string): Record<string, string>[] {
 }
 
 function sortCats(a: string, b: string): number {
-  const ia = CAT_ORDER.findIndex((x) => x.toLowerCase() === a.toLowerCase());
-  const ib = CAT_ORDER.findIndex((x) => x.toLowerCase() === b.toLowerCase());
-  if (ia !== -1 || ib !== -1) {
-    const ra = ia === -1 ? 999 : ia;
-    const rb = ib === -1 ? 999 : ib;
-    if (ra !== rb) return ra - rb;
-  }
-  return a.localeCompare(b, "es");
+  return a.localeCompare(b, "es", { sensitivity: "base" });
 }
 
 function toNum(v: string): number {
@@ -622,7 +613,7 @@ export default function EscandallosPage() {
                   <optgroup key={cat} label={cat}>
                     {prods
                       .slice()
-                      .sort((a, b) => a.articulo.localeCompare(b.articulo, "es"))
+                      .sort((a, b) => a.articulo.localeCompare(b.articulo, "es", { sensitivity: "base" }))
                       .map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.articulo}
@@ -794,7 +785,7 @@ export default function EscandallosPage() {
                   <optgroup key={cat} label={cat}>
                     {prods
                       .slice()
-                      .sort((a, b) => a.articulo.localeCompare(b.articulo, "es"))
+                      .sort((a, b) => a.articulo.localeCompare(b.articulo, "es", { sensitivity: "base" }))
                       .map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.articulo}

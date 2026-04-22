@@ -1,4 +1,6 @@
 /** Dígitos para wa.me (sin + inicial obligatoria en muchos casos). */
+import { getStoredLanguage, type Lang } from "@/lib/i18n";
+
 export function digitsWaPhone(raw: string | null | undefined): string | null {
   if (!raw) return null;
   const d = raw.replace(/\D/g, "");
@@ -37,19 +39,64 @@ function formatCantidadUnidad(cantidad: number, unidadRaw: string | null | undef
   return `${n} ${unidad}`;
 }
 
+function waText(lang: Lang) {
+  if (lang === "en") {
+    return {
+      stockHeader: "*STOCK ORDER*",
+      helloNeed: "Hello, I need to replenish:",
+      product: "*Product:*",
+      qty: "*Quantity:*",
+      thanks: "Thank you!",
+      replenishmentHead: (prov: string, est: string) => `Hello ${prov}, this is a replenishment order for ${est}:`,
+      basketHead: (prov: string, est: string) => `Hello ${prov}, order for ${est}:`,
+      of: "of"
+    };
+  }
+  if (lang === "ca") {
+    return {
+      stockHeader: "*COMANDA D’ESTOC*",
+      helloNeed: "Hola, necessito reposar:",
+      product: "*Producte:*",
+      qty: "*Quantitat:*",
+      thanks: "Gràcies!",
+      replenishmentHead: (prov: string, est: string) => `Hola ${prov}, aquesta és la comanda de reposició de ${est}:`,
+      basketHead: (prov: string, est: string) => `Hola ${prov}, comanda de ${est}:`,
+      of: "de"
+    };
+  }
+  return {
+    stockHeader: "*PEDIDO DE STOCK*",
+    helloNeed: "Hola, necesito reponer:",
+    product: "*Producto:*",
+    qty: "*Cantidad:*",
+    thanks: "¡Gracias!",
+    replenishmentHead: (prov: string, est: string) => `Hola ${prov}, este es el pedido de reposición de ${est}:`,
+    basketHead: (prov: string, est: string) => `Hola ${prov}, pedido de ${est}:`,
+    of: "de"
+  };
+}
+
 /**
  * Mensaje estándar de pedido de stock (una línea de producto).
  * Cantidad mostrada: unidades a reponer hasta el mínimo (mínimo 1 si hace falta pedir).
  */
-export function mensajePedidoStockProfesional(nombre: string, stockActual: number, stockMinimo: number, unidad: string | null): string {
+export function mensajePedidoStockProfesional(
+  nombre: string,
+  stockActual: number,
+  stockMinimo: number,
+  unidad: string | null,
+  lang?: Lang
+): string {
+  const l = lang ?? getStoredLanguage();
+  const txt = waText(l);
   const diff = deficitPedido(stockActual, stockMinimo);
   const cant = diff > 0 ? diff : Math.max(1, stockMinimo - stockActual);
   return [
-    "*PEDIDO DE STOCK*",
-    "Hola, necesito reponer:",
-    `- *Producto:* ${nombre}`,
-    `- *Cantidad:* ${formatCantidadUnidad(cant, unidad)}`,
-    "¡Gracias!"
+    txt.stockHeader,
+    txt.helloNeed,
+    `- ${txt.product} ${nombre}`,
+    `- ${txt.qty} ${formatCantidadUnidad(cant, unidad)}`,
+    txt.thanks
   ].join("\n");
 }
 
@@ -67,14 +114,17 @@ export function waUrlSendText(message: string, phoneDigits: string | null): stri
 }
 
 export function mensajePedidoGlobalLineas(
-  lineas: Array<{ articulo: string; stock_actual: number; stock_minimo: number; unidad: string | null }>
+  lineas: Array<{ articulo: string; stock_actual: number; stock_minimo: number; unidad: string | null }>,
+  lang?: Lang
 ): string {
+  const l = lang ?? getStoredLanguage();
+  const txt = waText(l);
   const bloques = lineas.map((l) => {
     const diff = deficitPedido(l.stock_actual, l.stock_minimo);
     const cant = diff > 0 ? diff : Math.max(1, l.stock_minimo - l.stock_actual);
-    return [`- *Producto:* ${l.articulo}`, `- *Cantidad:* ${formatCantidadUnidad(cant, l.unidad)}`].join("\n");
+    return [`- ${txt.product} ${l.articulo}`, `- ${txt.qty} ${formatCantidadUnidad(cant, l.unidad)}`].join("\n");
   });
-  return ["*PEDIDO DE STOCK*", "Hola, necesito reponer:", ...bloques, "¡Gracias!"].join("\n");
+  return [txt.stockHeader, txt.helloNeed, ...bloques, txt.thanks].join("\n");
 }
 
 export type ProductoPedidoWa = {
@@ -124,13 +174,16 @@ export function mensajePedidoCestaPorProveedor(opts: {
   nombreEstablecimiento: string;
   nombreProveedor: string;
   lineas: Array<{ articulo: string; cantidad: number; unidad: string | null }>;
+  lang?: Lang;
 }): string {
+  const l = opts.lang ?? getStoredLanguage();
+  const txt = waText(l);
   const est = opts.nombreEstablecimiento.trim() || "mi local";
   const prov = opts.nombreProveedor.trim() || "Proveedor";
   const body = opts.lineas.map((l) => {
-    return `- ${formatCantidadUnidad(l.cantidad, l.unidad)} de ${l.articulo}`;
+    return `- ${formatCantidadUnidad(l.cantidad, l.unidad)} ${txt.of} ${l.articulo}`;
   });
-  return [`Hola ${prov}, pedido de ${est}:`, "", ...body].join("\n");
+  return [txt.basketHead(prov, est), "", ...body].join("\n");
 }
 
 /**
@@ -141,13 +194,16 @@ export function mensajePedidoReposicionPorProveedor(opts: {
   nombreEstablecimiento: string;
   nombreProveedor: string;
   lineas: Array<{ articulo: string; cantidad: number; unidad: string | null | undefined }>;
+  lang?: Lang;
 }): string {
+  const l = opts.lang ?? getStoredLanguage();
+  const txt = waText(l);
   const est = opts.nombreEstablecimiento.trim() || "Piqui Blinders";
   const prov = opts.nombreProveedor.trim() || "Proveedor";
   const lineas = opts.lineas
     .filter((l) => l.cantidad > 0 && l.articulo.trim())
-    .map((l) => `- ${formatCantidadUnidad(l.cantidad, l.unidad)} de ${l.articulo.trim()}`);
-  return [`Hola ${prov}, este es el pedido de reposición de ${est}:`, "", ...lineas].join("\n");
+    .map((l) => `- ${formatCantidadUnidad(l.cantidad, l.unidad)} ${txt.of} ${l.articulo.trim()}`);
+  return [txt.replenishmentHead(prov, est), "", ...lineas].join("\n");
 }
 
 export function waUrlPedidoAgrupadoProveedor(opts: {

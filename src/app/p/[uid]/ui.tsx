@@ -12,6 +12,7 @@ import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
+import { getStoredLanguage } from "@/lib/i18n";
 
 type Producto = {
   id: string;
@@ -162,7 +163,13 @@ export function ProductByUidClient({ uid }: { uid: string }) {
     if (!phone) return null;
     const prov = producto?.proveedor?.nombre ?? "Proveedor";
     const prod = producto?.articulo ?? "Producto";
-    const msg = `Hola ${prov}, necesito pedir ${pedidoCantidad} de ${prod}.`;
+    const lang = getStoredLanguage();
+    const msg =
+      lang === "en"
+        ? `Hello ${prov}, I would like to order ${pedidoCantidad} of ${prod}.`
+        : lang === "ca"
+          ? `Hola ${prov}, necessito demanar ${pedidoCantidad} de ${prod}.`
+          : `Hola ${prov}, necesito pedir ${pedidoCantidad} de ${prod}.`;
     return `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
   }, [pedidoCantidad, producto?.articulo, producto?.proveedor?.nombre, producto?.proveedor?.telefono_whatsapp]);
 

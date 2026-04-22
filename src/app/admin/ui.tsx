@@ -6,6 +6,8 @@ import { ChevronRight } from "lucide-react";
 import { MobileHeader } from "@/components/MobileHeader";
 import { useMyRole } from "@/lib/useMyRole";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
+import { LanguageSelector } from "@/components/LanguageSelector";
+import { useT } from "@/lib/i18n";
 
 type AdminNavItem = {
   id: string;
@@ -117,9 +119,10 @@ function filterSections(sections: AdminSection[], isSuperadmin: boolean): AdminS
 
 export function AdminHomeClient({ denied }: { denied?: string | null } = {}) {
   const { data, isLoading, error } = useMyRole();
+  const tt = useT();
 
   const content = useMemo(() => {
-    if (isLoading) return <p className="px-1 text-sm text-slate-600">Cargando…</p>;
+    if (isLoading) return <p className="px-1 text-sm text-slate-600">{tt("common.loading")}</p>;
     if (data?.role === null && !data?.profileReady) return <p className="px-1 text-sm text-slate-600">Cargando perfil…</p>;
     if (error) {
       return (
@@ -147,8 +150,13 @@ export function AdminHomeClient({ denied }: { denied?: string | null } = {}) {
           </div>
         ) : null}
         <header className="px-1">
-          <h1 className="text-lg font-semibold text-slate-900">Panel de control</h1>
-          <p className="mt-0.5 text-sm text-slate-500">Menú de administración por áreas.</p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h1 className="text-lg font-semibold text-slate-900">{tt("admin.panel")}</h1>
+              <p className="mt-0.5 text-sm text-slate-500">{tt("admin.menuSubtitle")}</p>
+            </div>
+            <LanguageSelector />
+          </div>
         </header>
 
         {visible.map((section) => (

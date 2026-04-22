@@ -13,6 +13,8 @@ import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTitulo
 import { requireUserId } from "@/lib/session";
 import { enqueueMovimiento, newClientUuid } from "@/lib/offlineQueue";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
+import { useT } from "@/lib/i18n";
+import { Search } from "lucide-react";
 
 type ProveedorRow = {
   id: string;
@@ -90,17 +92,8 @@ function normCat(c: string | null | undefined): string {
   return s || "Otros";
 }
 
-const CAT_ORDER = ["Cervezas", "Refrescos", "Agua", "Vinos", "Cavas", "Licores", "Destilados", "Cafés", "Otros"];
-
 function sortCats(a: string, b: string): number {
-  const ia = CAT_ORDER.findIndex((x) => x.toLowerCase() === a.toLowerCase());
-  const ib = CAT_ORDER.findIndex((x) => x.toLowerCase() === b.toLowerCase());
-  if (ia !== -1 || ib !== -1) {
-    const ra = ia === -1 ? 999 : ia;
-    const rb = ib === -1 ? 999 : ib;
-    if (ra !== rb) return ra - rb;
-  }
-  return a.localeCompare(b, "es");
+  return a.localeCompare(b, "es", { sensitivity: "base" });
 }
 
 export default function PedidosPage() {
@@ -112,11 +105,13 @@ export default function PedidosPage() {
   const [loadingData, setLoadingData] = useState(false);
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [qty, setQty] = useState<Record<string, string>>({});
+  const [search, setSearch] = useState<Record<string, string>>({});
   const [confirm, setConfirm] = useState<null | {
     proveedor: ProveedorRow & { id: string };
     lineas: Array<{ producto_id: string; articulo: string; unidad: string | null; cantidad: number }>;
   }>(null);
   const [confirming, setConfirming] = useState(false);
+  const tt = useT();
 
   const { activeEstablishmentId, activeEstablishmentName } = useActiveEstablishment();
   const nombreLocal = activeEstablishmentName?.trim() || "Piqui Blinders";
@@ -224,24 +219,24 @@ export default function PedidosPage() {
     }
   }
 
-  if (loading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
+  if (loading) return <main className="p-4 text-sm text-slate-600">{tt("common.loading")}</main>;
   if (role !== "admin" && role !== "superadmin") {
     return (
       <main className="mx-auto max-w-md p-4">
-        <h1 className="text-xl font-semibold">Pedidos</h1>
-        <p className="mt-2 text-sm text-slate-600">Acceso denegado.</p>
+        <h1 className="text-xl font-semibold">{tt("orders.title")}</h1>
+        <p className="mt-2 text-sm text-slate-600">{tt("common.accessDenied")}</p>
       </main>
     );
   }
 
   return (
     <div className="min-h-dvh bg-slate-50">
-      <MobileHeader title="Pedidos por proveedor" showBack backHref="/admin" />
+      <MobileHeader title={tt("orders.byProvider")} showBack backHref="/admin" />
       <main className="mx-auto max-w-3xl p-4 pb-28 text-slate-900">
         <div className="mb-4">
-          <h1 className="text-xl font-semibold">Pedidos</h1>
+          <h1 className="text-xl font-semibold">{tt("orders.title")}</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Despliega un proveedor, escribe cantidades y envía el pedido por WhatsApp.
+            {tt("orders.subtitle")}
           </p>
         </div>
 
@@ -263,6 +258,10 @@ export default function PedidosPage() {
             {grupos.map((g) => {
               const key = g.id;
               const expanded = !!open[key];
+              const searchKey = (search[key] ?? "").trim().toLowerCase();
+              const productosFiltrados = !searchKey
+                ? g.productos
+                : g.productos.filter((p) => p.articulo.toLowerCase().includes(searchKey));
               const lineasWa = g.productos.map((p) => ({
                 articulo: p.articulo,
                 unidad: p.unidad,
@@ -277,7 +276,7 @@ export default function PedidosPage() {
               const tieneLineas = lineasWa.some((l) => l.cantidad > 0);
 
               const porCat = new Map<string, ProductoPedido[]>();
-              for (const p of g.productos) {
+              for (const p of productosFiltrados) {
                 const cat = normCat(p.categoria);
                 porCat.set(cat, [...(porCat.get(cat) ?? []), p]);
               }
@@ -299,12 +298,26 @@ export default function PedidosPage() {
 
                   {expanded ? (
                     <div className="space-y-4 border-t border-slate-100 px-4 pb-4 pt-3">
+                      <div className="relative">
+                        <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="search"
+                          value={search[key] ?? ""}
+                          onChange={(e) => setSearch((prev) => ({ ...prev, [key]: e.currentTarget.value }))}
+                          placeholder={tt("common.searchProduct")}
+                          className="min-h-12 w-full rounded-3xl border border-slate-200 bg-white py-3 pl-12 pr-4 text-base text-slate-900 shadow-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                          aria-label={tt("common.searchProduct")}
+                        />
+                      </div>
                       <div className="space-y-4">
                         {cats.map((cat) => (
                           <section key={cat} className="space-y-2">
                             <p className="text-xs font-bold uppercase tracking-wide text-slate-600">{cat}</p>
                             <ul className="flex flex-col gap-4">
-                              {(porCat.get(cat) ?? []).map((p) => (
+                              {(porCat.get(cat) ?? [])
+                                .slice()
+                                .sort((a, b) => a.articulo.localeCompare(b.articulo, "es", { sensitivity: "base" }))
+                                .map((p) => (
                                 <li key={p.id} className="flex items-center gap-3">
                                   <div className="min-w-0 flex-1">
                                     <p className="font-semibold leading-snug text-slate-900">{p.articulo}</p>
@@ -356,7 +369,7 @@ export default function PedidosPage() {
                         }}
                       >
                         <IconWhatsApp className="h-8 w-8 shrink-0 text-white" />
-                        Enviar pedido a {g.nombre} por WhatsApp
+                        {tt("orders.sendWhatsapp", { prov: g.nombre })}
                       </a>
                     </div>
                   ) : null}
