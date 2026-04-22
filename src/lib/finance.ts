@@ -3,8 +3,12 @@ export type IvaPct = 4 | 10 | 21;
 
 export type ProductoFinanzas = {
   precio_tarifa: number | null;
+  /** Unidades por caja/barril (para calcular coste unitario). */
+  uds_caja?: number | null;
   descuento_valor: number | null;
   descuento_tipo: DescuentoTipo | string | null;
+  /** Rappel en € aplicado a la caja (descuento fijo adicional). */
+  rappel_valor?: number | null;
   iva_compra: number | null;
   pvp: number | null;
   iva_venta: number | null;
@@ -40,13 +44,16 @@ export function descuentoAplicado(p: ProductoFinanzas): number {
 export function baseCompraSinIva(p: ProductoFinanzas): number {
   const tarifa = n(p.precio_tarifa);
   const desc = descuentoAplicado(p);
-  return Math.max(0, tarifa - desc);
+  const rappel = n(p.rappel_valor);
+  return Math.max(0, tarifa - desc - rappel);
 }
 
 export function costeNeto(p: ProductoFinanzas): number {
   const base = baseCompraSinIva(p);
   const iva = normalizeIvaPct(p.iva_compra, 10);
-  return round2(base * (1 + iva / 100));
+  const uds = Math.max(1, Math.trunc(n(p.uds_caja) || 0) || 1);
+  // coste unitario (con IVA de compra), derivado desde tarifa/caja
+  return round2((base * (1 + iva / 100)) / uds);
 }
 
 export function ventaNetaSinIva(p: ProductoFinanzas): number {
