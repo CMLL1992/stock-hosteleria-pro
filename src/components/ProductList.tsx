@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Drawer } from "@/components/ui/Drawer";
 import { IconWhatsApp } from "@/components/IconWhatsApp";
@@ -161,8 +162,13 @@ function errMsg(e: unknown): string {
 
 export function ProductList() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const listaCompra = searchParams.get("compra") === "1";
   const modoVacios = searchParams.get("vacios") === "1";
+  const deepLinkId = (searchParams.get("id") ?? "").trim();
+  const fromScan = (searchParams.get("scan") ?? "") === "1" || (searchParams.get("scan") ?? "") === "true";
+  const returnTo = (searchParams.get("return") ?? "").trim();
+  const [deepLinkDone, setDeepLinkDone] = useState(false);
   const queryClient = useQueryClient();
   const { me, activeEstablishmentId: establecimientoId, activeEstablishmentName } = useActiveEstablishment();
   const [tab, setTab] = useState<string>("todos");
@@ -208,6 +214,25 @@ export function ProductList() {
       return next;
     });
   }, [data]);
+
+  // Deep link: /stock?id=<producto_id>&scan=1 abre automáticamente "GESTIONAR" del producto.
+  useEffect(() => {
+    if (!data?.length) return;
+    if (!deepLinkId) return;
+    if (deepLinkDone) return;
+    const p = data.find((x) => x.id === deepLinkId);
+    if (!p) return;
+    setDeepLinkDone(true);
+    if (fromScan) {
+      try {
+        if (typeof navigator !== "undefined" && "vibrate" in navigator) navigator.vibrate(30);
+      } catch {
+        // ignore
+      }
+    }
+    openGestionar(p);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, deepLinkDone, deepLinkId, fromScan]);
 
   const filteredByTab = useMemo(() => {
     if (!data) return [];
@@ -381,6 +406,9 @@ export function ProductList() {
       setMovOpen(false);
       setMovProd(null);
       setMovStep("menu");
+      if (returnTo) {
+        router.replace(returnTo);
+      }
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error(e);
@@ -575,6 +603,14 @@ export function ProductList() {
                   >
                     GESTIONAR
                   </button>
+                  <Link
+                    href={`/qr/${encodeURIComponent(p.id)}?print=1`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+                  >
+                    Generar QR
+                  </Link>
                 </div>
               </div>
             </div>
@@ -701,6 +737,16 @@ export function ProductList() {
                   className="flex min-h-12 w-full items-center rounded-2xl border border-slate-200 bg-white px-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-50"
                 >
                   Editar Producto
+                </Link>
+              ) : null}
+              {movProd ? (
+                <Link
+                  href={`/qr/${encodeURIComponent(movProd.id)}?print=1`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex min-h-12 w-full items-center rounded-2xl border border-slate-200 bg-white px-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-50"
+                >
+                  Generar QR
                 </Link>
               ) : null}
             </div>

@@ -1,12 +1,42 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { Button } from "@/components/ui/Button";
 import { getBaseUrl } from "@/lib/baseUrl";
+import { supabase } from "@/lib/supabase";
+import { supabaseErrToString } from "@/lib/supabaseErrToString";
 
 export default function QrProductPage({ params }: { params: { id: string } }) {
   const base = getBaseUrl();
-  const url = `${base}/p/${encodeURIComponent(params.id)}`;
+  const url = `${base}/stock?id=${encodeURIComponent(params.id)}&scan=true`;
+  const [nombre, setNombre] = useState<string>("Producto");
+  const [err, setErr] = useState<string | null>(null);
+
+  const shortName = useMemo(() => {
+    const s = (nombre ?? "").trim() || "Producto";
+    return s.length > 26 ? `${s.slice(0, 26).trim()}…` : s;
+  }, [nombre]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setErr(null);
+    (async () => {
+      try {
+        const { data, error } = await supabase().from("productos").select("articulo,nombre").eq("id", params.id).maybeSingle();
+        if (error) throw error;
+        const row = (data ?? null) as null | { articulo?: string | null; nombre?: string | null };
+        const titulo = String(row?.articulo ?? row?.nombre ?? "").trim();
+        if (!cancelled && titulo) setNombre(titulo);
+      } catch (e) {
+        if (cancelled) return;
+        setErr(supabaseErrToString(e));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [params.id]);
 
   return (
     <main className="mx-auto max-w-md bg-slate-50 p-4 pb-28 text-slate-900">
@@ -14,22 +44,29 @@ export default function QrProductPage({ params }: { params: { id: string } }) {
         @media print {
           .no-print { display: none !important; }
           body { background: white !important; }
+          @page { size: 58mm 40mm; margin: 0; }
+          main { padding: 0 !important; }
         }
       `}</style>
 
       <div className="no-print mb-3 flex items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">QR del producto</h1>
-          <p className="text-sm text-slate-600">Este QR abre la ficha para mover stock.</p>
+          <p className="text-sm text-slate-600">Este QR abre Stock y permite gestionar el producto.</p>
         </div>
         <Button onClick={() => window.print()}>Imprimir</Button>
       </div>
 
-      <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+      {err ? (
+        <p className="no-print mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{err}</p>
+      ) : null}
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
         <div className="flex items-center justify-center">
-          <QRCodeSVG value={url} width={260} height={260} includeMargin />
+          <QRCodeSVG value={url} width={180} height={180} includeMargin />
         </div>
-        <p className="mt-3 break-all text-xs text-slate-500">{url}</p>
+        <p className="mt-2 text-center text-sm font-bold tracking-tight text-slate-900">{shortName}</p>
+        <p className="no-print mt-2 break-all text-[11px] text-slate-500">{url}</p>
       </div>
     </main>
   );

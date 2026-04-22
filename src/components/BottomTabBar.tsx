@@ -43,6 +43,7 @@ export function BottomTabBar() {
     }
     return [
       { href: "/", label: "INICIO" },
+      { href: "/admin/scan", label: "ESCANEAR" },
       { href: "/stock", label: "STOCK" },
       { href: "/admin/pedidos", label: "PEDIDOS" },
       { href: "/admin", label: "PANEL" }
