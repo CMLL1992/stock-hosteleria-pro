@@ -10,6 +10,8 @@ import { MobileHeader } from "@/components/MobileHeader";
 import { IconWhatsApp } from "@/components/IconWhatsApp";
 import { waUrlPedidoAgrupadoProveedor } from "@/lib/whatsappPedido";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
+import { requireUserId } from "@/lib/session";
+import { enqueueMovimiento, newClientUuid } from "@/lib/offlineQueue";
 
 type ProveedorRow = {
   id: string;
@@ -20,6 +22,7 @@ type ProveedorRow = {
 type ProductoPedido = {
   id: string;
   articulo: string;
+  unidad: string | null;
   proveedor_id: string | null;
 };
 
@@ -31,7 +34,7 @@ function parseQty(raw: string): number {
 async function loadData(establecimientoId: string): Promise<{ proveedores: ProveedorRow[]; productos: ProductoPedido[] }> {
   const col = await resolveProductoTituloColumn(establecimientoId);
   const t = tituloColSql(col);
-  const prodSelect = `id,${t},proveedor_id,proveedor:proveedores(nombre,telefono_whatsapp)`;
+  const prodSelect = `id,${t},proveedor_id,unidad,proveedor:proveedores(nombre,telefono_whatsapp)`;
 
   const provRes = await supabase()
     .from("proveedores")
@@ -51,6 +54,7 @@ async function loadData(establecimientoId: string): Promise<{ proveedores: Prove
     const productos = ((data ?? []) as unknown as Record<string, unknown>[]).map((r) => ({
       id: String(r.id ?? ""),
       articulo: String(r[t] ?? r.articulo ?? r.nombre ?? "").trim() || "—",
+      unidad: r.unidad != null ? String(r.unidad) : null,
       proveedor_id: r.proveedor_id != null ? String(r.proveedor_id) : null
     }));
     return { proveedores: (provRes.data as ProveedorRow[]) ?? [], productos };
@@ -64,13 +68,14 @@ async function loadData(establecimientoId: string): Promise<{ proveedores: Prove
 
   const fb = await supabase()
     .from("productos")
-    .select(`id,${t},proveedor_id` as "*")
+    .select(`id,${t},proveedor_id,unidad` as "*")
     .eq("establecimiento_id", establecimientoId)
     .order(t, { ascending: true });
   if (fb.error) throw fb.error;
   const productos = ((fb.data ?? []) as unknown as Record<string, unknown>[]).map((r) => ({
     id: String(r.id ?? ""),
     articulo: String(r[t] ?? r.articulo ?? r.nombre ?? "").trim() || "—",
+    unidad: r.unidad != null ? String(r.unidad) : null,
     proveedor_id: r.proveedor_id != null ? String(r.proveedor_id) : null
   }));
   return { proveedores: (provRes.data as ProveedorRow[]) ?? [], productos };
@@ -85,6 +90,11 @@ export default function PedidosPage() {
   const [loadingData, setLoadingData] = useState(false);
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [qty, setQty] = useState<Record<string, string>>({});
+  const [confirm, setConfirm] = useState<null | {
+    proveedor: ProveedorRow & { id: string };
+    lineas: Array<{ producto_id: string; articulo: string; unidad: string | null; cantidad: number }>;
+  }>(null);
+  const [confirming, setConfirming] = useState(false);
 
   const { activeEstablishmentId, activeEstablishmentName } = useActiveEstablishment();
   const nombreLocal = activeEstablishmentName?.trim() || "Piqui Blinders";
@@ -160,6 +170,38 @@ export default function PedidosPage() {
     return list.filter((g) => g.productos.length > 0);
   }, [proveedores, productos, sinProveedor]);
 
+  async function registrarComoPedido(
+    proveedor: ProveedorRow,
+    lineas: Array<{ producto_id: string; articulo: string; unidad: string | null; cantidad: number }>
+  ) {
+    if (!activeEstablishmentId) return;
+    const ts = new Date().toISOString();
+    const usuario_id = await requireUserId();
+
+    for (const l of lineas) {
+      if (l.cantidad <= 0) continue;
+      const payload = {
+        client_uuid: newClientUuid(),
+        producto_id: l.producto_id,
+        establecimiento_id: activeEstablishmentId,
+        tipo: "pedido" as const,
+        cantidad: l.cantidad,
+        usuario_id,
+        timestamp: ts,
+        proveedor_id: proveedor.id
+      };
+
+      if (typeof navigator !== "undefined" && navigator.onLine) {
+        const { error } = await supabase()
+          .from("movimientos")
+          .upsert(payload, { onConflict: "client_uuid", ignoreDuplicates: true });
+        if (error) throw error;
+      } else {
+        await enqueueMovimiento(payload);
+      }
+    }
+  }
+
   if (loading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
   if (role !== "admin" && role !== "superadmin") {
     return (
@@ -201,6 +243,7 @@ export default function PedidosPage() {
               const expanded = !!open[key];
               const lineasWa = g.productos.map((p) => ({
                 articulo: p.articulo,
+                unidad: p.unidad,
                 cantidad: parseQty(qty[p.id] ?? "")
               }));
               const urlWa = waUrlPedidoAgrupadoProveedor({
@@ -262,6 +305,18 @@ export default function PedidosPage() {
                         aria-disabled={!tieneLineas}
                         onClick={(e) => {
                           if (!tieneLineas) e.preventDefault();
+                          if (!tieneLineas) return;
+                          setConfirm({
+                            proveedor: { id: g.id, nombre: g.nombre, telefono_whatsapp: g.telefono_whatsapp },
+                            lineas: g.productos
+                              .map((p) => ({
+                                producto_id: p.id,
+                                articulo: p.articulo,
+                                unidad: p.unidad,
+                                cantidad: parseQty(qty[p.id] ?? "")
+                              }))
+                              .filter((l) => l.cantidad > 0)
+                          });
                         }}
                       >
                         <IconWhatsApp className="h-8 w-8 shrink-0 text-white" />
@@ -275,6 +330,46 @@ export default function PedidosPage() {
           </ul>
         )}
       </main>
+
+      {confirm ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-base font-semibold text-slate-900">¿Se ha enviado correctamente el pedido?</p>
+            <p className="mt-1 text-sm text-slate-600">
+              Si confirmas, registraremos estos productos como <span className="font-semibold">Pedidos</span>.
+            </p>
+            <div className="mt-4 grid grid-cols-1 gap-2">
+              <button
+                type="button"
+                disabled={confirming}
+                onClick={async () => {
+                  setConfirming(true);
+                  setErr(null);
+                  try {
+                    await registrarComoPedido(confirm.proveedor, confirm.lineas);
+                    setConfirm(null);
+                  } catch (e) {
+                    setErr(e instanceof Error ? e.message : String(e));
+                  } finally {
+                    setConfirming(false);
+                  }
+                }}
+                className="min-h-12 w-full rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-950 disabled:opacity-50"
+              >
+                {confirming ? "Registrando…" : "Sí, registrar como pedido"}
+              </button>
+              <button
+                type="button"
+                disabled={confirming}
+                onClick={() => setConfirm(null)}
+                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 hover:bg-slate-50 disabled:opacity-50"
+              >
+                No
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

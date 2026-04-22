@@ -13,27 +13,28 @@ export function urlWhatsApp(phoneDigits: string, message: string): string {
   return `https://wa.me/${phoneDigits}?text=${encodeURIComponent(message)}`;
 }
 
-function unidadLegible(u: string | null | undefined): string {
-  return (u ?? "uds").trim().toLowerCase() || "uds";
+function formatUnidad(cantidad: number, unidadRaw: string | null | undefined): string {
+  const n = Math.trunc(Number(cantidad));
+  if (!Number.isFinite(n)) return "unidades";
+
+  const u0 = (unidadRaw ?? "").trim().toLowerCase();
+  if (!u0) return n === 1 ? "unidad" : "unidades";
+
+  // Si ya está en plural (heurística simple), no lo tocamos.
+  if (n !== 1 && u0.endsWith("s")) return u0;
+
+  if (n === 1) return u0;
+
+  const last = u0.slice(-1);
+  const esVocal = "aeiouáéíóú".includes(last);
+  // Regla A: vocal -> +s, Regla B: consonante -> +es
+  return esVocal ? `${u0}s` : `${u0}es`;
 }
 
-const pluralizar = (cantidad: number, unidad: string) => {
-  if (cantidad === 1) return `${cantidad} ${unidad}`;
-  // Lógica simple de plural en español
-  if (unidad.endsWith("l") || unidad.endsWith("r") || unidad.endsWith("n")) {
-    return `${cantidad} ${unidad}es`;
-  }
-  return `${cantidad} ${unidad}s`;
-};
-
-function pluralizaUnidad(unidad: string | null | undefined, cantidad: number): string {
-  const u = unidadLegible(unidad);
+function formatCantidadUnidad(cantidad: number, unidadRaw: string | null | undefined): string {
   const n = Math.trunc(Number(cantidad));
-  if (!Number.isFinite(n)) return u;
-  // Conserva "uds" como unidad especial.
-  const base = u === "ud" ? "uds" : u;
-  if (base === "uds") return n === 1 ? "ud" : "uds";
-  return pluralizar(n, base).split(" ").slice(1).join(" ");
+  const unidad = formatUnidad(n, unidadRaw);
+  return `${n} ${unidad}`;
 }
 
 /**
@@ -43,12 +44,11 @@ function pluralizaUnidad(unidad: string | null | undefined, cantidad: number): s
 export function mensajePedidoStockProfesional(nombre: string, stockActual: number, stockMinimo: number, unidad: string | null): string {
   const diff = deficitPedido(stockActual, stockMinimo);
   const cant = diff > 0 ? diff : Math.max(1, stockMinimo - stockActual);
-  const u = pluralizaUnidad(unidad, cant);
   return [
     "*PEDIDO DE STOCK*",
     "Hola, necesito reponer:",
     `- *Producto:* ${nombre}`,
-    `- *Cantidad:* ${cant} ${u}`,
+    `- *Cantidad:* ${formatCantidadUnidad(cant, unidad)}`,
     "¡Gracias!"
   ].join("\n");
 }
@@ -72,8 +72,7 @@ export function mensajePedidoGlobalLineas(
   const bloques = lineas.map((l) => {
     const diff = deficitPedido(l.stock_actual, l.stock_minimo);
     const cant = diff > 0 ? diff : Math.max(1, l.stock_minimo - l.stock_actual);
-    const u = pluralizaUnidad(l.unidad, cant);
-    return [`- *Producto:* ${l.articulo}`, `- *Cantidad:* ${cant} ${u}`].join("\n");
+    return [`- *Producto:* ${l.articulo}`, `- *Cantidad:* ${formatCantidadUnidad(cant, l.unidad)}`].join("\n");
   });
   return ["*PEDIDO DE STOCK*", "Hola, necesito reponer:", ...bloques, "¡Gracias!"].join("\n");
 }
@@ -129,37 +128,35 @@ export function mensajePedidoCestaPorProveedor(opts: {
   const est = opts.nombreEstablecimiento.trim() || "mi local";
   const prov = opts.nombreProveedor.trim() || "Proveedor";
   const body = opts.lineas.map((l) => {
-    const unidad = unidadLegible(l.unidad);
-    const lineaPedido = `- ${pluralizar(l.cantidad, unidad)} de ${l.articulo}`;
-    return lineaPedido;
+    return `- ${formatCantidadUnidad(l.cantidad, l.unidad)} de ${l.articulo}`;
   });
   return [`Hola ${prov}, pedido de ${est}:`, "", ...body].join("\n");
 }
 
 /**
  * Pedido agrupado (pantalla Pedidos): solo líneas con cantidad > 0.
- * "Hola [Proveedor], pedido de [Local]:\n- [cant] [artículo]"
+ * "Hola [Proveedor], este es el pedido de reposición de [Local]:\n\n- [cant] [unidad] de [artículo]"
  */
-export function mensajePedidoAgrupadoLineasSimple(opts: {
+export function mensajePedidoReposicionPorProveedor(opts: {
   nombreEstablecimiento: string;
   nombreProveedor: string;
-  lineas: Array<{ articulo: string; cantidad: number }>;
+  lineas: Array<{ articulo: string; cantidad: number; unidad: string | null | undefined }>;
 }): string {
-  const est = opts.nombreEstablecimiento.trim() || "mi local";
+  const est = opts.nombreEstablecimiento.trim() || "Piqui Blinders";
   const prov = opts.nombreProveedor.trim() || "Proveedor";
   const lineas = opts.lineas
     .filter((l) => l.cantidad > 0 && l.articulo.trim())
-    .map((l) => `- ${l.cantidad} ${l.articulo.trim()}`);
-  return [`Hola ${prov}, pedido de ${est}:`, "", ...lineas].join("\n");
+    .map((l) => `- ${formatCantidadUnidad(l.cantidad, l.unidad)} de ${l.articulo.trim()}`);
+  return [`Hola ${prov}, este es el pedido de reposición de ${est}:`, "", ...lineas].join("\n");
 }
 
 export function waUrlPedidoAgrupadoProveedor(opts: {
   nombreProveedor: string;
   telefonoWhatsapp: string | null;
   nombreEstablecimiento: string;
-  lineas: Array<{ articulo: string; cantidad: number }>;
+  lineas: Array<{ articulo: string; cantidad: number; unidad: string | null | undefined }>;
 }): string {
-  const msg = mensajePedidoAgrupadoLineasSimple({
+  const msg = mensajePedidoReposicionPorProveedor({
     nombreEstablecimiento: opts.nombreEstablecimiento,
     nombreProveedor: opts.nombreProveedor,
     lineas: opts.lineas
