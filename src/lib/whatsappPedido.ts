@@ -14,8 +14,17 @@ export function urlWhatsApp(phoneDigits: string, message: string): string {
 }
 
 function unidadLegible(u: string | null | undefined): string {
-  const t = (u ?? "uds").trim() || "uds";
-  return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
+  return (u ?? "uds").trim().toLowerCase() || "uds";
+}
+
+function pluralizaUnidad(unidad: string | null | undefined, cantidad: number): string {
+  const u = unidadLegible(unidad);
+  const n = Math.trunc(Number(cantidad));
+  if (!Number.isFinite(n) || n === 1) return u;
+  if (u === "ud" || u === "uds") return "uds";
+  if (u.endsWith("s")) return u; // gas, etc.
+  if (u.endsWith("l") || u.endsWith("r") || u.endsWith("n")) return `${u}es`; // barril -> barriles
+  return `${u}s`; // caja -> cajas, botella -> botellas
 }
 
 /**
@@ -25,7 +34,7 @@ function unidadLegible(u: string | null | undefined): string {
 export function mensajePedidoStockProfesional(nombre: string, stockActual: number, stockMinimo: number, unidad: string | null): string {
   const diff = deficitPedido(stockActual, stockMinimo);
   const cant = diff > 0 ? diff : Math.max(1, stockMinimo - stockActual);
-  const u = unidadLegible(unidad);
+  const u = pluralizaUnidad(unidad, cant);
   return [
     "*PEDIDO DE STOCK*",
     "Hola, necesito reponer:",
@@ -54,7 +63,7 @@ export function mensajePedidoGlobalLineas(
   const bloques = lineas.map((l) => {
     const diff = deficitPedido(l.stock_actual, l.stock_minimo);
     const cant = diff > 0 ? diff : Math.max(1, l.stock_minimo - l.stock_actual);
-    const u = unidadLegible(l.unidad);
+    const u = pluralizaUnidad(l.unidad, cant);
     return [`- *Producto:* ${l.articulo}`, `- *Cantidad:* ${cant} ${u}`].join("\n");
   });
   return ["*PEDIDO DE STOCK*", "Hola, necesito reponer:", ...bloques, "¡Gracias!"].join("\n");
@@ -111,7 +120,7 @@ export function mensajePedidoCestaPorProveedor(opts: {
   const est = opts.nombreEstablecimiento.trim() || "mi local";
   const prov = opts.nombreProveedor.trim() || "Proveedor";
   const body = opts.lineas.map((l) => {
-    const u = unidadLegible(l.unidad);
+    const u = pluralizaUnidad(l.unidad, l.cantidad);
     return `- ${l.cantidad} ${u} de ${l.articulo}`;
   });
   return [`Hola ${prov}, pedido de ${est}:`, "", ...body].join("\n");

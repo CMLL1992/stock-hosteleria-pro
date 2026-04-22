@@ -1,20 +1,7 @@
-import { MobileHeader } from "@/components/MobileHeader";
-import { RequireSession } from "@/components/RequireSession";
-import { PedidosReposicionClient } from "@/components/PedidosReposicionClient";
-import { RequireAdmin } from "@/components/RequireAdmin";
+import { redirect } from "next/navigation";
 
 export default function PedidosPage() {
-  return (
-    <RequireSession>
-      <RequireAdmin>
-        <div className="min-h-dvh bg-slate-50">
-          <MobileHeader title="Pedidos" />
-          <main className="mx-auto max-w-3xl p-4 pb-28">
-            <PedidosReposicionClient />
-          </main>
-        </div>
-      </RequireAdmin>
-    </RequireSession>
-  );
+  // Alias para no romper enlaces antiguos: la funcionalidad real vive en /admin/pedidos
+  redirect("/admin/pedidos");
 }
 
