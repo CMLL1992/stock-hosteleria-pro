@@ -203,19 +203,14 @@ export function EditarProductoClient({ id }: { id: string }) {
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-semibold text-gray-900">Acciones</p>
-                  <div className="flex flex-col items-end gap-1">
-                    <Link
-                      href={`/qr/${encodeURIComponent(id)}?print=1`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-900 hover:bg-gray-50"
-                    >
-                      Generar QR
-                    </Link>
-                    <p className="max-w-[18rem] text-right text-xs text-gray-500">
-                      Asegúrate de que tu KATASYMBOL T50M Pro esté conectada por Bluetooth o USB a este dispositivo antes de imprimir.
-                    </p>
-                  </div>
+                  <Link
+                    href={`/qr/${encodeURIComponent(id)}?print=1`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-900 hover:bg-gray-50"
+                  >
+                    Generar QR
+                  </Link>
                 </div>
 
                 <div className="space-y-1">

@@ -612,9 +612,6 @@ export function ProductList() {
                     Generar QR
                   </Link>
                 </div>
-                <p className="mt-2 pl-9 text-xs text-slate-500">
-                  Asegúrate de que tu KATASYMBOL T50M Pro esté conectada por Bluetooth o USB a este dispositivo antes de imprimir.
-                </p>
               </div>
             </div>
           );
