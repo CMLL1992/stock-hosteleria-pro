@@ -474,7 +474,6 @@ export default function EscandallosPage() {
                   const provByName = new Map<string, string>();
                   for (const pr of proveedores) provByName.set(pr.nombre.trim().toLowerCase(), pr.id);
 
-                  const prodUpdates: { id: string; establecimiento_id: string; proveedor_id: string | null }[] = [];
                   const escUpdates: EscandalloRow[] = [];
 
                   for (const row of parsed) {
@@ -482,11 +481,9 @@ export default function EscandallosPage() {
                     if (!id) continue;
                     const current = items.find((x) => x.id === id) ?? null;
 
+                    // Nota: Proveedor en CSV se valida pero no se persiste aquí (ver comentario sobre `productos`).
                     const proveedorNombre = (row.Proveedor ?? "").trim();
-                    const provId =
-                      !proveedorNombre
-                        ? null
-                        : provByName.get(proveedorNombre.toLowerCase()) ?? current?.proveedor_id ?? null;
+                    void proveedorNombre;
 
                     const descRaw = String(row.Descuento ?? "").trim();
                     const descNum = descRaw ? toNum(descRaw.replace("%", "").replace("€", "").trim()) : 0;
@@ -499,7 +496,8 @@ export default function EscandallosPage() {
                     const iva = Math.trunc(toNum(String(row.IVA ?? ""))) || 10;
                     const pvp = toNum(String(row.PVP_Botella ?? ""));
 
-                    prodUpdates.push({ id, establecimiento_id: activeEstablishmentId, proveedor_id: provId });
+                    // Importante: NO tocamos `productos` en importación masiva.
+                    // Hacer upsert ahí puede intentar INSERT de nuevos IDs y romper por constraints (nombre/qr_code_uid/etc.).
                     escUpdates.push({
                       producto_id: id,
                       establecimiento_id: activeEstablishmentId,
@@ -517,12 +515,6 @@ export default function EscandallosPage() {
                   if (escUpdates.length === 0) throw new Error("No hay filas válidas (asegúrate de que exista la columna Producto_ID).");
 
                   const chunkSize = 75;
-                  for (let i = 0; i < prodUpdates.length; i += chunkSize) {
-                    const chunk = prodUpdates.slice(i, i + chunkSize);
-                    const { error } = await supabase().from("productos").upsert(chunk, { onConflict: "id" });
-                    if (error) throw error;
-                  }
-
                   for (let i = 0; i < escUpdates.length; i += chunkSize) {
                     const chunk = escUpdates.slice(i, i + chunkSize);
                     const { error } = await supabase().from("escandallos").upsert(chunk, { onConflict: "producto_id" });
