@@ -95,6 +95,19 @@ function sortCats(a: string, b: string): number {
   return a.localeCompare(b, "es", { sensitivity: "base" });
 }
 
+function normSearch(s: unknown): string {
+  // Normaliza para búsquedas robustas: minúsculas + sin tildes (á->a) + trim.
+  try {
+    return String(s ?? "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/\p{Diacritic}+/gu, "");
+  } catch {
+    return "";
+  }
+}
+
 export default function PedidosPage() {
   const [role, setRole] = useState<AppRole | null>(null);
   const [loading, setLoading] = useState(true);
@@ -258,14 +271,13 @@ export default function PedidosPage() {
               const expanded = !!open[key];
               const productosFiltrados = (() => {
                 try {
-                  const searchKey = String(search[key] ?? "").trim().toLowerCase();
+                  const searchKey = normSearch(search[key]);
                   const base = Array.isArray(g.productos) ? g.productos : [];
                   if (!searchKey) return base;
-                  return base.filter((p) => String(p.articulo ?? "").toLowerCase().includes(searchKey));
+                  return base.filter((p) => normSearch(p.articulo).includes(searchKey));
                 } catch (e) {
                   // No permitimos que el filtrado rompa la UI completa (evita crash en producción).
-                  // eslint-disable-next-line no-console
-                  console.error("Error filtrando pedidos:", e);
+                  void e;
                   return [];
                 }
               })();
