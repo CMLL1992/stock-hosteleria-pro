@@ -629,8 +629,13 @@ export default function AdminProductosPage() {
     if (!ok) return;
     try {
       setErr(null);
-      const { error } = await supabase().from("productos").delete().eq("id", p.id).eq("establecimiento_id", activeEstablishmentId);
+      const { data, error } = await supabase().rpc("delete_producto_cascade", { p_producto_id: p.id });
       if (error) throw error;
+      const okRes = ((data ?? null) as { ok?: boolean; message?: string } | null)?.ok ?? false;
+      if (!okRes) {
+        const msg = ((data ?? null) as { message?: string } | null)?.message ?? "No se pudo eliminar el producto.";
+        throw new Error(msg);
+      }
       await refetch();
       setToast({ kind: "ok", message: "Producto eliminado." });
       setEditOpen(false);
