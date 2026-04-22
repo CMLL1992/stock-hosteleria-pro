@@ -145,6 +145,7 @@ type QuickMovimientoTipo = "entrada" | "salida_barra" | "entrada_vacio" | "devol
 export function ProductList() {
   const searchParams = useSearchParams();
   const listaCompra = searchParams.get("compra") === "1";
+  const modoVacios = searchParams.get("vacios") === "1";
   const queryClient = useQueryClient();
   const { me, activeEstablishmentId: establecimientoId, activeEstablishmentName } = useActiveEstablishment();
   const [tab, setTab] = useState<string>("todos");
@@ -196,8 +197,13 @@ export function ProductList() {
     });
   }, [filteredByTab, listaCompra]);
 
+  const filteredForMode = useMemo(() => {
+    if (!modoVacios) return filtered;
+    return filtered.filter((p) => (Number(p.stock_vacios ?? 0) || 0) > 0);
+  }, [filtered, modoVacios]);
+
   const orderedList = useMemo(() => {
-    const list = [...filtered];
+    const list = [...filteredForMode];
     if (!agruparPorProveedor) return list;
     return list.sort((a, b) => {
       const pa = proveedorNombreOrDefault(a).toLowerCase();
@@ -205,7 +211,7 @@ export function ProductList() {
       if (pa !== pb) return pa.localeCompare(pb);
       return a.articulo.localeCompare(b.articulo);
     });
-  }, [filtered, agruparPorProveedor]);
+  }, [filteredForMode, agruparPorProveedor]);
 
   const estNombre = activeEstablishmentName?.trim() || "mi establecimiento";
 
@@ -342,6 +348,14 @@ export function ProductList() {
 
   return (
     <div className="space-y-4 pb-32">
+      {modoVacios ? (
+        <div className="rounded-3xl border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm">
+          Vista: <span className="font-semibold text-slate-900">Vacíos</span>. Solo se muestran productos con vacíos &gt; 0.
+          <Link href="/stock" className="ml-2 font-semibold text-slate-900 underline">
+            Ver todo
+          </Link>
+        </div>
+      ) : null}
       {listaCompra ? (
         <div className="flex flex-col gap-3 rounded-3xl border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-base font-bold text-amber-950">Lista de compra: solo productos bajo mínimos</p>
@@ -520,9 +534,13 @@ export function ProductList() {
         })}
       </div>
 
-      {filtered.length === 0 ? (
+      {filteredForMode.length === 0 ? (
         <p className="rounded-3xl border border-slate-200 bg-white p-6 text-center text-base text-slate-600">
-          {listaCompra ? "No hay productos bajo el mínimo en esta categoría." : "No hay productos en esta categoría."}
+          {modoVacios
+            ? "No hay envases vacíos pendientes en esta categoría."
+            : listaCompra
+              ? "No hay productos bajo el mínimo en esta categoría."
+              : "No hay productos en esta categoría."}
         </p>
       ) : null}
 

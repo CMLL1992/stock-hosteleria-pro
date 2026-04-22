@@ -23,6 +23,9 @@ function tabActive(pathname: string, href: string): boolean {
   if (href === "/admin/proveedores") {
     return pathname === "/admin/proveedores" || pathname.startsWith("/admin/proveedores/");
   }
+  if (href.startsWith("/stock?")) {
+    return pathname === "/stock" || pathname.startsWith("/stock/");
+  }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
@@ -32,13 +35,17 @@ export function BottomTabBar() {
   const isAdmin = !!data?.isAdmin;
 
   const tabs: Tab[] = useMemo(() => {
-    // Staff no tiene /admin/proveedores; el tab existe igualmente pero apuntamos al listado de stock.
-    const provHref = isAdmin ? "/admin/proveedores" : "/stock";
+    if (!isAdmin) {
+      return [
+        { href: "/stock", label: "STOCK" },
+        { href: "/stock?vacios=1", label: "VACÍOS" }
+      ];
+    }
     return [
       { href: "/", label: "INICIO" },
       { href: "/stock", label: "STOCK" },
       { href: "/pedidos", label: "PEDIDOS" },
-      { href: provHref, label: "PROVEEDORES" }
+      { href: "/admin/proveedores", label: "PROVEEDORES" }
     ];
   }, [isAdmin]);
 
