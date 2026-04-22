@@ -740,13 +740,14 @@ export function ProductList() {
                       className={STOCK_INPUT_CLASS}
                       value={stockDraft[p.id] ?? String(p.stock_actual)}
                       onChange={(e) => setStockDraft((d) => ({ ...d, [p.id]: readEvtValue(e) }))}
-                      onBlur={(e) => {
+                      onBlur={() => {
                         if (!canSetStockAbsolute) {
                           // Staff: no puede fijar stock absoluto desde aquí.
                           setStockDraft((d) => ({ ...d, [p.id]: String(p.stock_actual) }));
                           return;
                         }
-                        void setStockFromInput(p, readEvtValue(e));
+                        // En algunos móviles el evento puede llegar sin currentTarget; usamos el estado controlado.
+                        void setStockFromInput(p, stockDraft[p.id] ?? String(p.stock_actual));
                       }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {

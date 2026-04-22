@@ -794,8 +794,9 @@ export default function AdminProductosPage() {
                       className="h-14 w-[5.5rem] rounded-xl border border-slate-300 bg-white px-1 text-center text-2xl font-black tabular-nums text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
                       value={stockQuickDraft[p.id] ?? String(p.stock_actual)}
                       onChange={(e) => setStockQuickDraft((d) => ({ ...d, [p.id]: e.currentTarget.value }))}
-                      onBlur={(e) => {
-                        void commitQuickStock(p, e.currentTarget.value);
+                      onBlur={() => {
+                        // Evita depender del evento (en móvil puede fallar); usamos el valor controlado.
+                        void commitQuickStock(p, stockQuickDraft[p.id] ?? String(p.stock_actual));
                       }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") e.currentTarget.blur();
