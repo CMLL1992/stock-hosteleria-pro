@@ -98,23 +98,24 @@ export default function EditarProveedorPage({ params }: { params: { id: string }
     }
     setErr(null);
     const telefono_whatsapp = telefono.trim() ? normalizeWhatsappPhone(telefono) : null;
-    const { data, error } = await supabase()
+    const { error, count } = await supabase()
       .from("proveedores")
-      .update({
-        nombre: nombre.trim(),
-        telefono_whatsapp,
-        categoria: categoria.trim() || null,
-        notas: notas.trim() || null
-      })
+      .update(
+        {
+          nombre: nombre.trim(),
+          telefono_whatsapp,
+          categoria: categoria.trim() || null,
+          notas: notas.trim() || null
+        },
+        { count: "exact" }
+      )
       .eq("id", prov.id)
-      .eq("establecimiento_id", activeEstablishmentId)
-      .select("id")
-      .maybeSingle();
+      .eq("establecimiento_id", activeEstablishmentId);
     if (error) {
       setErr(error.message);
       return;
     }
-    if (!data?.id) {
+    if (!count) {
       setErr("No se pudo guardar: proveedor no encontrado en el establecimiento activo o sin permisos.");
       return;
     }
@@ -130,18 +131,16 @@ export default function EditarProveedorPage({ params }: { params: { id: string }
     const ok = window.confirm(`¿Eliminar el proveedor "${prov.nombre}"?`);
     if (!ok) return;
     setErr(null);
-    const { data, error } = await supabase()
+    const { error, count } = await supabase()
       .from("proveedores")
-      .delete()
+      .delete({ count: "exact" })
       .eq("id", prov.id)
-      .eq("establecimiento_id", activeEstablishmentId)
-      .select("id")
-      .maybeSingle();
+      .eq("establecimiento_id", activeEstablishmentId);
     if (error) {
       setErr(error.message);
       return;
     }
-    if (!data?.id) {
+    if (!count) {
       setErr("No se pudo eliminar: proveedor no encontrado en el establecimiento activo o sin permisos.");
       return;
     }
