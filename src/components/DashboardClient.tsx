@@ -47,6 +47,26 @@ export function DashboardClient() {
     return out;
   }, [rows]);
 
+  const vaciosDetalleTop = useMemo(() => {
+    const items = rows
+      .map((p) => ({
+        articulo: p.articulo,
+        stock_vacios: Number(p.stock_vacios ?? 0) || 0,
+        unidad: (p.unidad ?? "").trim().toLowerCase(),
+        categoria: (p.categoria ?? "").trim().toLowerCase()
+      }))
+      .filter((x) => x.stock_vacios > 0)
+      .sort((a, b) => b.stock_vacios - a.stock_vacios)
+      .slice(0, 3);
+
+    return items.map((x) => {
+      const esGas = x.categoria.includes("gas") || x.articulo.toLowerCase().includes("gas");
+      const base = esGas ? "gas" : x.unidad || "uds";
+      const plural = x.stock_vacios === 1 ? base : base.endsWith("s") ? base : `${base}s`;
+      return `${x.stock_vacios} ${plural} de ${x.articulo}`;
+    });
+  }, [rows]);
+
   if (productosQuery.isLoading) {
     return <p className="text-base text-slate-500">Cargando stock…</p>;
   }
@@ -75,7 +95,10 @@ export function DashboardClient() {
           <p className="mt-1 text-center text-[11px] text-red-600/90">Stock actual ≤ stock mínimo</p>
           <p className="mt-4 text-center text-5xl font-black tabular-nums tracking-tight text-red-600">{bajoMinimos.length}</p>
         </div>
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm">
+        <Link
+          href="/stock?vacios=1"
+          className="block rounded-3xl border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm hover:bg-slate-50"
+        >
           <p className="font-semibold text-slate-900">Envases para devolver</p>
           <p className="mt-2 text-sm text-slate-600">Total en stock de vacíos (solo positivos).</p>
           <div className="mt-4 grid grid-cols-3 gap-2">
@@ -92,8 +115,22 @@ export function DashboardClient() {
               <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{vacios.gas}</p>
             </div>
           </div>
-          <p className="mt-3 text-xs text-slate-500">Gas: detectado por “gas” en categoría o nombre.</p>
-        </div>
+          {vaciosDetalleTop.length > 0 ? (
+            <div className="mt-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Detalle (top 3)</p>
+              <ul className="mt-2 space-y-1 text-sm text-slate-700">
+                {vaciosDetalleTop.map((t) => (
+                  <li key={t} className="truncate">
+                    {t}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs text-slate-500">Toca para ver inventario de vacíos.</p>
+            </div>
+          ) : (
+            <p className="mt-4 text-xs text-slate-500">Sin envases pendientes.</p>
+          )}
+        </Link>
       </div>
 
       <Link

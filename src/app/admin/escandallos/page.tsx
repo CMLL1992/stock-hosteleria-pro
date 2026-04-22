@@ -24,6 +24,16 @@ type ProductoRow = {
 const IVA_OPTIONS = [4, 10, 21] as const;
 const DESC_OPTIONS = ["%", "€"] as const;
 
+function errMsg(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+  try {
+    return JSON.stringify(e);
+  } catch {
+    return String(e);
+  }
+}
+
 function toNum(v: string): number {
   const n = Number(v.replace(",", "."));
   return Number.isFinite(n) ? n : 0;
@@ -54,7 +64,7 @@ export default function EscandallosPage() {
       })
       .catch((e) => {
         if (cancelled) return;
-        setErr(e instanceof Error ? e.message : String(e));
+        setErr(errMsg(e));
       })
       .finally(() => {
         if (cancelled) return;
@@ -93,7 +103,7 @@ export default function EscandallosPage() {
   useEffect(() => {
     if (role !== "admin" && role !== "superadmin") return;
     if (!activeEstablishmentId) return;
-    load().catch((e) => setErr(e instanceof Error ? e.message : String(e)));
+    load().catch((e) => setErr(errMsg(e)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeEstablishmentId, role]);
 

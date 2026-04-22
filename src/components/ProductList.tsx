@@ -141,7 +141,7 @@ function proveedorNombreOrDefault(p: Producto): string {
 const STOCK_INPUT_CLASS =
   "h-14 w-[5.5rem] shrink-0 rounded-2xl border-2 border-slate-800 bg-white px-2 text-center text-2xl font-black tabular-nums text-slate-900 shadow-inner focus:outline-none focus:ring-4 focus:ring-slate-300";
 
-type QuickMovimientoTipo = "entrada" | "salida_barra" | "devolucion_proveedor";
+type QuickMovimientoTipo = "entrada_compra" | "salida_barra" | "devolucion_proveedor";
 
 export function ProductList() {
   const searchParams = useSearchParams();
@@ -159,7 +159,8 @@ export function ProductList() {
 
   const [movOpen, setMovOpen] = useState(false);
   const [movProd, setMovProd] = useState<Producto | null>(null);
-  const [movTipo, setMovTipo] = useState<QuickMovimientoTipo>("entrada");
+  const [movStep, setMovStep] = useState<"menu" | "cantidad">("menu");
+  const [movTipo, setMovTipo] = useState<QuickMovimientoTipo>("entrada_compra");
   const [movCantidad, setMovCantidad] = useState<number>(1);
   const [movBusy, setMovBusy] = useState(false);
   const qtyRef = useRef<HTMLInputElement | null>(null);
@@ -280,6 +281,28 @@ export function ProductList() {
     }
   };
 
+  const deltaStock = async (p: Producto, delta: number) => {
+    if (!establecimientoId) return;
+    setBusyId(p.id);
+    setStockErr(null);
+    try {
+      const next = Math.max(0, Math.trunc(Number(p.stock_actual)) + delta);
+      const { error: upErr } = await supabase()
+        .from("productos")
+        .update({ stock_actual: next })
+        .eq("id", p.id)
+        .eq("establecimiento_id", establecimientoId);
+      if (upErr) throw upErr;
+      setStockDraft((d) => ({ ...d, [p.id]: String(next) }));
+      await queryClient.invalidateQueries({ queryKey: ["productos", establecimientoId] });
+      await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", establecimientoId] });
+    } catch (e) {
+      setStockErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   useEffect(() => {
     if (!movOpen) return;
     const t = window.setTimeout(() => {
@@ -289,10 +312,10 @@ export function ProductList() {
     return () => window.clearTimeout(t);
   }, [movOpen]);
 
-  const openQuickMovimiento = (p: Producto, tipo: QuickMovimientoTipo) => {
+  const openGestionar = (p: Producto) => {
     setMovProd(p);
-    setMovTipo(tipo);
     setMovCantidad(1);
+    setMovStep("menu");
     setMovOpen(true);
   };
 
@@ -337,6 +360,7 @@ export function ProductList() {
       await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", establecimientoId] });
       setMovOpen(false);
       setMovProd(null);
+      setMovStep("menu");
     } catch (e) {
       setStockErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -503,42 +527,32 @@ export function ProductList() {
                   </div>
                 </div>
 
-                <div className="mt-4 flex flex-wrap gap-2 pl-9">
+                <div className="mt-4 flex flex-wrap items-stretch gap-2 pl-9">
                   <button
                     type="button"
-                    onClick={() => openQuickMovimiento(p, "entrada")}
-                    className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+                    disabled={busy || p.stock_actual <= 0}
+                    onClick={() => void deltaStock(p, -1)}
+                    className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 text-lg font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-40"
+                    aria-label="Restar una unidad"
                   >
-                    Entrada
+                    −
                   </button>
                   <button
                     type="button"
-                    onClick={() => openQuickMovimiento(p, "salida_barra")}
-                    className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+                    disabled={busy}
+                    onClick={() => void deltaStock(p, +1)}
+                    className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 text-lg font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-40"
+                    aria-label="Sumar una unidad"
                   >
-                    A barra
+                    +
                   </button>
                   <button
                     type="button"
-                    onClick={() => openQuickMovimiento(p, "devolucion_proveedor")}
-                    className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+                    onClick={() => openGestionar(p)}
+                    className="inline-flex min-h-12 flex-1 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
                   >
-                    Devolver
+                    GESTIONAR
                   </button>
-                  <Link
-                    href={`/qr/${encodeURIComponent(p.id)}`}
-                    className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm"
-                  >
-                    QR
-                  </Link>
-                  {me?.isAdmin ? (
-                    <Link
-                      href={`/admin/productos/${encodeURIComponent(p.id)}/editar`}
-                      className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm"
-                    >
-                      Editar
-                    </Link>
-                  ) : null}
                 </div>
               </div>
             </div>
@@ -615,89 +629,113 @@ export function ProductList() {
 
       <Drawer
         open={movOpen}
-        title={movProd ? `Movimiento · ${movProd.articulo}` : "Movimiento"}
+        title={movProd ? `Gestionar · ${movProd.articulo}` : "Gestionar"}
         onClose={() => {
           if (movBusy) return;
           setMovOpen(false);
           setMovProd(null);
+          setMovStep("menu");
         }}
       >
         <div className="space-y-3">
-          <div className="grid grid-cols-3 gap-2">
-            <button
-              type="button"
-              className={[
-                "min-h-12 rounded-2xl border px-3 text-sm font-semibold",
-                movTipo === "entrada" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-800"
-              ].join(" ")}
-              onClick={() => setMovTipo("entrada")}
-              disabled={movBusy}
-            >
-              Entrada
-            </button>
-            <button
-              type="button"
-              className={[
-                "min-h-12 rounded-2xl border px-3 text-sm font-semibold",
-                movTipo === "salida_barra" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-800"
-              ].join(" ")}
-              onClick={() => setMovTipo("salida_barra")}
-              disabled={movBusy}
-            >
-              A barra
-            </button>
-            <button
-              type="button"
-              className={[
-                "min-h-12 rounded-2xl border px-3 text-sm font-semibold",
-                movTipo === "devolucion_proveedor" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-800"
-              ].join(" ")}
-              onClick={() => setMovTipo("devolucion_proveedor")}
-              disabled={movBusy}
-            >
-              Devolver
-            </button>
-          </div>
+          {movStep === "menu" ? (
+            <div className="space-y-2">
+              <button
+                type="button"
+                disabled={movBusy}
+                onClick={() => {
+                  setMovTipo("entrada_compra");
+                  setMovStep("cantidad");
+                }}
+                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-50"
+              >
+                Registrar Entrada (Compra)
+              </button>
+              <button
+                type="button"
+                disabled={movBusy}
+                onClick={() => {
+                  setMovTipo("salida_barra");
+                  setMovStep("cantidad");
+                }}
+                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-50"
+              >
+                Sacar a Barra
+              </button>
+              <button
+                type="button"
+                disabled={movBusy}
+                onClick={() => {
+                  setMovTipo("devolucion_proveedor");
+                  setMovStep("cantidad");
+                }}
+                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-50"
+              >
+                Devolver a Proveedor
+              </button>
+              {me?.isAdmin && movProd ? (
+                <Link
+                  href={`/admin/productos/${encodeURIComponent(movProd.id)}/editar`}
+                  className="flex min-h-12 w-full items-center rounded-2xl border border-slate-200 bg-white px-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-50"
+                >
+                  Editar Producto
+                </Link>
+              ) : null}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <button
+                type="button"
+                disabled={movBusy}
+                onClick={() => setMovStep("menu")}
+                className="min-h-10 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+              >
+                Volver
+              </button>
 
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-slate-900">Cantidad</label>
-            <input
-              className="min-h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base"
-              inputMode="numeric"
-              type="number"
-              min={1}
-              step={1}
-              value={movCantidad}
-              onChange={(e) => setMovCantidad(Number(e.currentTarget.value))}
-              onFocus={(e) => e.currentTarget.select()}
-              ref={qtyRef}
-              disabled={movBusy}
-            />
-          </div>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-900">Cantidad</label>
+                <input
+                  className="min-h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base"
+                  inputMode="numeric"
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={movCantidad}
+                  onChange={(e) => setMovCantidad(Number(e.currentTarget.value))}
+                  onFocus={(e) => e.currentTarget.select()}
+                  ref={qtyRef}
+                  disabled={movBusy}
+                />
+              </div>
 
-          <div className="grid grid-cols-1 gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                void commitQuickMovimiento();
-              }}
-              disabled={movBusy || !movProd || !establecimientoId}
-              className="min-h-12 w-full rounded-2xl bg-black px-4 text-sm font-semibold text-white hover:bg-slate-900 active:bg-slate-950 disabled:opacity-50"
-            >
-              {movBusy ? "Guardando…" : "Confirmar"}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (movBusy) return;
-                setMovOpen(false);
-                setMovProd(null);
-              }}
-              className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50"
-            >
-              Cerrar
-            </button>
-          </div>
+              <div className="grid grid-cols-1 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void commitQuickMovimiento();
+                  }}
+                  disabled={movBusy || !movProd || !establecimientoId}
+                  className="min-h-12 w-full rounded-2xl bg-black px-4 text-sm font-semibold text-white hover:bg-slate-900 active:bg-slate-950 disabled:opacity-50"
+                >
+                  {movBusy ? "Guardando…" : "Confirmar"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => {
+              if (movBusy) return;
+              setMovOpen(false);
+              setMovProd(null);
+              setMovStep("menu");
+            }}
+            className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+          >
+            Cerrar
+          </button>
         </div>
       </Drawer>
     </div>
