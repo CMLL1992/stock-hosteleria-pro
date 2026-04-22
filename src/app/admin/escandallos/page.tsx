@@ -204,6 +204,15 @@ export default function EscandallosPage() {
   const [nuevoPvp, setNuevoPvp] = useState<string>("0");
   const [nuevoIvaVenta, setNuevoIvaVenta] = useState<number>(10);
 
+  function readEvtValue(e: { currentTarget?: { value?: unknown } } | null | undefined): string {
+    try {
+      const v = e?.currentTarget?.value;
+      return typeof v === "string" ? v : String(v ?? "");
+    } catch {
+      return "";
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -603,7 +612,7 @@ export default function EscandallosPage() {
               className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
               value={nuevoId}
               onChange={(e) => {
-                const id = e.currentTarget.value;
+                const id = readEvtValue(e);
                 setNuevoId(id);
                 const p = items.find((x) => x.id === id);
                 if (p) {
@@ -649,7 +658,7 @@ export default function EscandallosPage() {
             <select
               className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
               value={nuevoProveedorId}
-              onChange={(e) => setNuevoProveedorId(e.currentTarget.value)}
+              onChange={(e) => setNuevoProveedorId(readEvtValue(e))}
               aria-label="Proveedor"
             >
               <option value="">(Sin proveedor)</option>
@@ -668,7 +677,7 @@ export default function EscandallosPage() {
                 className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 pr-9 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
                 inputMode="decimal"
                 value={nuevoPrecioTarifa}
-                onChange={(e) => setNuevoPrecioTarifa(e.currentTarget.value)}
+                onChange={(e) => setNuevoPrecioTarifa(readEvtValue(e))}
               />
               <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500">€</span>
             </div>
@@ -680,7 +689,7 @@ export default function EscandallosPage() {
               className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
               inputMode="numeric"
               value={nuevoUdsCaja}
-              onChange={(e) => setNuevoUdsCaja(e.currentTarget.value)}
+              onChange={(e) => setNuevoUdsCaja(readEvtValue(e))}
             />
           </label>
 
@@ -691,7 +700,7 @@ export default function EscandallosPage() {
                 className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 pr-9 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
                 inputMode="decimal"
                 value={nuevoDescuentoValor}
-                onChange={(e) => setNuevoDescuentoValor(e.currentTarget.value)}
+                onChange={(e) => setNuevoDescuentoValor(readEvtValue(e))}
               />
               <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500">
                 {nuevoDescuentoTipo}
@@ -704,7 +713,7 @@ export default function EscandallosPage() {
             <select
               className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
               value={nuevoDescuentoTipo}
-              onChange={(e) => setNuevoDescuentoTipo(e.currentTarget.value as "%" | "€")}
+              onChange={(e) => setNuevoDescuentoTipo(readEvtValue(e) as "%" | "€")}
             >
               {DESC_OPTIONS.map((v) => (
                 <option key={v} value={v}>
@@ -721,7 +730,7 @@ export default function EscandallosPage() {
                 className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 pr-9 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
                 inputMode="decimal"
                 value={nuevoRappel}
-                onChange={(e) => setNuevoRappel(e.currentTarget.value)}
+                onChange={(e) => setNuevoRappel(readEvtValue(e))}
               />
               <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500">€</span>
             </div>
@@ -732,7 +741,7 @@ export default function EscandallosPage() {
             <select
               className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
               value={nuevoIvaCompra}
-              onChange={(e) => setNuevoIvaCompra(Number(e.currentTarget.value))}
+              onChange={(e) => setNuevoIvaCompra(Number(readEvtValue(e)))}
             >
               {IVA_OPTIONS.map((v) => (
                 <option key={v} value={v}>
@@ -749,7 +758,7 @@ export default function EscandallosPage() {
                 className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 pr-9 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
                 inputMode="decimal"
                 value={nuevoPvp}
-                onChange={(e) => setNuevoPvp(e.currentTarget.value)}
+                onChange={(e) => setNuevoPvp(readEvtValue(e))}
               />
               <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500">€</span>
             </div>
@@ -760,7 +769,7 @@ export default function EscandallosPage() {
             <select
               className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
               value={nuevoIvaVenta}
-              onChange={(e) => setNuevoIvaVenta(Number(e.currentTarget.value))}
+              onChange={(e) => setNuevoIvaVenta(Number(readEvtValue(e)))}
             >
               {IVA_OPTIONS.map((v) => (
                 <option key={v} value={v}>
@@ -789,7 +798,7 @@ export default function EscandallosPage() {
             <select
               className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
               value={verId}
-              onChange={(e) => setVerId(e.currentTarget.value)}
+              onChange={(e) => setVerId(readEvtValue(e))}
               aria-label="Consultar producto"
             >
               <option value="">(Selecciona…)</option>
@@ -830,7 +839,7 @@ export default function EscandallosPage() {
                   value={String(verRow.p.precio_tarifa ?? 0)}
                   onChange={(e) =>
                     setItems((prev) =>
-                      prev.map((x) => (x.id === verRow.p.id ? { ...x, precio_tarifa: toNum(e.currentTarget.value) } : x))
+                      prev.map((x) => (x.id === verRow.p.id ? { ...x, precio_tarifa: toNum(readEvtValue(e)) } : x))
                     )
                   }
                 />
@@ -844,7 +853,7 @@ export default function EscandallosPage() {
                   onChange={(e) =>
                     setItems((prev) =>
                       prev.map((x) =>
-                        x.id === verRow.p.id ? { ...x, uds_caja: Math.max(1, Math.trunc(toNum(e.currentTarget.value))) } : x
+                        x.id === verRow.p.id ? { ...x, uds_caja: Math.max(1, Math.trunc(toNum(readEvtValue(e)))) } : x
                       )
                     )
                   }
@@ -858,7 +867,7 @@ export default function EscandallosPage() {
                   value={String(verRow.p.descuento_valor ?? 0)}
                   onChange={(e) =>
                     setItems((prev) =>
-                      prev.map((x) => (x.id === verRow.p.id ? { ...x, descuento_valor: toNum(e.currentTarget.value) } : x))
+                      prev.map((x) => (x.id === verRow.p.id ? { ...x, descuento_valor: toNum(readEvtValue(e)) } : x))
                     )
                   }
                 />
@@ -871,7 +880,7 @@ export default function EscandallosPage() {
                   value={String(verRow.p.rappel_valor ?? 0)}
                   onChange={(e) =>
                     setItems((prev) =>
-                      prev.map((x) => (x.id === verRow.p.id ? { ...x, rappel_valor: toNum(e.currentTarget.value) } : x))
+                      prev.map((x) => (x.id === verRow.p.id ? { ...x, rappel_valor: toNum(readEvtValue(e)) } : x))
                     )
                   }
                 />
@@ -884,7 +893,7 @@ export default function EscandallosPage() {
                   onChange={(e) =>
                     setItems((prev) =>
                       prev.map((x) =>
-                        x.id === verRow.p.id ? { ...x, descuento_tipo: e.currentTarget.value as "%" | "€" } : x
+                        x.id === verRow.p.id ? { ...x, descuento_tipo: readEvtValue(e) as "%" | "€" } : x
                       )
                     )
                   }
@@ -903,7 +912,7 @@ export default function EscandallosPage() {
                   value={Number(verRow.p.iva_compra ?? 10)}
                   onChange={(e) =>
                     setItems((prev) =>
-                      prev.map((x) => (x.id === verRow.p.id ? { ...x, iva_compra: Number(e.currentTarget.value) } : x))
+                      prev.map((x) => (x.id === verRow.p.id ? { ...x, iva_compra: Number(readEvtValue(e)) } : x))
                     )
                   }
                 >
@@ -932,7 +941,7 @@ export default function EscandallosPage() {
                   value={Number(verRow.p.iva_venta ?? 10)}
                   onChange={(e) =>
                     setItems((prev) =>
-                      prev.map((x) => (x.id === verRow.p.id ? { ...x, iva_venta: Number(e.currentTarget.value) } : x))
+                      prev.map((x) => (x.id === verRow.p.id ? { ...x, iva_venta: Number(readEvtValue(e)) } : x))
                     )
                   }
                 >
