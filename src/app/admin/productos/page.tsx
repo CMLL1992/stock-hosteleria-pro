@@ -798,7 +798,7 @@ export default function AdminProductosPage() {
                         void commitQuickStock(p, e.currentTarget.value);
                       }}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                        if (e.key === "Enter") e.currentTarget.blur();
                       }}
                     />
                   </div>
