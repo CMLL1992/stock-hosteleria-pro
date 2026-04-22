@@ -12,6 +12,13 @@ import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { Drawer } from "@/components/ui/Drawer";
 import { QrScanner } from "@/components/scanner/QrScanner";
 
+function isMissingEscandallosTable(e: unknown): boolean {
+  const anyErr = e as { code?: unknown; message?: unknown };
+  const code = typeof anyErr?.code === "string" ? anyErr.code : "";
+  const msg = typeof anyErr?.message === "string" ? anyErr.message : "";
+  return code === "PGRST205" || /could not find the table/i.test(msg) || /public\.escandallos/i.test(msg);
+}
+
 type ProveedorRow = { id: string; nombre: string };
 
 type ProductoRow = {
@@ -355,28 +362,54 @@ export default function RecepcionPage() {
                   const pid = extractProductId(txt);
                   if (!pid || !activeEstablishmentId) return;
                   try {
-                    const { data, error } = await supabase()
-                      .from("escandallos")
-                      .select("producto_id,precio_tarifa,productos:productos(articulo,nombre)")
-                      .eq("producto_id", pid)
-                      .eq("establecimiento_id", activeEstablishmentId)
-                      .maybeSingle();
-                    if (error) throw error;
-                    const row = (data ?? null) as
-                      | null
-                      | {
-                          producto_id?: string;
-                          precio_tarifa?: unknown;
-                          productos?: { articulo?: string | null; nombre?: string | null } | { articulo?: string | null; nombre?: string | null }[] | null;
-                        };
-                    if (!row?.producto_id) throw new Error("Producto no encontrado para este establecimiento.");
-                    const prodRaw = row.productos;
-                    const prod = Array.isArray(prodRaw) ? prodRaw[0] ?? null : prodRaw;
-                    setCompareProd({
-                      id: String(row.producto_id),
-                      articulo: String(prod?.articulo ?? prod?.nombre ?? "—").trim() || "—",
-                      precio_tarifa: Number(row.precio_tarifa ?? 0) || 0
-                    });
+                    try {
+                      const { data, error } = await supabase()
+                        .from("escandallos")
+                        .select("producto_id,precio_tarifa,productos:productos(articulo,nombre)")
+                        .eq("producto_id", pid)
+                        .eq("establecimiento_id", activeEstablishmentId)
+                        .maybeSingle();
+                      if (error) throw error;
+                      const row = (data ?? null) as
+                        | null
+                        | {
+                            producto_id?: string;
+                            precio_tarifa?: unknown;
+                            productos?:
+                              | { articulo?: string | null; nombre?: string | null }
+                              | { articulo?: string | null; nombre?: string | null }[]
+                              | null;
+                          };
+                      if (!row?.producto_id) throw new Error("Producto no encontrado para este establecimiento.");
+                      const prodRaw = row.productos;
+                      const prod = Array.isArray(prodRaw) ? prodRaw[0] ?? null : prodRaw;
+                      setCompareProd({
+                        id: String(row.producto_id),
+                        articulo: String(prod?.articulo ?? prod?.nombre ?? "—").trim() || "—",
+                        precio_tarifa: Number(row.precio_tarifa ?? 0) || 0
+                      });
+                    } catch (e) {
+                      if (!isMissingEscandallosTable(e)) throw e;
+                      const { data, error } = await supabase()
+                        .from("productos")
+                        .select("id,articulo,nombre,precio_tarifa")
+                        .eq("id", pid)
+                        .eq("establecimiento_id", activeEstablishmentId)
+                        .maybeSingle();
+                      if (error) throw error;
+                      const row = (data ?? null) as null | {
+                        id?: string;
+                        articulo?: string | null;
+                        nombre?: string | null;
+                        precio_tarifa?: unknown;
+                      };
+                      if (!row?.id) throw new Error("Producto no encontrado para este establecimiento.");
+                      setCompareProd({
+                        id: String(row.id),
+                        articulo: String(row.articulo ?? row.nombre ?? "—").trim() || "—",
+                        precio_tarifa: Number(row.precio_tarifa ?? 0) || 0
+                      });
+                    }
                     setCompareStep("compare");
                     setCompareResult(null);
                   } catch (e) {

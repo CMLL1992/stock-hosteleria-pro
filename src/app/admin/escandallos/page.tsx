@@ -39,6 +39,18 @@ type EscandalloRow = {
   iva_venta: number;
 };
 
+function isMissingEscandallosTable(e: unknown): boolean {
+  const anyErr = e as { code?: unknown; message?: unknown };
+  const code = typeof anyErr?.code === "string" ? anyErr.code : "";
+  const msg = typeof anyErr?.message === "string" ? anyErr.message : "";
+  return (
+    code === "PGRST205" ||
+    /could not find the table/i.test(msg) ||
+    /public\.escandallos/i.test(msg) ||
+    /escandallos/i.test(msg)
+  );
+}
+
 type ProveedorRow = { id: string; nombre: string };
 
 const IVA_OPTIONS = [4, 10, 21] as const;
@@ -205,58 +217,89 @@ export default function EscandallosPage() {
     if (!activeEstablishmentId) return;
     const col = await resolveProductoTituloColumn(activeEstablishmentId);
     const t = tituloColSql(col);
-    const baseSel = `id,${t},categoria,proveedor_id`;
-    const resProd = await supabase()
-      .from("productos")
-      .select(baseSel as "*")
-      .eq("establecimiento_id", activeEstablishmentId)
-      .order(t, { ascending: true });
-    if (resProd.error) throw resProd.error;
+    // Intento preferente: tabla escandallos (admin-only).
+    try {
+      const baseSel = `id,${t},categoria,proveedor_id`;
+      const resProd = await supabase()
+        .from("productos")
+        .select(baseSel as "*")
+        .eq("establecimiento_id", activeEstablishmentId)
+        .order(t, { ascending: true });
+      if (resProd.error) throw resProd.error;
 
-    const resEsc = await supabase()
-      .from("escandallos")
-      .select("producto_id,establecimiento_id,precio_tarifa,uds_caja,descuento_valor,descuento_tipo,rappel_valor,iva_compra,pvp,iva_venta")
-      .eq("establecimiento_id", activeEstablishmentId);
-    if (resEsc.error) throw resEsc.error;
+      const resEsc = await supabase()
+        .from("escandallos")
+        .select("producto_id,establecimiento_id,precio_tarifa,uds_caja,descuento_valor,descuento_tipo,rappel_valor,iva_compra,pvp,iva_venta")
+        .eq("establecimiento_id", activeEstablishmentId);
+      if (resEsc.error) throw resEsc.error;
 
-    const escByProd = new Map<string, EscandalloRow>();
-    for (const r of (resEsc.data as unknown as Record<string, unknown>[]) ?? []) {
-      const pid = String(r.producto_id ?? "").trim();
-      if (!pid) continue;
-      escByProd.set(pid, {
-        producto_id: pid,
-        establecimiento_id: String(r.establecimiento_id ?? activeEstablishmentId),
-        precio_tarifa: Number(r.precio_tarifa ?? 0) || 0,
-        uds_caja: Math.max(1, Math.trunc(Number(r.uds_caja ?? 1) || 1)),
-        descuento_valor: Number(r.descuento_valor ?? 0) || 0,
-        descuento_tipo: (String(r.descuento_tipo ?? "%") === "€" ? "€" : "%") as "%" | "€",
-        rappel_valor: Number(r.rappel_valor ?? 0) || 0,
-        iva_compra: Math.trunc(Number(r.iva_compra ?? 10) || 10),
-        pvp: Number(r.pvp ?? 0) || 0,
-        iva_venta: Math.trunc(Number(r.iva_venta ?? 10) || 10)
-      });
-    }
+      const escByProd = new Map<string, EscandalloRow>();
+      for (const r of (resEsc.data as unknown as Record<string, unknown>[]) ?? []) {
+        const pid = String(r.producto_id ?? "").trim();
+        if (!pid) continue;
+        escByProd.set(pid, {
+          producto_id: pid,
+          establecimiento_id: String(r.establecimiento_id ?? activeEstablishmentId),
+          precio_tarifa: Number(r.precio_tarifa ?? 0) || 0,
+          uds_caja: Math.max(1, Math.trunc(Number(r.uds_caja ?? 1) || 1)),
+          descuento_valor: Number(r.descuento_valor ?? 0) || 0,
+          descuento_tipo: (String(r.descuento_tipo ?? "%") === "€" ? "€" : "%") as "%" | "€",
+          rappel_valor: Number(r.rappel_valor ?? 0) || 0,
+          iva_compra: Math.trunc(Number(r.iva_compra ?? 10) || 10),
+          pvp: Number(r.pvp ?? 0) || 0,
+          iva_venta: Math.trunc(Number(r.iva_venta ?? 10) || 10)
+        });
+      }
 
-    setItems(
-      ((resProd.data ?? []) as unknown as Record<string, unknown>[]).map((r) => {
-        const id = String(r.id ?? "");
-        const esc = escByProd.get(id) ?? null;
-        return {
-          id,
+      setItems(
+        ((resProd.data ?? []) as unknown as Record<string, unknown>[]).map((r) => {
+          const id = String(r.id ?? "");
+          const esc = escByProd.get(id) ?? null;
+          return {
+            id,
+            articulo: String(r[t] ?? r.articulo ?? r.nombre ?? "").trim() || "—",
+            categoria: r.categoria != null ? String(r.categoria) : null,
+            proveedor_id: r.proveedor_id != null ? String(r.proveedor_id) : null,
+            precio_tarifa: esc?.precio_tarifa ?? 0,
+            uds_caja: esc?.uds_caja ?? 1,
+            descuento_valor: esc?.descuento_valor ?? 0,
+            descuento_tipo: esc?.descuento_tipo ?? "%",
+            rappel_valor: esc?.rappel_valor ?? 0,
+            iva_compra: esc?.iva_compra ?? 10,
+            pvp: esc?.pvp ?? 0,
+            iva_venta: esc?.iva_venta ?? 10
+          };
+        })
+      );
+      return;
+    } catch (e) {
+      if (!isMissingEscandallosTable(e)) throw e;
+      // Fallback temporal: mientras no exista 'escandallos' en la BD, leemos finanzas desde 'productos'.
+      const legacySel = `id,${t},categoria,proveedor_id,precio_tarifa,uds_caja,descuento_valor,descuento_tipo,rappel_valor,iva_compra,pvp,iva_venta`;
+      const res = await supabase()
+        .from("productos")
+        .select(legacySel as "*")
+        .eq("establecimiento_id", activeEstablishmentId)
+        .order(t, { ascending: true });
+      if (res.error) throw res.error;
+      setItems(
+        ((res.data ?? []) as unknown as Record<string, unknown>[]).map((r) => ({
+          id: String(r.id ?? ""),
           articulo: String(r[t] ?? r.articulo ?? r.nombre ?? "").trim() || "—",
           categoria: r.categoria != null ? String(r.categoria) : null,
           proveedor_id: r.proveedor_id != null ? String(r.proveedor_id) : null,
-          precio_tarifa: esc?.precio_tarifa ?? 0,
-          uds_caja: esc?.uds_caja ?? 1,
-          descuento_valor: esc?.descuento_valor ?? 0,
-          descuento_tipo: esc?.descuento_tipo ?? "%",
-          rappel_valor: esc?.rappel_valor ?? 0,
-          iva_compra: esc?.iva_compra ?? 10,
-          pvp: esc?.pvp ?? 0,
-          iva_venta: esc?.iva_venta ?? 10
-        };
-      })
-    );
+          precio_tarifa: r.precio_tarifa != null ? Number(r.precio_tarifa) : null,
+          uds_caja: r.uds_caja != null ? Number(r.uds_caja) : null,
+          descuento_valor: r.descuento_valor != null ? Number(r.descuento_valor) : null,
+          descuento_tipo: (r.descuento_tipo as ProductoRow["descuento_tipo"]) ?? null,
+          rappel_valor: r.rappel_valor != null ? Number(r.rappel_valor) : null,
+          iva_compra: r.iva_compra != null ? Number(r.iva_compra) : null,
+          pvp: r.pvp != null ? Number(r.pvp) : null,
+          iva_venta: r.iva_venta != null ? Number(r.iva_venta) : null
+        }))
+      );
+      setErr("Aviso: falta la tabla 'escandallos' en Supabase. Ejecuta el patch SQL para activar el hardening de seguridad.");
+    }
   }
 
   useEffect(() => {

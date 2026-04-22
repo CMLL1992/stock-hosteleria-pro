@@ -92,6 +92,13 @@ function mapProductoQueryRow(r: Record<string, unknown>, tituloKey: string): Pro
   };
 }
 
+function isMissingEscandallosTable(e: unknown): boolean {
+  const anyErr = e as { code?: unknown; message?: unknown };
+  const code = typeof anyErr?.code === "string" ? anyErr.code : "";
+  const msg = typeof anyErr?.message === "string" ? anyErr.message : "";
+  return code === "PGRST205" || /could not find the table/i.test(msg) || /public\.escandallos/i.test(msg);
+}
+
 function ToastView({ toast, onClose }: { toast: Toast; onClose: () => void }) {
   if (!toast) return null;
   const cls =
@@ -334,17 +341,33 @@ export default function AdminProductosPage() {
         if (cancelled) return;
         const base = ((lite.data ?? []) as unknown as Record<string, unknown>[]).map((r) => mapProductoQueryRow(r, t));
 
-        const esc = await supabase()
-          .from("escandallos")
-          .select("producto_id,precio_tarifa")
-          .eq("establecimiento_id", activeEstablishmentId);
-        if (esc.error) throw esc.error;
         const priceById = new Map<string, number>();
-        for (const r of (esc.data as unknown as Record<string, unknown>[]) ?? []) {
-          const pid = String(r.producto_id ?? "").trim();
-          if (!pid) continue;
-          const n = Number(r.precio_tarifa ?? 0);
-          priceById.set(pid, Number.isFinite(n) ? n : 0);
+        try {
+          const esc = await supabase()
+            .from("escandallos")
+            .select("producto_id,precio_tarifa")
+            .eq("establecimiento_id", activeEstablishmentId);
+          if (esc.error) throw esc.error;
+          for (const r of (esc.data as unknown as Record<string, unknown>[]) ?? []) {
+            const pid = String(r.producto_id ?? "").trim();
+            if (!pid) continue;
+            const n = Number(r.precio_tarifa ?? 0);
+            priceById.set(pid, Number.isFinite(n) ? n : 0);
+          }
+        } catch (e) {
+          if (!isMissingEscandallosTable(e)) throw e;
+          // Fallback temporal mientras no exista 'escandallos': leemos precio_tarifa desde productos (admin-only page).
+          const legacy = await supabase()
+            .from("productos")
+            .select("id,precio_tarifa")
+            .eq("establecimiento_id", activeEstablishmentId);
+          if (legacy.error) throw legacy.error;
+          for (const r of (legacy.data as unknown as Record<string, unknown>[]) ?? []) {
+            const pid = String(r.id ?? "").trim();
+            if (!pid) continue;
+            const n = Number(r.precio_tarifa ?? 0);
+            priceById.set(pid, Number.isFinite(n) ? n : 0);
+          }
         }
 
         setHasPrecioTarifa(true);
@@ -430,17 +453,29 @@ export default function AdminProductosPage() {
       .order(t, { ascending: true });
     if (lite.error) throw lite.error;
     const base = ((lite.data ?? []) as unknown as Record<string, unknown>[]).map((r) => mapProductoQueryRow(r, t));
-    const esc = await supabase()
-      .from("escandallos")
-      .select("producto_id,precio_tarifa")
-      .eq("establecimiento_id", activeEstablishmentId);
-    if (esc.error) throw esc.error;
     const priceById = new Map<string, number>();
-    for (const r of (esc.data as unknown as Record<string, unknown>[]) ?? []) {
-      const pid = String(r.producto_id ?? "").trim();
-      if (!pid) continue;
-      const n = Number(r.precio_tarifa ?? 0);
-      priceById.set(pid, Number.isFinite(n) ? n : 0);
+    try {
+      const esc = await supabase()
+        .from("escandallos")
+        .select("producto_id,precio_tarifa")
+        .eq("establecimiento_id", activeEstablishmentId);
+      if (esc.error) throw esc.error;
+      for (const r of (esc.data as unknown as Record<string, unknown>[]) ?? []) {
+        const pid = String(r.producto_id ?? "").trim();
+        if (!pid) continue;
+        const n = Number(r.precio_tarifa ?? 0);
+        priceById.set(pid, Number.isFinite(n) ? n : 0);
+      }
+    } catch (e) {
+      if (!isMissingEscandallosTable(e)) throw e;
+      const legacy = await supabase().from("productos").select("id,precio_tarifa").eq("establecimiento_id", activeEstablishmentId);
+      if (legacy.error) throw legacy.error;
+      for (const r of (legacy.data as unknown as Record<string, unknown>[]) ?? []) {
+        const pid = String(r.id ?? "").trim();
+        if (!pid) continue;
+        const n = Number(r.precio_tarifa ?? 0);
+        priceById.set(pid, Number.isFinite(n) ? n : 0);
+      }
     }
     setHasPrecioTarifa(true);
     setItems(base.map((p) => ({ ...p, precio_tarifa: priceById.get(p.id) ?? 0 })));
