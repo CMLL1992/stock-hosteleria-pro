@@ -7,7 +7,6 @@ import { Drawer } from "@/components/ui/Drawer";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { useMyRole } from "@/lib/useMyRole";
-import { useLanguage } from "@/lib/LanguageContext";
 
 function isMissingEscandallosTable(e: unknown): boolean {
   const anyErr = e as { code?: unknown; message?: unknown };
@@ -38,7 +37,6 @@ function extractProductId(decodedText: string): string | null {
 export function ScanGoClient() {
   const router = useRouter();
   const { data: me } = useMyRole();
-  const { t } = useLanguage();
   const [last, setLast] = useState<string | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
 
@@ -132,7 +130,7 @@ export function ScanGoClient() {
             onClick={openCompare}
             className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-white/25 bg-black/35 px-4 text-sm font-semibold text-white backdrop-blur"
           >
-            {t("scan.compareDeliveryNote")}
+            Comparar Albarán
           </button>
         ) : null}
       </div>
@@ -142,7 +140,7 @@ export function ScanGoClient() {
       {me?.isAdmin ? (
         <Drawer
           open={compareOpen}
-          title={t("scan.compareDrawerTitle")}
+          title="Comparar albarán (sin guardar)"
           onClose={() => {
             setCompareOpen(false);
             setCompareMsg(null);
@@ -175,7 +173,7 @@ export function ScanGoClient() {
                                 | { articulo?: string | null; nombre?: string | null }[]
                                 | null;
                             };
-                        if (!row?.producto_id) throw new Error(t("scan.productNotFound"));
+                      if (!row?.producto_id) throw new Error("Producto no encontrado.");
                         const prodRaw = row.productos;
                         const prod = Array.isArray(prodRaw) ? prodRaw[0] ?? null : prodRaw;
                         setCompareProd({
@@ -197,7 +195,7 @@ export function ScanGoClient() {
                           nombre?: string | null;
                           precio_tarifa?: unknown;
                         };
-                        if (!row?.id) throw new Error(t("scan.productNotFound"));
+                        if (!row?.id) throw new Error("Producto no encontrado.");
                         setCompareProd({
                           id: String(row.id),
                           articulo: String(row.articulo ?? row.nombre ?? "—").trim() || "—",
@@ -232,26 +230,26 @@ export function ScanGoClient() {
                     ].join(" ")}
                   >
                     {compareResult.kind === "correcto"
-                      ? t("scan.priceOk")
+                      ? "Precio Correcto"
                       : compareResult.kind === "subida"
-                        ? t("scan.priceUp", { eur: compareResult.diff.toFixed(2) })
-                        : t("scan.priceDown", { eur: compareResult.diff.toFixed(2) })}
+                        ? `Subida de ${compareResult.diff.toFixed(2)}€`
+                        : `Bajada de ${compareResult.diff.toFixed(2)}€`}
                   </p>
                 ) : null}
                 <p className="text-sm font-semibold text-slate-900">{compareProd.articulo}</p>
                 <p className="text-sm text-slate-600">
-                  {t("scan.savedPrice")}{" "}
+                  Precio guardado (tarifa):{" "}
                   <span className="font-semibold tabular-nums text-slate-900">{compareProd.precio_tarifa.toFixed(2)}€</span>
                 </p>
 
                 <label className="block text-sm font-semibold text-slate-900">
-                  {t("scan.deliveryNotePrice")}
+                  Precio en albarán
                   <input
                     className="mt-1 min-h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base tabular-nums text-slate-900"
                     inputMode="decimal"
                     value={comparePrecio}
                     onChange={(e) => setComparePrecio(e.currentTarget.value)}
-                    placeholder={t("scan.pricePlaceholder")}
+                    placeholder="0,00"
                   />
                 </label>
 
@@ -261,7 +259,7 @@ export function ScanGoClient() {
                   onClick={() => {
                     const n = Number(String(comparePrecio).replace(",", "."));
                     if (!Number.isFinite(n) || n <= 0) {
-                      setCompareMsg(t("scan.enterValidPrice"));
+                      setCompareMsg("Introduce un precio válido.");
                       setCompareResult(null);
                       return;
                     }
@@ -279,7 +277,7 @@ export function ScanGoClient() {
                     setCompareResult({ kind: "bajada", diff: abs });
                   }}
                 >
-                  {t("scan.compare")}
+                  Comparar
                 </button>
 
                 <button
@@ -293,7 +291,7 @@ export function ScanGoClient() {
                     setCompareResult(null);
                   }}
                 >
-                  {t("scan.scanAnother")}
+                  Escanear otro
                 </button>
               </div>
             ) : null}

@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo } from "react";
 import { useMyRole } from "@/lib/useMyRole";
-import { useLanguage } from "@/lib/LanguageContext";
 
 type Tab = {
   href: string;
@@ -34,25 +33,24 @@ export function BottomTabBar() {
   const pathname = usePathname() ?? "";
   const { data } = useMyRole();
   const isAdmin = !!data?.isAdmin;
-  const { t } = useLanguage();
 
   const tabs: Tab[] = useMemo(() => {
     if (!isAdmin) {
       return [
-        { href: "/", label: t("nav.home").toUpperCase() },
-        { href: "/admin/scan", label: t("nav.scan").toUpperCase() },
-        { href: "/stock", label: t("nav.stock").toUpperCase() },
+        { href: "/", label: "INICIO" },
+        { href: "/admin/scan", label: "ESCANEAR" },
+        { href: "/stock", label: "STOCK" },
         { href: "/stock?vacios=1", label: "VACÍOS" }
       ];
     }
     return [
-      { href: "/", label: t("nav.home").toUpperCase() },
-      { href: "/admin/scan", label: t("nav.scan").toUpperCase() },
-      { href: "/stock", label: t("nav.stock").toUpperCase() },
-      { href: "/admin/pedidos", label: t("nav.orders").toUpperCase() },
-      { href: "/admin", label: t("nav.panel").toUpperCase() }
+      { href: "/", label: "INICIO" },
+      { href: "/admin/scan", label: "ESCANEAR" },
+      { href: "/stock", label: "STOCK" },
+      { href: "/admin/pedidos", label: "PEDIDOS" },
+      { href: "/admin", label: "PANEL" }
     ];
-  }, [isAdmin, t]);
+  }, [isAdmin]);
 
   return (
     <nav

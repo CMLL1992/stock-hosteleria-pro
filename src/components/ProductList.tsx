@@ -14,7 +14,6 @@ import { stockSemaforo } from "@/lib/stockSemaforo";
 import { enqueueMovimiento, newClientUuid } from "@/lib/offlineQueue";
 import { requireUserId } from "@/lib/session";
 import { useProductosRealtime } from "@/lib/useProductosRealtime";
-import { useLanguage } from "@/lib/LanguageContext";
 import {
   cantidadSugeridaPedido,
   waUrlPedidoCestaProveedor
@@ -194,7 +193,6 @@ export function ProductList() {
   const [stockErr, setStockErr] = useState<string | null>(null);
   const [stockDraft, setStockDraft] = useState<Record<string, string>>({});
   const [search, setSearch] = useState<string>("");
-  const { t } = useLanguage();
   const [agruparPorProveedor, setAgruparPorProveedor] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [cestaOpen, setCestaOpen] = useState(false);
@@ -524,9 +522,9 @@ export function ProductList() {
           type="search"
           value={search}
           onChange={(e) => setSearch(e.currentTarget.value)}
-          placeholder={t("common.searchProduct")}
+          placeholder="Buscar producto…"
           className="min-h-12 w-full rounded-3xl border border-slate-200 bg-white py-3 pl-12 pr-4 text-base text-slate-900 shadow-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-          aria-label={t("common.searchProduct")}
+          aria-label="Buscar producto…"
         />
       </div>
 
@@ -570,10 +568,10 @@ export function ProductList() {
           const sem = stockSemaforo(p.stock_actual, minimo);
           const stockPill =
             sem === "sin"
-              ? { bg: "#FEF2F2", text: "#991B1B", ring: "ring-1 ring-red-100", label: t("status.soldOut") }
+              ? { bg: "#FEF2F2", text: "#991B1B", ring: "ring-1 ring-red-100", label: "Agotado" }
               : sem === "bajo"
-                ? { bg: "#FFF7ED", text: "#9A3412", ring: "ring-1 ring-orange-100", label: t("status.low") }
-                : { bg: "#ECFDF5", text: "#065F46", ring: "ring-1 ring-emerald-100", label: t("status.ok") };
+                ? { bg: "#FFF7ED", text: "#9A3412", ring: "ring-1 ring-orange-100", label: "Bajo mínimos" }
+                : { bg: "#ECFDF5", text: "#065F46", ring: "ring-1 ring-emerald-100", label: "OK" };
 
           const key = productTabKey(p);
           const busy = busyId === p.id;
@@ -663,7 +661,7 @@ export function ProductList() {
                     onClick={() => openGestionar(p)}
                     className="inline-flex min-h-12 flex-1 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
                   >
-                    {t("stock.manage")}
+                    GESTIONAR
                   </button>
                   <Link
                     href={`/qr/${encodeURIComponent(p.id)}?print=1`}
@@ -671,7 +669,7 @@ export function ProductList() {
                     rel="noopener noreferrer"
                     className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
                   >
-                    {t("stock.generateQr")}
+                    Generar QR
                   </Link>
                 </div>
               </div>

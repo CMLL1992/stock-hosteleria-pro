@@ -7,12 +7,10 @@ import { useMyRole } from "@/lib/useMyRole";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { fetchDashboardProductos } from "@/lib/adminDashboardData";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
-import { useLanguage } from "@/lib/LanguageContext";
 
 export default function BajoMinimosPage() {
   const { data: me, isLoading } = useMyRole();
   const { activeEstablishmentId } = useActiveEstablishment();
-  const { t } = useLanguage();
 
   const q = useQuery({
     queryKey: ["admin", "bajo-minimos", activeEstablishmentId],
@@ -30,31 +28,31 @@ export default function BajoMinimosPage() {
       .sort((a, b) => a.articulo.localeCompare(b.articulo, "es", { sensitivity: "base" }));
   }, [q.data]);
 
-  if (isLoading) return <main className="p-4 text-base text-slate-600">{t("common.loading")}</main>;
+  if (isLoading) return <main className="p-4 text-base text-slate-600">Cargando…</main>;
   if (!me) {
     return (
       <main className="mx-auto max-w-md p-4">
-        <h1 className="text-xl font-semibold text-slate-900">{t("status.low")}</h1>
-        <p className="mt-2 text-sm text-slate-500">{t("common.accessDenied")}</p>
+        <h1 className="text-xl font-semibold text-slate-900">Bajo mínimos</h1>
+        <p className="mt-2 text-sm text-slate-500">Acceso denegado.</p>
       </main>
     );
   }
 
   return (
     <div className="min-h-dvh bg-slate-50">
-      <MobileHeader title={t("status.low")} showBack backHref="/admin/dashboard" />
+      <MobileHeader title="Bajo mínimos" showBack backHref="/admin/dashboard" />
       <main className="mx-auto max-w-3xl p-4 pb-28 text-slate-900">
-        <p className="text-sm text-slate-600">{t("dashboard.lowStockHint")}</p>
+        <p className="text-sm text-slate-600">Stock actual ≤ stock mínimo</p>
 
         {q.error ? (
           <p className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
             {supabaseErrToString(q.error)}
           </p>
         ) : q.isLoading ? (
-          <p className="mt-4 text-sm text-slate-600">{t("common.loading")}</p>
+          <p className="mt-4 text-sm text-slate-600">Cargando…</p>
         ) : list.length === 0 ? (
           <p className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
-            {t("dashboard.lowStockEmpty")}
+            No hay productos bajo mínimos.
           </p>
         ) : (
           <ul className="mt-4 space-y-2" aria-label="Productos bajo mínimos">
@@ -66,7 +64,7 @@ export default function BajoMinimosPage() {
                     {p.stock_actual} / {p.stock_minimo}
                   </p>
                 </div>
-                <p className="mt-1 text-xs text-slate-500">{t("dashboard.stockRatioHint")}</p>
+                <p className="mt-1 text-xs text-slate-500">Stock actual / stock mínimo</p>
               </li>
             ))}
           </ul>

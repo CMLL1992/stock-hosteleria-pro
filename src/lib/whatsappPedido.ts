@@ -40,11 +40,6 @@ function formatCantidadUnidad(cantidad: number, unidadRaw: string | null | undef
 }
 
 function getActiveLang(): Lang {
-  if (typeof document === "undefined") return "es";
-  const m = document.cookie.match(/(?:^|; )ops_lang=([^;]*)/);
-  const v = decodeURIComponent(m?.[1] ?? "").trim().toLowerCase();
-  if (v === "en" || v === "es") return v;
-  if (v === "cat" || v === "ca") return "ca";
   return "es";
 }
 

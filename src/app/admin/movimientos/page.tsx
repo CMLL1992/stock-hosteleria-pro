@@ -8,7 +8,6 @@ import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { useMyRole } from "@/lib/useMyRole";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
-import { useLanguage } from "@/lib/LanguageContext";
 
 type ProdEmbed = { articulo?: string | null; nombre?: string | null };
 
@@ -25,20 +24,19 @@ type MovRow = {
 export default function AdminMovimientosPage() {
   const { data: me, isLoading: meLoading } = useMyRole();
   const { activeEstablishmentId } = useActiveEstablishment();
-  const { t, lang } = useLanguage();
   const [rows, setRows] = useState<MovRow[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const locale = lang === "en" ? "en-GB" : lang === "cat" ? "ca-ES" : "es-ES";
+  const locale = "es-ES";
   function labelTipo(tipo: string): string {
-    if (tipo === "entrada") return t("movements.type.entrada");
-    if (tipo === "entrada_compra") return t("movements.type.entradaCompra");
-    if (tipo === "salida") return t("movements.type.salida");
-    if (tipo === "pedido") return t("movements.type.pedido");
-    if (tipo === "salida_barra") return t("movements.type.salidaBarra");
-    if (tipo === "entrada_vacio") return t("movements.type.entradaVacio");
-    if (tipo === "devolucion_proveedor") return t("movements.type.devolucionProveedor");
+    if (tipo === "entrada") return "Entrada";
+    if (tipo === "entrada_compra") return "Entrada (compra)";
+    if (tipo === "salida") return "Salida";
+    if (tipo === "pedido") return "Pedido";
+    if (tipo === "salida_barra") return "Salida a barra";
+    if (tipo === "entrada_vacio") return "Entrada de vacío";
+    if (tipo === "devolucion_proveedor") return "Devolución a proveedor";
     return tipo;
   }
 
@@ -76,14 +74,14 @@ export default function AdminMovimientosPage() {
     load().catch(() => undefined);
   }, [load]);
 
-  if (meLoading) return <main className="p-4 text-sm text-slate-600">{t("common.loading")}</main>;
+  if (meLoading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
 
   if (!me?.isAdmin) {
     return (
       <div className="min-h-dvh bg-slate-50">
-        <MobileHeader title={t("movements.title")} showBack backHref="/admin" />
+        <MobileHeader title="Movimientos" showBack backHref="/admin" />
         <main className="mx-auto max-w-3xl p-4">
-          <p className="text-sm text-slate-600">{t("common.accessDenied")}</p>
+          <p className="text-sm text-slate-600">Acceso denegado.</p>
         </main>
       </div>
     );
@@ -91,24 +89,24 @@ export default function AdminMovimientosPage() {
 
   return (
     <div className="min-h-dvh bg-slate-50">
-      <MobileHeader title={t("movements.title")} showBack backHref="/admin" />
+      <MobileHeader title="Movimientos" showBack backHref="/admin" />
       <main className="mx-auto max-w-3xl p-4 pb-28">
-        <p className="text-sm text-slate-600">{t("movements.subtitle")}</p>
+        <p className="text-sm text-slate-600">Últimos movimientos del establecimiento activo.</p>
 
         {err ? (
           <p className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{err}</p>
         ) : null}
 
         {!activeEstablishmentId ? (
-          <p className="mt-4 text-sm text-slate-600">{t("movements.selectEstablishment")}</p>
+          <p className="mt-4 text-sm text-slate-600">Selecciona un establecimiento para ver el histórico.</p>
         ) : loading ? (
-          <p className="mt-4 text-sm text-slate-600">{t("movements.loading")}</p>
+          <p className="mt-4 text-sm text-slate-600">Cargando movimientos…</p>
         ) : rows.length === 0 ? (
           <p className="mt-4 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
-            {t("movements.empty")}
+            No hay movimientos registrados todavía.
           </p>
         ) : (
-          <ul className="mt-4 flex flex-col gap-2" aria-label={t("movements.ariaRecent")}>
+          <ul className="mt-4 flex flex-col gap-2" aria-label="Movimientos recientes">
             {rows.map((r) => {
               const raw = r.productos;
               const prod = Array.isArray(raw) ? raw[0] ?? null : raw;
@@ -127,7 +125,7 @@ export default function AdminMovimientosPage() {
                     <p className="font-semibold leading-snug text-slate-900">{articuloEtiqueta}</p>
                     <p className="mt-1 text-xs text-slate-500">
                       {ts.toLocaleString(locale, { dateStyle: "short", timeStyle: "short" })} · {labelTipo(r.tipo)}
-                      {r.tipo === "salida_barra" && r.genera_vacio ? ` · ${t("movements.generatesEmpty")}` : ""}
+                      {r.tipo === "salida_barra" && r.genera_vacio ? " · genera vacío" : ""}
                       {uidShort ? ` · ${uidShort}` : ""}
                     </p>
                   </div>
@@ -140,7 +138,7 @@ export default function AdminMovimientosPage() {
 
         <p className="mt-6 text-center text-xs text-slate-500">
           <Link href="/admin" className="font-medium text-slate-700 underline">
-            {t("common.back")}
+            Volver
           </Link>
         </p>
       </main>

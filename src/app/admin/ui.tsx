@@ -6,7 +6,6 @@ import { ChevronRight } from "lucide-react";
 import { MobileHeader } from "@/components/MobileHeader";
 import { useMyRole } from "@/lib/useMyRole";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
-import { useTranslations } from "next-intl";
 
 type AdminNavItem = {
   id: string;
@@ -118,10 +117,9 @@ function filterSections(sections: AdminSection[], isSuperadmin: boolean): AdminS
 
 export function AdminHomeClient({ denied }: { denied?: string | null } = {}) {
   const { data, isLoading, error } = useMyRole();
-  const t = useTranslations();
 
   const content = useMemo(() => {
-    if (isLoading) return <p className="px-1 text-sm text-slate-600">{t("common.loading")}</p>;
+    if (isLoading) return <p className="px-1 text-sm text-slate-600">Cargando…</p>;
     if (data?.role === null && !data?.profileReady) return <p className="px-1 text-sm text-slate-600">Cargando perfil…</p>;
     if (error) {
       return (
@@ -194,7 +192,7 @@ export function AdminHomeClient({ denied }: { denied?: string | null } = {}) {
         ))}
       </div>
     );
-  }, [data?.isAdmin, data?.isSuperadmin, data?.profileReady, data?.role, denied, error, isLoading, t]);
+  }, [data?.isAdmin, data?.isSuperadmin, data?.profileReady, data?.role, denied, error, isLoading]);
 
   return (
     <div className="min-h-dvh bg-slate-50">

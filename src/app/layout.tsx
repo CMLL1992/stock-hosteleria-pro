@@ -3,9 +3,6 @@ import type { ReactNode } from "react";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/Providers";
-import { NextIntlClientProvider } from "next-intl";
-import { loadMessages, readLocaleCookie } from "@/lib/locale";
-import { LanguageProvider } from "@/lib/LanguageContext";
 
 const inter = Inter({ subsets: ["latin"], display: "swap" });
 
@@ -36,19 +33,13 @@ export const viewport: Viewport = {
 };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
-  const locale = readLocaleCookie();
-  const messages = await loadMessages(locale);
   return (
-    <html lang={locale}>
+    <html lang="es">
       <body
         suppressHydrationWarning={true}
         className={`${inter.className} min-h-dvh bg-slate-50 text-slate-900`}
       >
-        <NextIntlClientProvider locale={locale} messages={messages}>
-          <LanguageProvider>
-            <Providers>{children}</Providers>
-          </LanguageProvider>
-        </NextIntlClientProvider>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );
