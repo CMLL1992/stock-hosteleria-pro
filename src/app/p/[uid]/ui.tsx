@@ -12,7 +12,6 @@ import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
-import { getStoredLanguage } from "@/lib/i18n";
 
 type Producto = {
   id: string;
@@ -163,7 +162,8 @@ export function ProductByUidClient({ uid }: { uid: string }) {
     if (!phone) return null;
     const prov = producto?.proveedor?.nombre ?? "Proveedor";
     const prod = producto?.articulo ?? "Producto";
-    const lang = getStoredLanguage();
+    const m = typeof document !== "undefined" ? document.cookie.match(/(?:^|; )ops_lang=([^;]*)/) : null;
+    const lang = (m ? decodeURIComponent(m[1] ?? "") : "es").trim().toLowerCase();
     const msg =
       lang === "en"
         ? `Hello ${prov}, I would like to order ${pedidoCantidad} of ${prod}.`

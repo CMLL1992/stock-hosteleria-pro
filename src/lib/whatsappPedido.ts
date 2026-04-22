@@ -1,5 +1,5 @@
 /** Dígitos para wa.me (sin + inicial obligatoria en muchos casos). */
-import { getStoredLanguage, type Lang } from "@/lib/i18n";
+import type { Lang } from "@/lib/i18n";
 
 export function digitsWaPhone(raw: string | null | undefined): string | null {
   if (!raw) return null;
@@ -37,6 +37,14 @@ function formatCantidadUnidad(cantidad: number, unidadRaw: string | null | undef
   const n = Math.trunc(Number(cantidad));
   const unidad = formatUnidad(n, unidadRaw);
   return `${n} ${unidad}`;
+}
+
+function getActiveLang(): Lang {
+  if (typeof document === "undefined") return "es";
+  const m = document.cookie.match(/(?:^|; )ops_lang=([^;]*)/);
+  const v = decodeURIComponent(m?.[1] ?? "").trim().toLowerCase();
+  if (v === "en" || v === "ca" || v === "es") return v;
+  return "es";
 }
 
 function waText(lang: Lang) {
@@ -87,7 +95,7 @@ export function mensajePedidoStockProfesional(
   unidad: string | null,
   lang?: Lang
 ): string {
-  const l = lang ?? getStoredLanguage();
+  const l = lang ?? getActiveLang();
   const txt = waText(l);
   const diff = deficitPedido(stockActual, stockMinimo);
   const cant = diff > 0 ? diff : Math.max(1, stockMinimo - stockActual);
@@ -117,7 +125,7 @@ export function mensajePedidoGlobalLineas(
   lineas: Array<{ articulo: string; stock_actual: number; stock_minimo: number; unidad: string | null }>,
   lang?: Lang
 ): string {
-  const l = lang ?? getStoredLanguage();
+  const l = lang ?? getActiveLang();
   const txt = waText(l);
   const bloques = lineas.map((l) => {
     const diff = deficitPedido(l.stock_actual, l.stock_minimo);
@@ -176,7 +184,7 @@ export function mensajePedidoCestaPorProveedor(opts: {
   lineas: Array<{ articulo: string; cantidad: number; unidad: string | null }>;
   lang?: Lang;
 }): string {
-  const l = opts.lang ?? getStoredLanguage();
+  const l = opts.lang ?? getActiveLang();
   const txt = waText(l);
   const est = opts.nombreEstablecimiento.trim() || "mi local";
   const prov = opts.nombreProveedor.trim() || "Proveedor";
@@ -196,7 +204,7 @@ export function mensajePedidoReposicionPorProveedor(opts: {
   lineas: Array<{ articulo: string; cantidad: number; unidad: string | null | undefined }>;
   lang?: Lang;
 }): string {
-  const l = opts.lang ?? getStoredLanguage();
+  const l = opts.lang ?? getActiveLang();
   const txt = waText(l);
   const est = opts.nombreEstablecimiento.trim() || "Piqui Blinders";
   const prov = opts.nombreProveedor.trim() || "Proveedor";

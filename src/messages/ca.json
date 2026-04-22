@@ -1,0 +1,26 @@
+{
+  "nav.home": "Inici",
+  "nav.scan": "Escanejar",
+  "nav.stock": "Estoc",
+  "nav.orders": "Comandes",
+  "nav.panel": "Panell",
+
+  "actions.entry": "Entrada",
+  "actions.barExit": "Sortida a barra",
+  "actions.return": "Devolució",
+  "actions.qr": "QR",
+  "actions.edit": "Editar",
+
+  "status.soldOut": "Esgotat",
+  "status.low": "Per sota del mínim",
+  "status.ok": "OK",
+
+  "forms.newCosting": "Nou Escandall",
+  "forms.editProduct": "Edició de producte",
+
+  "common.language": "Idioma",
+  "common.close": "Tancar",
+  "common.loading": "Carregant…",
+  "common.searchProduct": "Cercar producte…"
+}
+

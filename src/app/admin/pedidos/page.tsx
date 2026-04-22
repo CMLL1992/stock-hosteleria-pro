@@ -13,8 +13,8 @@ import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTitulo
 import { requireUserId } from "@/lib/session";
 import { enqueueMovimiento, newClientUuid } from "@/lib/offlineQueue";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
-import { useT } from "@/lib/i18n";
 import { Search } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 type ProveedorRow = {
   id: string;
@@ -111,7 +111,7 @@ export default function PedidosPage() {
     lineas: Array<{ producto_id: string; articulo: string; unidad: string | null; cantidad: number }>;
   }>(null);
   const [confirming, setConfirming] = useState(false);
-  const tt = useT();
+  const t = useTranslations();
 
   const { activeEstablishmentId, activeEstablishmentName } = useActiveEstablishment();
   const nombreLocal = activeEstablishmentName?.trim() || "Piqui Blinders";
@@ -219,24 +219,24 @@ export default function PedidosPage() {
     }
   }
 
-  if (loading) return <main className="p-4 text-sm text-slate-600">{tt("common.loading")}</main>;
+  if (loading) return <main className="p-4 text-sm text-slate-600">{t("common.loading")}</main>;
   if (role !== "admin" && role !== "superadmin") {
     return (
       <main className="mx-auto max-w-md p-4">
-        <h1 className="text-xl font-semibold">{tt("orders.title")}</h1>
-        <p className="mt-2 text-sm text-slate-600">{tt("common.accessDenied")}</p>
+        <h1 className="text-xl font-semibold">Pedidos</h1>
+        <p className="mt-2 text-sm text-slate-600">Acceso denegado.</p>
       </main>
     );
   }
 
   return (
     <div className="min-h-dvh bg-slate-50">
-      <MobileHeader title={tt("orders.byProvider")} showBack backHref="/admin" />
+      <MobileHeader title="Pedidos por proveedor" showBack backHref="/admin" />
       <main className="mx-auto max-w-3xl p-4 pb-28 text-slate-900">
         <div className="mb-4">
-          <h1 className="text-xl font-semibold">{tt("orders.title")}</h1>
+          <h1 className="text-xl font-semibold">Pedidos</h1>
           <p className="mt-1 text-sm text-slate-600">
-            {tt("orders.subtitle")}
+            Despliega un proveedor, escribe cantidades y envía el pedido por WhatsApp.
           </p>
         </div>
 
@@ -304,9 +304,9 @@ export default function PedidosPage() {
                           type="search"
                           value={search[key] ?? ""}
                           onChange={(e) => setSearch((prev) => ({ ...prev, [key]: e.currentTarget.value }))}
-                          placeholder={tt("common.searchProduct")}
+                          placeholder={t("common.searchProduct")}
                           className="min-h-12 w-full rounded-3xl border border-slate-200 bg-white py-3 pl-12 pr-4 text-base text-slate-900 shadow-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                          aria-label={tt("common.searchProduct")}
+                          aria-label={t("common.searchProduct")}
                         />
                       </div>
                       <div className="space-y-4">
@@ -369,7 +369,7 @@ export default function PedidosPage() {
                         }}
                       >
                         <IconWhatsApp className="h-8 w-8 shrink-0 text-white" />
-                        {tt("orders.sendWhatsapp", { prov: g.nombre })}
+                        Enviar pedido a {g.nombre} por WhatsApp
                       </a>
                     </div>
                   ) : null}
