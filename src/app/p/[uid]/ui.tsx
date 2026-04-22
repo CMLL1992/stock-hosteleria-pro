@@ -81,7 +81,7 @@ export function ProductByUidClient({ uid }: { uid: string }) {
   const [producto, setProducto] = useState<Producto | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
-  const [modo, setModo] = useState<"entrada" | "salida" | "entrada_vacio" | "devolucion_proveedor">("entrada");
+  const [modo, setModo] = useState<"entrada" | "salida" | "devolucion_proveedor">("entrada");
   const [cantidad, setCantidad] = useState<number>(0);
   const qtyRef = useRef<HTMLInputElement | null>(null);
   const [saved, setSaved] = useState(false);
@@ -89,7 +89,6 @@ export function ProductByUidClient({ uid }: { uid: string }) {
   const [movOpen, setMovOpen] = useState(false);
   const [pedidoOpen, setPedidoOpen] = useState(false);
   const [pedidoCantidad, setPedidoCantidad] = useState<number>(1);
-  const [generaVacio, setGeneraVacio] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -249,7 +248,6 @@ export function ProductByUidClient({ uid }: { uid: string }) {
               <Button
                 onClick={() => {
                   setModo("salida");
-                  setGeneraVacio(true);
                   setMovOpen(true);
                 }}
                 className="bg-slate-900 hover:bg-slate-950"
@@ -346,28 +344,6 @@ export function ProductByUidClient({ uid }: { uid: string }) {
             />
           </div>
 
-          {modo === "salida" ? (
-            <label className="flex min-h-12 items-center gap-3 rounded-2xl border border-gray-100 bg-white px-4 text-sm font-semibold text-gray-900">
-              <input
-                type="checkbox"
-                className="h-5 w-5"
-                checked={generaVacio}
-                onChange={(e) => setGeneraVacio(e.currentTarget.checked)}
-              />
-              Genera envase vacío
-            </label>
-          ) : null}
-
-          {modo === "devolucion_proveedor" ? (
-            <button
-              type="button"
-              className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50"
-              onClick={() => setModo("entrada_vacio")}
-            >
-              Entrada de vacío (en vez de devolver)
-            </button>
-          ) : null}
-
           <div className="grid grid-cols-1 gap-2">
             <Button
               onClick={async () => {
@@ -381,16 +357,12 @@ export function ProductByUidClient({ uid }: { uid: string }) {
                   return;
                 }
                 if (modo === "salida") {
-                  await registrar("salida_barra", Math.abs(n), { genera_vacio: generaVacio });
+                  await registrar("salida_barra", Math.abs(n), { genera_vacio: true });
                   setSaved(true);
                   window.setTimeout(() => setSaved(false), 1200);
                   return;
                 }
-                if (modo === "entrada_vacio") {
-                  await registrar("entrada_vacio", Math.abs(n));
-                } else {
-                  await registrar("devolucion_proveedor", Math.abs(n));
-                }
+                await registrar("devolucion_proveedor", Math.abs(n));
                 setSaved(true);
                 window.setTimeout(() => setSaved(false), 1200);
               }}

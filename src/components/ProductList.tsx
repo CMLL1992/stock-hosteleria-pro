@@ -140,7 +140,7 @@ function proveedorNombreOrDefault(p: Producto): string {
 const STOCK_INPUT_CLASS =
   "h-14 w-[5.5rem] shrink-0 rounded-2xl border-2 border-slate-800 bg-white px-2 text-center text-2xl font-black tabular-nums text-slate-900 shadow-inner focus:outline-none focus:ring-4 focus:ring-slate-300";
 
-type QuickMovimientoTipo = "entrada" | "salida_barra" | "entrada_vacio" | "devolucion_proveedor";
+type QuickMovimientoTipo = "entrada" | "salida_barra" | "devolucion_proveedor";
 
 export function ProductList() {
   const searchParams = useSearchParams();
@@ -160,7 +160,6 @@ export function ProductList() {
   const [movProd, setMovProd] = useState<Producto | null>(null);
   const [movTipo, setMovTipo] = useState<QuickMovimientoTipo>("entrada");
   const [movCantidad, setMovCantidad] = useState<number>(1);
-  const [movGeneraVacio, setMovGeneraVacio] = useState(true);
   const [movBusy, setMovBusy] = useState(false);
   const qtyRef = useRef<HTMLInputElement | null>(null);
 
@@ -284,7 +283,6 @@ export function ProductList() {
     setMovProd(p);
     setMovTipo(tipo);
     setMovCantidad(1);
-    setMovGeneraVacio(true);
     setMovOpen(true);
   };
 
@@ -312,7 +310,7 @@ export function ProductList() {
         usuario_id,
         timestamp: new Date().toISOString()
       };
-      if (movTipo === "salida_barra") payload.genera_vacio = movGeneraVacio;
+      if (movTipo === "salida_barra") payload.genera_vacio = true;
 
       if (typeof navigator !== "undefined" && navigator.onLine) {
         const { error } = await supabase().from("movimientos").insert(payload);
@@ -647,17 +645,6 @@ export function ProductList() {
             </button>
           </div>
 
-          {movTipo === "devolucion_proveedor" ? (
-            <button
-              type="button"
-              className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50"
-              onClick={() => setMovTipo("entrada_vacio")}
-              disabled={movBusy}
-            >
-              + Entrada de vacío (en vez de devolver)
-            </button>
-          ) : null}
-
           <div className="space-y-2">
             <label className="text-sm font-semibold text-slate-900">Cantidad</label>
             <input
@@ -673,19 +660,6 @@ export function ProductList() {
               disabled={movBusy}
             />
           </div>
-
-          {movTipo === "salida_barra" ? (
-            <label className="flex min-h-12 items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900">
-              <input
-                type="checkbox"
-                className="h-5 w-5"
-                checked={movGeneraVacio}
-                onChange={(e) => setMovGeneraVacio(e.currentTarget.checked)}
-                disabled={movBusy}
-              />
-              Genera envase vacío
-            </label>
-          ) : null}
 
           <div className="grid grid-cols-1 gap-2">
             <button
