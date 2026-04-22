@@ -26,6 +26,19 @@ type ProductoRow = {
   iva_venta: number | null;
 };
 
+type EscandalloRow = {
+  producto_id: string;
+  establecimiento_id: string;
+  precio_tarifa: number;
+  uds_caja: number;
+  descuento_valor: number;
+  descuento_tipo: "%" | "€";
+  rappel_valor: number;
+  iva_compra: number;
+  pvp: number;
+  iva_venta: number;
+};
+
 type ProveedorRow = { id: string; nombre: string };
 
 const IVA_OPTIONS = [4, 10, 21] as const;
@@ -192,68 +205,57 @@ export default function EscandallosPage() {
     if (!activeEstablishmentId) return;
     const col = await resolveProductoTituloColumn(activeEstablishmentId);
     const t = tituloColSql(col);
-    const fullSel = `id,${t},categoria,proveedor_id,precio_tarifa,uds_caja,descuento_valor,descuento_tipo,rappel_valor,iva_compra,pvp,iva_venta`;
-    const res = await supabase()
+    const baseSel = `id,${t},categoria,proveedor_id`;
+    const resProd = await supabase()
       .from("productos")
-      .select(fullSel as "*")
+      .select(baseSel as "*")
       .eq("establecimiento_id", activeEstablishmentId)
       .order(t, { ascending: true });
+    if (resProd.error) throw resProd.error;
 
-    if (res.error) {
-      const msg = (res.error.message ?? "").toLowerCase();
-      const missing =
-        msg.includes("precio_tarifa") ||
-        msg.includes("descuento_valor") ||
-        msg.includes("descuento_tipo") ||
-        msg.includes("iva_compra") ||
-        msg.includes("pvp") ||
-        msg.includes("iva_venta") ||
-        msg.includes("uds_caja") ||
-        msg.includes("rappel_valor") ||
-        msg.includes("could not find") ||
-        msg.includes("column");
-      if (!missing) throw res.error;
-      // Fallback mínimo: SOLO catálogo para que el selector nunca quede vacío
-      const fb = await supabase()
-        .from("productos")
-        .select(`id,${t},categoria,proveedor_id` as "*")
-        .eq("establecimiento_id", activeEstablishmentId)
-        .order(t, { ascending: true });
-      if (fb.error) throw fb.error;
-      setItems(
-        ((fb.data ?? []) as unknown as Record<string, unknown>[]).map((r) => ({
-          id: String(r.id ?? ""),
-          articulo: String(r[t] ?? r.articulo ?? r.nombre ?? "").trim() || "—",
-          categoria: r.categoria != null ? String(r.categoria) : null,
-          proveedor_id: r.proveedor_id != null ? String(r.proveedor_id) : null,
-          precio_tarifa: 0,
-          uds_caja: 0,
-          descuento_valor: 0,
-          descuento_tipo: "%",
-          rappel_valor: 0,
-          iva_compra: 10,
-          pvp: 0,
-          iva_venta: 10
-        }))
-      );
-      return;
+    const resEsc = await supabase()
+      .from("escandallos")
+      .select("producto_id,establecimiento_id,precio_tarifa,uds_caja,descuento_valor,descuento_tipo,rappel_valor,iva_compra,pvp,iva_venta")
+      .eq("establecimiento_id", activeEstablishmentId);
+    if (resEsc.error) throw resEsc.error;
+
+    const escByProd = new Map<string, EscandalloRow>();
+    for (const r of (resEsc.data as unknown as Record<string, unknown>[]) ?? []) {
+      const pid = String(r.producto_id ?? "").trim();
+      if (!pid) continue;
+      escByProd.set(pid, {
+        producto_id: pid,
+        establecimiento_id: String(r.establecimiento_id ?? activeEstablishmentId),
+        precio_tarifa: Number(r.precio_tarifa ?? 0) || 0,
+        uds_caja: Math.max(1, Math.trunc(Number(r.uds_caja ?? 1) || 1)),
+        descuento_valor: Number(r.descuento_valor ?? 0) || 0,
+        descuento_tipo: (String(r.descuento_tipo ?? "%") === "€" ? "€" : "%") as "%" | "€",
+        rappel_valor: Number(r.rappel_valor ?? 0) || 0,
+        iva_compra: Math.trunc(Number(r.iva_compra ?? 10) || 10),
+        pvp: Number(r.pvp ?? 0) || 0,
+        iva_venta: Math.trunc(Number(r.iva_venta ?? 10) || 10)
+      });
     }
 
     setItems(
-      ((res.data ?? []) as unknown as Record<string, unknown>[]).map((r) => ({
-        id: String(r.id ?? ""),
-        articulo: String(r[t] ?? r.articulo ?? r.nombre ?? "").trim() || "—",
-        categoria: r.categoria != null ? String(r.categoria) : null,
-        proveedor_id: r.proveedor_id != null ? String(r.proveedor_id) : null,
-        precio_tarifa: r.precio_tarifa != null ? Number(r.precio_tarifa) : null,
-        uds_caja: r.uds_caja != null ? Number(r.uds_caja) : null,
-        descuento_valor: r.descuento_valor != null ? Number(r.descuento_valor) : null,
-        descuento_tipo: (r.descuento_tipo as ProductoRow["descuento_tipo"]) ?? null,
-        rappel_valor: r.rappel_valor != null ? Number(r.rappel_valor) : null,
-        iva_compra: r.iva_compra != null ? Number(r.iva_compra) : null,
-        pvp: r.pvp != null ? Number(r.pvp) : null,
-        iva_venta: r.iva_venta != null ? Number(r.iva_venta) : null
-      }))
+      ((resProd.data ?? []) as unknown as Record<string, unknown>[]).map((r) => {
+        const id = String(r.id ?? "");
+        const esc = escByProd.get(id) ?? null;
+        return {
+          id,
+          articulo: String(r[t] ?? r.articulo ?? r.nombre ?? "").trim() || "—",
+          categoria: r.categoria != null ? String(r.categoria) : null,
+          proveedor_id: r.proveedor_id != null ? String(r.proveedor_id) : null,
+          precio_tarifa: esc?.precio_tarifa ?? 0,
+          uds_caja: esc?.uds_caja ?? 1,
+          descuento_valor: esc?.descuento_valor ?? 0,
+          descuento_tipo: esc?.descuento_tipo ?? "%",
+          rappel_valor: esc?.rappel_valor ?? 0,
+          iva_compra: esc?.iva_compra ?? 10,
+          pvp: esc?.pvp ?? 0,
+          iva_venta: esc?.iva_venta ?? 10
+        };
+      })
     );
   }
 
@@ -292,10 +294,18 @@ export default function EscandallosPage() {
     setSaving(p.id);
     try {
       if (!activeEstablishmentId) throw new Error("No hay establecimiento activo.");
-      const payload = {
-        proveedor_id: p.proveedor_id,
+      const { error: prodErr } = await supabase()
+        .from("productos")
+        .update({ proveedor_id: p.proveedor_id })
+        .eq("id", p.id)
+        .eq("establecimiento_id", activeEstablishmentId);
+      if (prodErr) throw prodErr;
+
+      const esc: EscandalloRow = {
+        producto_id: p.id,
+        establecimiento_id: activeEstablishmentId,
         precio_tarifa: clampNonNeg(Number(p.precio_tarifa ?? 0)),
-        uds_caja: clampNonNeg(Number(p.uds_caja ?? 0)),
+        uds_caja: Math.max(1, Math.trunc(clampNonNeg(Number(p.uds_caja ?? 1)))),
         descuento_valor: clampNonNeg(Number(p.descuento_valor ?? 0)),
         descuento_tipo: (p.descuento_tipo ?? "%") as "%" | "€",
         rappel_valor: clampNonNeg(Number(p.rappel_valor ?? 0)),
@@ -303,34 +313,9 @@ export default function EscandallosPage() {
         pvp: clampNonNeg(Number(p.pvp ?? 0)),
         iva_venta: Number(p.iva_venta ?? 10)
       };
-      const res = await supabase()
-        .from("productos")
-        .update(payload)
-        .eq("id", p.id)
-        .eq("establecimiento_id", activeEstablishmentId);
-      if (!res.error) {
-        setSaved(true);
-        setTimeout(() => setSaved(false), 1200);
-        return;
-      }
-      // Compat: si faltan columnas nuevas en BD, reintentamos sin ellas.
-      const msg = (res.error.message ?? "").toLowerCase();
-      const missing = msg.includes("uds_caja") || msg.includes("rappel_valor");
-      if (!missing) throw res.error;
-      const { error: fbErr } = await supabase()
-        .from("productos")
-        .update({
-          proveedor_id: p.proveedor_id,
-          precio_tarifa: clampNonNeg(Number(p.precio_tarifa ?? 0)),
-          descuento_valor: clampNonNeg(Number(p.descuento_valor ?? 0)),
-          descuento_tipo: (p.descuento_tipo ?? "%") as "%" | "€",
-          iva_compra: Number(p.iva_compra ?? 10),
-          pvp: clampNonNeg(Number(p.pvp ?? 0)),
-          iva_venta: Number(p.iva_venta ?? 10)
-        })
-        .eq("id", p.id)
-        .eq("establecimiento_id", activeEstablishmentId);
-      if (fbErr) throw fbErr;
+      const { error: escErr } = await supabase().from("escandallos").upsert(esc, { onConflict: "producto_id" });
+      if (escErr) throw escErr;
+
       setSaved(true);
       setTimeout(() => setSaved(false), 1200);
     } finally {
@@ -344,10 +329,18 @@ export default function EscandallosPage() {
     setErr(null);
     setSaving(nuevoId);
     try {
-      const payload = {
-        proveedor_id: nuevoProveedorId || null,
+      const { error: prodErr } = await supabase()
+        .from("productos")
+        .update({ proveedor_id: nuevoProveedorId || null })
+        .eq("id", nuevoId)
+        .eq("establecimiento_id", activeEstablishmentId);
+      if (prodErr) throw prodErr;
+
+      const esc: EscandalloRow = {
+        producto_id: nuevoId,
+        establecimiento_id: activeEstablishmentId,
         precio_tarifa: clampNonNeg(toNum(nuevoPrecioTarifa)),
-        uds_caja: clampNonNeg(Math.trunc(toNum(nuevoUdsCaja))),
+        uds_caja: Math.max(1, Math.trunc(clampNonNeg(toNum(nuevoUdsCaja)))),
         descuento_valor: clampNonNeg(toNum(nuevoDescuentoValor)),
         descuento_tipo: nuevoDescuentoTipo,
         rappel_valor: clampNonNeg(toNum(nuevoRappel)),
@@ -355,30 +348,9 @@ export default function EscandallosPage() {
         pvp: clampNonNeg(toNum(nuevoPvp)),
         iva_venta: Number(nuevoIvaVenta)
       };
-      const res = await supabase().from("productos").update(payload).eq("id", nuevoId).eq("establecimiento_id", activeEstablishmentId);
-      if (!res.error) {
-        await load();
-        setSaved(true);
-        setTimeout(() => setSaved(false), 1200);
-        return;
-      }
-      const msg = (res.error.message ?? "").toLowerCase();
-      const missing = msg.includes("uds_caja") || msg.includes("rappel_valor");
-      if (!missing) throw res.error;
-      const { error: fbErr } = await supabase()
-        .from("productos")
-        .update({
-          proveedor_id: nuevoProveedorId || null,
-          precio_tarifa: clampNonNeg(toNum(nuevoPrecioTarifa)),
-          descuento_valor: clampNonNeg(toNum(nuevoDescuentoValor)),
-          descuento_tipo: nuevoDescuentoTipo,
-          iva_compra: Number(nuevoIvaCompra),
-          pvp: clampNonNeg(toNum(nuevoPvp)),
-          iva_venta: Number(nuevoIvaVenta)
-        })
-        .eq("id", nuevoId)
-        .eq("establecimiento_id", activeEstablishmentId);
-      if (fbErr) throw fbErr;
+      const { error: escErr } = await supabase().from("escandallos").upsert(esc, { onConflict: "producto_id" });
+      if (escErr) throw escErr;
+
       await load();
       setSaved(true);
       setTimeout(() => setSaved(false), 1200);
@@ -451,18 +423,8 @@ export default function EscandallosPage() {
                   const provByName = new Map<string, string>();
                   for (const pr of proveedores) provByName.set(pr.nombre.trim().toLowerCase(), pr.id);
 
-                  const updates: {
-                    id: string;
-                    establecimiento_id: string;
-                    proveedor_id?: string | null;
-                    precio_tarifa?: number;
-                    uds_caja?: number;
-                    descuento_valor?: number;
-                    descuento_tipo?: "%" | "€";
-                    rappel_valor?: number;
-                    iva_compra?: number;
-                    pvp?: number;
-                  }[] = [];
+                  const prodUpdates: { id: string; establecimiento_id: string; proveedor_id: string | null }[] = [];
+                  const escUpdates: EscandalloRow[] = [];
 
                   for (const row of parsed) {
                     const id = (row.Producto_ID ?? "").trim();
@@ -486,26 +448,33 @@ export default function EscandallosPage() {
                     const iva = Math.trunc(toNum(String(row.IVA ?? ""))) || 10;
                     const pvp = toNum(String(row.PVP_Botella ?? ""));
 
-                    updates.push({
-                      id,
+                    prodUpdates.push({ id, establecimiento_id: activeEstablishmentId, proveedor_id: provId });
+                    escUpdates.push({
+                      producto_id: id,
                       establecimiento_id: activeEstablishmentId,
-                      proveedor_id: provId,
                       precio_tarifa: clampNonNeg(precioTarifa),
-                      uds_caja: clampNonNeg(udsCaja),
+                      uds_caja: Math.max(1, Math.trunc(clampNonNeg(udsCaja))),
                       descuento_valor: clampNonNeg(descNum),
                       descuento_tipo: descTipo,
                       rappel_valor: clampNonNeg(rappel),
                       iva_compra: iva,
-                      pvp: clampNonNeg(pvp)
+                      pvp: clampNonNeg(pvp),
+                      iva_venta: Math.trunc(Number(current?.iva_venta ?? 10) || 10)
                     });
                   }
 
-                  if (updates.length === 0) throw new Error("No hay filas válidas (asegúrate de que exista la columna Producto_ID).");
+                  if (escUpdates.length === 0) throw new Error("No hay filas válidas (asegúrate de que exista la columna Producto_ID).");
 
                   const chunkSize = 75;
-                  for (let i = 0; i < updates.length; i += chunkSize) {
-                    const chunk = updates.slice(i, i + chunkSize);
+                  for (let i = 0; i < prodUpdates.length; i += chunkSize) {
+                    const chunk = prodUpdates.slice(i, i + chunkSize);
                     const { error } = await supabase().from("productos").upsert(chunk, { onConflict: "id" });
+                    if (error) throw error;
+                  }
+
+                  for (let i = 0; i < escUpdates.length; i += chunkSize) {
+                    const chunk = escUpdates.slice(i, i + chunkSize);
+                    const { error } = await supabase().from("escandallos").upsert(chunk, { onConflict: "producto_id" });
                     if (error) throw error;
                   }
 

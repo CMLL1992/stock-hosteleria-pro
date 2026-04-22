@@ -356,17 +356,25 @@ export default function RecepcionPage() {
                   if (!pid || !activeEstablishmentId) return;
                   try {
                     const { data, error } = await supabase()
-                      .from("productos")
-                      .select("id,articulo,nombre,precio_tarifa")
-                      .eq("id", pid)
+                      .from("escandallos")
+                      .select("producto_id,precio_tarifa,productos:productos(articulo,nombre)")
+                      .eq("producto_id", pid)
                       .eq("establecimiento_id", activeEstablishmentId)
                       .maybeSingle();
                     if (error) throw error;
-                    const row = (data ?? null) as null | { id?: string; articulo?: string | null; nombre?: string | null; precio_tarifa?: unknown };
-                    if (!row?.id) throw new Error("Producto no encontrado para este establecimiento.");
+                    const row = (data ?? null) as
+                      | null
+                      | {
+                          producto_id?: string;
+                          precio_tarifa?: unknown;
+                          productos?: { articulo?: string | null; nombre?: string | null } | { articulo?: string | null; nombre?: string | null }[] | null;
+                        };
+                    if (!row?.producto_id) throw new Error("Producto no encontrado para este establecimiento.");
+                    const prodRaw = row.productos;
+                    const prod = Array.isArray(prodRaw) ? prodRaw[0] ?? null : prodRaw;
                     setCompareProd({
-                      id: String(row.id),
-                      articulo: String(row.articulo ?? row.nombre ?? "—").trim() || "—",
+                      id: String(row.producto_id),
+                      articulo: String(prod?.articulo ?? prod?.nombre ?? "—").trim() || "—",
                       precio_tarifa: Number(row.precio_tarifa ?? 0) || 0
                     });
                     setCompareStep("compare");

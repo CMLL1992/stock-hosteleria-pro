@@ -223,20 +223,20 @@ export default function PedidosPage() {
   if (role !== "admin" && role !== "superadmin") {
     return (
       <main className="mx-auto max-w-md p-4">
-        <h1 className="text-xl font-semibold">Pedidos</h1>
-        <p className="mt-2 text-sm text-slate-600">Acceso denegado.</p>
+        <h1 className="text-xl font-semibold">{t("nav.orders")}</h1>
+        <p className="mt-2 text-sm text-slate-600">{t("common.accessDenied")}</p>
       </main>
     );
   }
 
   return (
     <div className="min-h-dvh bg-slate-50">
-      <MobileHeader title="Pedidos por proveedor" showBack backHref="/admin" />
+      <MobileHeader title={t("orders.byProvider")} showBack backHref="/admin" />
       <main className="mx-auto max-w-3xl p-4 pb-28 text-slate-900">
         <div className="mb-4">
-          <h1 className="text-xl font-semibold">Pedidos</h1>
+          <h1 className="text-xl font-semibold">{t("nav.orders")}</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Despliega un proveedor, escribe cantidades y envía el pedido por WhatsApp.
+            {t("orders.subtitle")}
           </p>
         </div>
 

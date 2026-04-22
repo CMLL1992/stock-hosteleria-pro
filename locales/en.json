@@ -34,6 +34,7 @@
   },
   "orders": {
     "byProvider": "Orders by supplier",
+    "subtitle": "Expand a supplier, enter quantities and send the order via WhatsApp.",
     "sendWhatsapp": "Send order to {prov} via WhatsApp"
   },
   "actions": {
@@ -43,6 +44,38 @@
   "stock": {
     "manage": "MANAGE",
     "generateQr": "Generate QR"
+  },
+  "movements": {
+    "title": "Movements",
+    "subtitle": "Latest movements for the active establishment.",
+    "selectEstablishment": "Select an establishment to view the history.",
+    "loading": "Loading movements…",
+    "empty": "There are no movements recorded yet.",
+    "ariaRecent": "Recent movements",
+    "generatesEmpty": "generates empties",
+    "type": {
+      "entrada": "Incoming",
+      "entradaCompra": "Incoming (purchase)",
+      "salida": "Outgoing",
+      "pedido": "Order",
+      "salidaBarra": "Outgoing to bar",
+      "entradaVacio": "Empty incoming",
+      "devolucionProveedor": "Return to supplier"
+    }
+  },
+  "scan": {
+    "compareDeliveryNote": "Compare delivery note",
+    "compareDrawerTitle": "Compare delivery note (no saving)",
+    "productNotFound": "Product not found.",
+    "priceOk": "Price OK",
+    "priceUp": "Increase of {eur}€",
+    "priceDown": "Decrease of {eur}€",
+    "savedPrice": "Saved price (tariff):",
+    "deliveryNotePrice": "Delivery note price",
+    "pricePlaceholder": "0.00",
+    "enterValidPrice": "Enter a valid price.",
+    "compare": "Compare",
+    "scanAnother": "Scan another"
   },
   "envases": {
     "title": "Containers to return",

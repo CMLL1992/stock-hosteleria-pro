@@ -6,6 +6,8 @@ import { QrScanner } from "@/components/scanner/QrScanner";
 import { Drawer } from "@/components/ui/Drawer";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
+import { useMyRole } from "@/lib/useMyRole";
+import { useLanguage } from "@/lib/LanguageContext";
 
 function extractProductId(decodedText: string): string | null {
   const raw = decodedText.trim();
@@ -28,6 +30,8 @@ function extractProductId(decodedText: string): string | null {
 
 export function ScanGoClient() {
   const router = useRouter();
+  const { data: me } = useMyRole();
+  const { t } = useLanguage();
   const [last, setLast] = useState<string | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
 
@@ -115,142 +119,155 @@ export function ScanGoClient() {
   return (
     <div className="relative">
       <div className="absolute left-0 right-0 top-3 z-10 flex justify-center px-3">
-        <button
-          type="button"
-          onClick={openCompare}
-          className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-white/25 bg-black/35 px-4 text-sm font-semibold text-white backdrop-blur"
-        >
-          Comparar Albarán
-        </button>
+        {me?.isAdmin ? (
+          <button
+            type="button"
+            onClick={openCompare}
+            className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-white/25 bg-black/35 px-4 text-sm font-semibold text-white backdrop-blur"
+          >
+            {t("scan.compareDeliveryNote")}
+          </button>
+        ) : null}
       </div>
 
       <QrScanner onDetected={onDetected} />
 
-      <Drawer
-        open={compareOpen}
-        title="Comparar albarán (sin guardar)"
-        onClose={() => {
-          setCompareOpen(false);
-          setCompareMsg(null);
-          setCompareResult(null);
-        }}
-      >
-        <div className="space-y-3 pb-4">
-          {compareStep === "scan" ? (
-            <div className="overflow-hidden rounded-2xl border border-slate-200">
-              <QrScanner
-                onDetected={async (txt) => {
-                  const pid = extractProductId(txt);
-                  if (!pid) return;
-                  compareBeep();
-                  try {
-                    const { data, error } = await supabase()
-                      .from("productos")
-                      .select("id,articulo,nombre,precio_tarifa")
-                      .eq("id", pid)
-                      .maybeSingle();
-                    if (error) throw error;
-                    const row = (data ?? null) as null | { id?: string; articulo?: string | null; nombre?: string | null; precio_tarifa?: unknown };
-                    if (!row?.id) throw new Error("Producto no encontrado.");
-                    setCompareProd({
-                      id: String(row.id),
-                      articulo: String(row.articulo ?? row.nombre ?? "—").trim() || "—",
-                      precio_tarifa: Number(row.precio_tarifa ?? 0) || 0
-                    });
-                    setCompareStep("compare");
-                    setCompareResult(null);
-                  } catch (e) {
-                    setCompareMsg(supabaseErrToString(e));
-                    setCompareResult(null);
-                  }
-                }}
-              />
-            </div>
-          ) : null}
-
-          {compareStep === "compare" && compareProd ? (
-            <div className="space-y-3">
-              {compareMsg ? (
-                <p className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{compareMsg}</p>
-              ) : null}
-              {compareResult ? (
-                <p
-                  className={[
-                    "rounded-2xl border p-3 text-sm font-semibold",
-                    compareResult.kind === "correcto"
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                      : compareResult.kind === "subida"
-                        ? "border-amber-200 bg-amber-50 text-amber-950"
-                        : "border-sky-200 bg-sky-50 text-sky-950"
-                  ].join(" ")}
-                >
-                  {compareResult.kind === "correcto"
-                    ? "Precio Correcto"
-                    : compareResult.kind === "subida"
-                      ? `Subida de ${compareResult.diff.toFixed(2)}€`
-                      : `Bajada de ${compareResult.diff.toFixed(2)}€`}
-                </p>
-              ) : null}
-              <p className="text-sm font-semibold text-slate-900">{compareProd.articulo}</p>
-              <p className="text-sm text-slate-600">
-                Precio guardado (tarifa): <span className="font-semibold tabular-nums text-slate-900">{compareProd.precio_tarifa.toFixed(2)}€</span>
-              </p>
-
-              <label className="block text-sm font-semibold text-slate-900">
-                Precio en albarán
-                <input
-                  className="mt-1 min-h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base tabular-nums text-slate-900"
-                  inputMode="decimal"
-                  value={comparePrecio}
-                  onChange={(e) => setComparePrecio(e.currentTarget.value)}
-                  placeholder="0,00"
+      {me?.isAdmin ? (
+        <Drawer
+          open={compareOpen}
+          title={t("scan.compareDrawerTitle")}
+          onClose={() => {
+            setCompareOpen(false);
+            setCompareMsg(null);
+            setCompareResult(null);
+          }}
+        >
+          <div className="space-y-3 pb-4">
+            {compareStep === "scan" ? (
+              <div className="overflow-hidden rounded-2xl border border-slate-200">
+                <QrScanner
+                  onDetected={async (txt) => {
+                    const pid = extractProductId(txt);
+                    if (!pid) return;
+                    compareBeep();
+                    try {
+                      const { data, error } = await supabase()
+                        .from("escandallos")
+                        .select("producto_id,precio_tarifa,productos:productos(articulo,nombre)")
+                        .eq("producto_id", pid)
+                        .maybeSingle();
+                      if (error) throw error;
+                      const row = (data ?? null) as
+                        | null
+                        | {
+                            producto_id?: string;
+                            precio_tarifa?: unknown;
+                            productos?: { articulo?: string | null; nombre?: string | null } | { articulo?: string | null; nombre?: string | null }[] | null;
+                          };
+                      if (!row?.producto_id) throw new Error(t("scan.productNotFound"));
+                      const prodRaw = row.productos;
+                      const prod = Array.isArray(prodRaw) ? prodRaw[0] ?? null : prodRaw;
+                      setCompareProd({
+                        id: String(row.producto_id),
+                        articulo: String(prod?.articulo ?? prod?.nombre ?? "—").trim() || "—",
+                        precio_tarifa: Number(row.precio_tarifa ?? 0) || 0
+                      });
+                      setCompareStep("compare");
+                      setCompareResult(null);
+                    } catch (e) {
+                      setCompareMsg(supabaseErrToString(e));
+                      setCompareResult(null);
+                    }
+                  }}
                 />
-              </label>
+              </div>
+            ) : null}
 
-              <button
-                type="button"
-                className="min-h-12 w-full rounded-2xl bg-black px-4 text-sm font-semibold text-white hover:bg-slate-900"
-                onClick={() => {
-                  const n = Number(String(comparePrecio).replace(",", "."));
-                  if (!Number.isFinite(n) || n <= 0) {
-                    setCompareMsg("Introduce un precio válido.");
+            {compareStep === "compare" && compareProd ? (
+              <div className="space-y-3">
+                {compareMsg ? (
+                  <p className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{compareMsg}</p>
+                ) : null}
+                {compareResult ? (
+                  <p
+                    className={[
+                      "rounded-2xl border p-3 text-sm font-semibold",
+                      compareResult.kind === "correcto"
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                        : compareResult.kind === "subida"
+                          ? "border-amber-200 bg-amber-50 text-amber-950"
+                          : "border-sky-200 bg-sky-50 text-sky-950"
+                    ].join(" ")}
+                  >
+                    {compareResult.kind === "correcto"
+                      ? t("scan.priceOk")
+                      : compareResult.kind === "subida"
+                        ? t("scan.priceUp", { eur: compareResult.diff.toFixed(2) })
+                        : t("scan.priceDown", { eur: compareResult.diff.toFixed(2) })}
+                  </p>
+                ) : null}
+                <p className="text-sm font-semibold text-slate-900">{compareProd.articulo}</p>
+                <p className="text-sm text-slate-600">
+                  {t("scan.savedPrice")}{" "}
+                  <span className="font-semibold tabular-nums text-slate-900">{compareProd.precio_tarifa.toFixed(2)}€</span>
+                </p>
+
+                <label className="block text-sm font-semibold text-slate-900">
+                  {t("scan.deliveryNotePrice")}
+                  <input
+                    className="mt-1 min-h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base tabular-nums text-slate-900"
+                    inputMode="decimal"
+                    value={comparePrecio}
+                    onChange={(e) => setComparePrecio(e.currentTarget.value)}
+                    placeholder={t("scan.pricePlaceholder")}
+                  />
+                </label>
+
+                <button
+                  type="button"
+                  className="min-h-12 w-full rounded-2xl bg-black px-4 text-sm font-semibold text-white hover:bg-slate-900"
+                  onClick={() => {
+                    const n = Number(String(comparePrecio).replace(",", "."));
+                    if (!Number.isFinite(n) || n <= 0) {
+                      setCompareMsg(t("scan.enterValidPrice"));
+                      setCompareResult(null);
+                      return;
+                    }
+                    setCompareMsg(null);
+                    const signed = n - compareProd.precio_tarifa;
+                    const abs = Math.abs(signed);
+                    if (abs < 0.005) {
+                      setCompareResult({ kind: "correcto", diff: 0 });
+                      return;
+                    }
+                    if (signed > 0) {
+                      setCompareResult({ kind: "subida", diff: abs });
+                      return;
+                    }
+                    setCompareResult({ kind: "bajada", diff: abs });
+                  }}
+                >
+                  {t("scan.compare")}
+                </button>
+
+                <button
+                  type="button"
+                  className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 hover:bg-slate-50"
+                  onClick={() => {
+                    setCompareStep("scan");
+                    setCompareProd(null);
+                    setComparePrecio("");
+                    setCompareMsg(null);
                     setCompareResult(null);
-                    return;
-                  }
-                  setCompareMsg(null);
-                  const signed = n - compareProd.precio_tarifa;
-                  const abs = Math.abs(signed);
-                  if (abs < 0.005) {
-                    setCompareResult({ kind: "correcto", diff: 0 });
-                    return;
-                  }
-                  if (signed > 0) {
-                    setCompareResult({ kind: "subida", diff: abs });
-                    return;
-                  }
-                  setCompareResult({ kind: "bajada", diff: abs });
-                }}
-              >
-                Comparar
-              </button>
-
-              <button
-                type="button"
-                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 hover:bg-slate-50"
-                onClick={() => {
-                  setCompareStep("scan");
-                  setCompareProd(null);
-                  setComparePrecio("");
-                  setCompareMsg(null);
-                  setCompareResult(null);
-                }}
-              >
-                Escanear otro
-              </button>
-            </div>
-          ) : null}
-        </div>
-      </Drawer>
+                  }}
+                >
+                  {t("scan.scanAnother")}
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </Drawer>
+      ) : null}
     </div>
   );
 }

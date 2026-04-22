@@ -34,6 +34,7 @@
   },
   "orders": {
     "byProvider": "Pedidos por proveedor",
+    "subtitle": "Despliega un proveedor, escribe cantidades y envía el pedido por WhatsApp.",
     "sendWhatsapp": "Enviar pedido a {prov} por WhatsApp"
   },
   "actions": {
@@ -43,6 +44,38 @@
   "stock": {
     "manage": "GESTIONAR",
     "generateQr": "Generar QR"
+  },
+  "movements": {
+    "title": "Movimientos",
+    "subtitle": "Últimos movimientos del establecimiento activo.",
+    "selectEstablishment": "Selecciona un establecimiento para ver el histórico.",
+    "loading": "Cargando movimientos…",
+    "empty": "No hay movimientos registrados todavía.",
+    "ariaRecent": "Movimientos recientes",
+    "generatesEmpty": "genera vacío",
+    "type": {
+      "entrada": "Entrada",
+      "entradaCompra": "Entrada (compra)",
+      "salida": "Salida",
+      "pedido": "Pedido",
+      "salidaBarra": "Salida a barra",
+      "entradaVacio": "Entrada de vacío",
+      "devolucionProveedor": "Devolución a proveedor"
+    }
+  },
+  "scan": {
+    "compareDeliveryNote": "Comparar Albarán",
+    "compareDrawerTitle": "Comparar albarán (sin guardar)",
+    "productNotFound": "Producto no encontrado.",
+    "priceOk": "Precio Correcto",
+    "priceUp": "Subida de {eur}€",
+    "priceDown": "Bajada de {eur}€",
+    "savedPrice": "Precio guardado (tarifa):",
+    "deliveryNotePrice": "Precio en albarán",
+    "pricePlaceholder": "0,00",
+    "enterValidPrice": "Introduce un precio válido.",
+    "compare": "Comparar",
+    "scanAnother": "Escanear otro"
   },
   "envases": {
     "title": "Envases para devolver",

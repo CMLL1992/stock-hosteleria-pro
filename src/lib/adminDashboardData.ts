@@ -12,7 +12,6 @@ export type DashboardProducto = {
   stock_minimo: number;
   stock_vacios: number;
   unidad: string | null;
-  precio_tarifa: number;
   unidades_por_caja: number;
   proveedor: DashboardProveedor | null;
 };
@@ -47,10 +46,6 @@ export function normalizeProductoRow(raw: Record<string, unknown>, tituloKey?: s
     stock_minimo: toIntStock(raw.stock_minimo, 0),
     stock_vacios: toIntStock(raw.stock_vacios, 0),
     unidad: raw.unidad != null && String(raw.unidad).trim() !== "" ? String(raw.unidad).trim() : null,
-    precio_tarifa: (() => {
-      const n = typeof raw.precio_tarifa === "number" ? raw.precio_tarifa : Number(raw.precio_tarifa);
-      return Number.isFinite(n) ? n : 0;
-    })(),
     unidades_por_caja: (() => {
       const n = typeof raw.unidades_por_caja === "number" ? raw.unidades_por_caja : Number(raw.unidades_por_caja);
       const v = Number.isFinite(n) ? Math.trunc(n) : 1;
@@ -64,7 +59,7 @@ export function normalizeProductoRow(raw: Record<string, unknown>, tituloKey?: s
 export async function fetchDashboardProductos(establecimientoId: string): Promise<DashboardProducto[]> {
   const col = await resolveProductoTituloColumn(establecimientoId);
   const t = tituloColSql(col);
-  const full = `id,${t},categoria,stock_actual,stock_minimo,stock_vacios,unidad,precio_tarifa,unidades_por_caja,proveedor:proveedores(nombre,telefono_whatsapp)`;
+  const full = `id,${t},categoria,stock_actual,stock_minimo,stock_vacios,unidad,unidades_por_caja,proveedor:proveedores(nombre,telefono_whatsapp)`;
   const { data, error } = await supabase()
     .from("productos")
     .select(full as "*")
@@ -81,7 +76,6 @@ export async function fetchDashboardProductos(establecimientoId: string): Promis
     msg.includes("relationship") ||
     msg.includes("unidad") ||
     msg.includes("stock_vacios") ||
-    msg.includes("precio_tarifa") ||
     msg.includes("unidades_por_caja") ||
     (msg.includes("column") && msg.includes("unidad"));
 
@@ -89,7 +83,7 @@ export async function fetchDashboardProductos(establecimientoId: string): Promis
 
   const lite = await supabase()
     .from("productos")
-    .select(`id,${t},categoria,stock_actual,stock_minimo,stock_vacios,precio_tarifa,unidades_por_caja` as "*")
+    .select(`id,${t},categoria,stock_actual,stock_minimo,stock_vacios,unidades_por_caja` as "*")
     .eq("establecimiento_id", establecimientoId)
     .order(t, { ascending: true });
   if (lite.error) throw lite.error;

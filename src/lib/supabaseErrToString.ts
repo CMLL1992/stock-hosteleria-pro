@@ -1,4 +1,20 @@
 export function supabaseErrToString(e: unknown): string {
+  const lang = (() => {
+    if (typeof document === "undefined") return "es";
+    const m = document.cookie.match(/(?:^|; )ops_lang=([^;]*)/);
+    const v = decodeURIComponent(m?.[1] ?? "").trim().toLowerCase();
+    if (v === "en") return "en";
+    if (v === "cat" || v === "ca") return "cat";
+    return "es";
+  })();
+
+  const DEFAULT_MSG =
+    lang === "en"
+      ? "Could not complete the action. Check your connection and try again."
+      : lang === "cat"
+        ? "No s’ha pogut completar l’acció. Revisa la connexió i torna-ho a provar."
+        : "No se pudo completar la acción. Revisa la conexión y vuelve a intentarlo.";
+
   if (e instanceof Error) return e.message;
   if (typeof e === "string") return e;
   if (typeof e === "object" && e) {
@@ -16,6 +32,6 @@ export function supabaseErrToString(e: unknown): string {
       // ignore
     }
   }
-  return "No se pudo completar la acción. Revisa la conexión y vuelve a intentarlo.";
+  return DEFAULT_MSG;
 }
 

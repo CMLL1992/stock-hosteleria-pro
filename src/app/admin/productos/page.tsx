@@ -18,6 +18,8 @@ import {
 } from "@/lib/productoFormCatalogo";
 import { resolveProductoTituloColumn, tituloColSql, tituloWritePayload } from "@/lib/productosTituloColumn";
 import { updateProductoCategoriaCompat } from "@/lib/productoWriteCompat";
+import { enqueueMovimiento, newClientUuid } from "@/lib/offlineQueue";
+import { requireUserId } from "@/lib/session";
 
 type ProveedorOpt = { id: string; nombre: string };
 
@@ -82,7 +84,7 @@ function mapProductoQueryRow(r: Record<string, unknown>, tituloKey: string): Pro
     categoria: r.categoria != null ? String(r.categoria) : null,
     tipo: r.tipo != null ? String(r.tipo) : null,
     unidad: r.unidad != null ? String(r.unidad) : null,
-    precio_tarifa: r.precio_tarifa != null && Number.isFinite(Number(r.precio_tarifa)) ? Number(r.precio_tarifa) : null,
+    precio_tarifa: null,
     stock_actual: Math.trunc(toNumberOrZero(r.stock_actual)),
     stock_minimo:
       r.stock_minimo === null || r.stock_minimo === undefined ? null : Math.trunc(toNumberOrZero(r.stock_minimo)),
@@ -323,23 +325,6 @@ export default function AdminProductosPage() {
         setLoading(true);
         const col = await resolveProductoTituloColumn(activeEstablishmentId);
         const t = tituloColSql(col);
-        const full = await supabase()
-          .from("productos")
-          .select(`id,${t},categoria,tipo,unidad,precio_tarifa,stock_actual,stock_minimo,proveedor_id` as "*")
-          .eq("establecimiento_id", activeEstablishmentId)
-          .order(t, { ascending: true });
-
-        if (!full.error) {
-          if (cancelled) return;
-          setHasPrecioTarifa(true);
-          setItems(((full.data ?? []) as unknown as Record<string, unknown>[]).map((r) => mapProductoQueryRow(r, t)));
-          return;
-        }
-
-        const msg = (full.error as { message?: string }).message?.toLowerCase?.() ?? "";
-        const looksLikeMissingPrecioTarifa = msg.includes("precio_tarifa") && (msg.includes("does not exist") || msg.includes("could not find"));
-        if (!looksLikeMissingPrecioTarifa) throw full.error;
-
         const lite = await supabase()
           .from("productos")
           .select(`id,${t},categoria,tipo,unidad,stock_actual,stock_minimo,proveedor_id` as "*")
@@ -347,13 +332,23 @@ export default function AdminProductosPage() {
           .order(t, { ascending: true });
         if (lite.error) throw lite.error;
         if (cancelled) return;
-        setHasPrecioTarifa(false);
-        setItems(
-          ((lite.data ?? []) as unknown as Record<string, unknown>[]).map((r) => ({
-            ...mapProductoQueryRow(r, t),
-            precio_tarifa: null
-          }))
-        );
+        const base = ((lite.data ?? []) as unknown as Record<string, unknown>[]).map((r) => mapProductoQueryRow(r, t));
+
+        const esc = await supabase()
+          .from("escandallos")
+          .select("producto_id,precio_tarifa")
+          .eq("establecimiento_id", activeEstablishmentId);
+        if (esc.error) throw esc.error;
+        const priceById = new Map<string, number>();
+        for (const r of (esc.data as unknown as Record<string, unknown>[]) ?? []) {
+          const pid = String(r.producto_id ?? "").trim();
+          if (!pid) continue;
+          const n = Number(r.precio_tarifa ?? 0);
+          priceById.set(pid, Number.isFinite(n) ? n : 0);
+        }
+
+        setHasPrecioTarifa(true);
+        setItems(base.map((p) => ({ ...p, precio_tarifa: priceById.get(p.id) ?? 0 })));
       } catch (e) {
         if (cancelled) return;
         setErr(supabaseErrToString(e));
@@ -428,33 +423,27 @@ export default function AdminProductosPage() {
     if (!activeEstablishmentId) return;
     const col = await resolveProductoTituloColumn(activeEstablishmentId);
     const t = tituloColSql(col);
-    const full = await supabase()
-      .from("productos")
-      .select(`id,${t},categoria,tipo,unidad,precio_tarifa,stock_actual,stock_minimo,proveedor_id` as "*")
-      .eq("establecimiento_id", activeEstablishmentId)
-      .order(t, { ascending: true });
-    if (!full.error) {
-      setHasPrecioTarifa(true);
-      setItems(((full.data ?? []) as unknown as Record<string, unknown>[]).map((r) => mapProductoQueryRow(r, t)));
-      return;
-    }
-    const msg = (full.error as { message?: string }).message?.toLowerCase?.() ?? "";
-    const looksLikeMissingPrecioTarifa = msg.includes("precio_tarifa") && (msg.includes("does not exist") || msg.includes("could not find"));
-    if (!looksLikeMissingPrecioTarifa) throw full.error;
-
     const lite = await supabase()
       .from("productos")
       .select(`id,${t},categoria,tipo,unidad,stock_actual,stock_minimo,proveedor_id` as "*")
       .eq("establecimiento_id", activeEstablishmentId)
       .order(t, { ascending: true });
     if (lite.error) throw lite.error;
-    setHasPrecioTarifa(false);
-    setItems(
-      ((lite.data ?? []) as unknown as Record<string, unknown>[]).map((r) => ({
-        ...mapProductoQueryRow(r, t),
-        precio_tarifa: null
-      }))
-    );
+    const base = ((lite.data ?? []) as unknown as Record<string, unknown>[]).map((r) => mapProductoQueryRow(r, t));
+    const esc = await supabase()
+      .from("escandallos")
+      .select("producto_id,precio_tarifa")
+      .eq("establecimiento_id", activeEstablishmentId);
+    if (esc.error) throw esc.error;
+    const priceById = new Map<string, number>();
+    for (const r of (esc.data as unknown as Record<string, unknown>[]) ?? []) {
+      const pid = String(r.producto_id ?? "").trim();
+      if (!pid) continue;
+      const n = Number(r.precio_tarifa ?? 0);
+      priceById.set(pid, Number.isFinite(n) ? n : 0);
+    }
+    setHasPrecioTarifa(true);
+    setItems(base.map((p) => ({ ...p, precio_tarifa: priceById.get(p.id) ?? 0 })));
   }
 
   async function onSave(patch: Partial<ProductoRow>) {
@@ -467,10 +456,8 @@ export default function AdminProductosPage() {
         categoria: patch.categoria != null ? String(patch.categoria) : null,
         unidad: patch.unidad != null ? String(patch.unidad) : null,
         proveedor_id: patch.proveedor_id ?? null,
-        stock_actual: patch.stock_actual ?? 0,
         stock_minimo: patch.stock_minimo ?? 0
       };
-      if (hasPrecioTarifa) updatePayload.precio_tarifa = patch.precio_tarifa ?? 0;
       const { error } = await updateProductoCategoriaCompat(
         async (fields) => {
           const r = await supabase()
@@ -483,6 +470,60 @@ export default function AdminProductosPage() {
         updatePayload
       );
       if (error) throw error;
+
+      // Precio tarifa: se guarda en escandallos (admin-only)
+      if (hasPrecioTarifa && patch.precio_tarifa != null) {
+        const { error: escErr } = await supabase()
+          .from("escandallos")
+          .upsert(
+            {
+              producto_id: editing.id,
+              establecimiento_id: activeEstablishmentId,
+              precio_tarifa: Math.max(0, toNumberOrZero(patch.precio_tarifa))
+            },
+            { onConflict: "producto_id" }
+          );
+        if (escErr) throw escErr;
+      }
+
+      // Stock: nunca se modifica directo; se registra como movimiento.
+      if (patch.stock_actual != null) {
+        const desired = Math.max(0, Math.trunc(toNumberOrZero(patch.stock_actual)));
+        const current = Math.max(0, Math.trunc(toNumberOrZero(editing.stock_actual)));
+        const delta = desired - current;
+        if (delta !== 0) {
+          const usuario_id = await requireUserId();
+          const ts = new Date().toISOString();
+          const tipo = delta > 0 ? "entrada" : "salida";
+          const cantidad = Math.abs(delta);
+          if (typeof navigator !== "undefined" && navigator.onLine) {
+            const { error: mvErr } = await supabase().from("movimientos").upsert(
+              {
+                client_uuid: newClientUuid(),
+                producto_id: editing.id,
+                establecimiento_id: activeEstablishmentId,
+                tipo,
+                cantidad,
+                usuario_id,
+                timestamp: ts
+              },
+              { onConflict: "client_uuid" }
+            );
+            if (mvErr) throw mvErr;
+          } else {
+            await enqueueMovimiento({
+              client_uuid: newClientUuid(),
+              producto_id: editing.id,
+              establecimiento_id: activeEstablishmentId,
+              tipo,
+              cantidad,
+              usuario_id,
+              timestamp: ts
+            });
+          }
+        }
+      }
+
       await refetch();
       setToast({ kind: "ok", message: "Producto actualizado correctamente." });
       setEditOpen(false);
@@ -499,12 +540,39 @@ export default function AdminProductosPage() {
     setBusyDeltaId(p.id);
     setErr(null);
     try {
-      const { error } = await supabase()
-        .from("productos")
-        .update({ stock_actual: next })
-        .eq("id", p.id)
-        .eq("establecimiento_id", activeEstablishmentId);
-      if (error) throw error;
+      const prev = Math.max(0, Math.trunc(toNumberOrZero(p.stock_actual)));
+      const delta = next - prev;
+      if (delta !== 0) {
+        const usuario_id = await requireUserId();
+        const ts = new Date().toISOString();
+        const tipo = delta > 0 ? "entrada" : "salida";
+        const cantidad = Math.abs(delta);
+        if (typeof navigator !== "undefined" && navigator.onLine) {
+          const { error } = await supabase().from("movimientos").upsert(
+            {
+              client_uuid: newClientUuid(),
+              producto_id: p.id,
+              establecimiento_id: activeEstablishmentId,
+              tipo,
+              cantidad,
+              usuario_id,
+              timestamp: ts
+            },
+            { onConflict: "client_uuid" }
+          );
+          if (error) throw error;
+        } else {
+          await enqueueMovimiento({
+            client_uuid: newClientUuid(),
+            producto_id: p.id,
+            establecimiento_id: activeEstablishmentId,
+            tipo,
+            cantidad,
+            usuario_id,
+            timestamp: ts
+          });
+        }
+      }
       setStockQuickDraft((d) => ({ ...d, [p.id]: String(next) }));
       await refetch();
       setToast({ kind: "ok", message: "Stock actualizado." });

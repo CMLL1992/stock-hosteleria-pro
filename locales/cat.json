@@ -34,6 +34,7 @@
   },
   "orders": {
     "byProvider": "Comandes per proveïdor",
+    "subtitle": "Desplega un proveïdor, escriu quantitats i envia la comanda per WhatsApp.",
     "sendWhatsapp": "Enviar comanda a {prov} per WhatsApp"
   },
   "actions": {
@@ -43,6 +44,38 @@
   "stock": {
     "manage": "GESTIONAR",
     "generateQr": "Generar QR"
+  },
+  "movements": {
+    "title": "Moviments",
+    "subtitle": "Últims moviments de l’establiment actiu.",
+    "selectEstablishment": "Selecciona un establiment per veure l’històric.",
+    "loading": "Carregant moviments…",
+    "empty": "Encara no hi ha moviments registrats.",
+    "ariaRecent": "Moviments recents",
+    "generatesEmpty": "genera buit",
+    "type": {
+      "entrada": "Entrada",
+      "entradaCompra": "Entrada (compra)",
+      "salida": "Sortida",
+      "pedido": "Comanda",
+      "salidaBarra": "Sortida a barra",
+      "entradaVacio": "Entrada de buit",
+      "devolucionProveedor": "Devolució a proveïdor"
+    }
+  },
+  "scan": {
+    "compareDeliveryNote": "Comparar albarà",
+    "compareDrawerTitle": "Comparar albarà (sense desar)",
+    "productNotFound": "Producte no trobat.",
+    "priceOk": "Preu correcte",
+    "priceUp": "Pujada de {eur}€",
+    "priceDown": "Baixada de {eur}€",
+    "savedPrice": "Preu desat (tarifa):",
+    "deliveryNotePrice": "Preu a l’albarà",
+    "pricePlaceholder": "0,00",
+    "enterValidPrice": "Introdueix un preu vàlid.",
+    "compare": "Comparar",
+    "scanAnother": "Escanejar un altre"
   },
   "envases": {
     "title": "Envasos per retornar",
