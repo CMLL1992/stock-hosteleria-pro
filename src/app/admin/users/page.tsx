@@ -146,12 +146,18 @@ export default function AdminUsersPage() {
           <ul className="mt-3 divide-y divide-slate-100">
             {usuarios.map((u) => {
               const isSelf = myId !== null && u.id === myId;
+              const estId = typeof (u as unknown as { establecimiento_id?: unknown }).establecimiento_id === "string"
+                ? ((u as unknown as { establecimiento_id: string }).establecimiento_id as string)
+                : "";
+              const estLabel =
+                (estId && estNombreById.get(estId)) ||
+                (estId ? `${estId.slice(0, 8)}…` : "—");
               return (
                 <li key={u.id} className="flex flex-col gap-2 py-3 first:pt-0 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-slate-900">{u.email ?? u.id}</p>
                     <p className="text-xs text-slate-500">
-                      {u.rol} · {estNombreById.get(u.establecimiento_id) ?? u.establecimiento_id.slice(0, 8)}…
+                      {u.rol} · {estLabel}
                     </p>
                   </div>
                   <button
