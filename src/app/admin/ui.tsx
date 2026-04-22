@@ -2,7 +2,6 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { ChevronRight } from "lucide-react";
 import { MobileHeader } from "@/components/MobileHeader";
 import { useMyRole } from "@/lib/useMyRole";
@@ -109,10 +108,8 @@ function filterSections(sections: AdminSection[], isSuperadmin: boolean): AdminS
     .filter((sec) => sec.items.length > 0);
 }
 
-export function AdminHomeClient() {
+export function AdminHomeClient({ denied }: { denied?: string | null } = {}) {
   const { data, isLoading, error } = useMyRole();
-  const searchParams = useSearchParams();
-  const denied = searchParams.get("denied");
 
   const content = useMemo(() => {
     if (isLoading) return <p className="px-1 text-sm text-slate-600">Cargando…</p>;

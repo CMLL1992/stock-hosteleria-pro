@@ -33,6 +33,12 @@ export default function AdminClientesPage() {
   const [confirmDeleteEst, setConfirmDeleteEst] = useState<EstRow | null>(null);
 
   const allowed = !!me?.isSuperadmin && me.profileReady;
+  const shouldRedirect = !isLoading && !allowed;
+
+  useEffect(() => {
+    if (!shouldRedirect) return;
+    router.replace("/admin?denied=clientes");
+  }, [router, shouldRedirect]);
 
   async function refreshEts() {
     const list = await fetchAdminEstablecimientosList();
@@ -146,8 +152,6 @@ export default function AdminClientesPage() {
   }
 
   if (!allowed) {
-    // Admin intentando acceder a área exclusiva de superadmin: redirige con mensaje.
-    router.replace("/admin?denied=clientes");
     return (
       <main className="min-h-dvh bg-slate-50 p-4 pb-28 text-slate-900">
         <div className="mx-auto max-w-md rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
