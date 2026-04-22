@@ -366,7 +366,7 @@ export default function EscandallosPage() {
         descuento_valor: clampNonNeg(Number(p.descuento_valor ?? 0)),
         descuento_tipo: (p.descuento_tipo ?? "%") as "%" | "€",
         rappel_valor: clampNonNeg(Number(p.rappel_valor ?? 0)),
-        iva_compra: Number(p.iva_compra ?? 10),
+        iva_compra: normalizeIva(Number(p.iva_compra ?? 10)),
         pvp: clampNonNeg(Number(p.pvp ?? 0)),
         iva_venta: Number(p.iva_venta ?? 10)
       };
@@ -375,6 +375,8 @@ export default function EscandallosPage() {
 
       setSaved(true);
       setTimeout(() => setSaved(false), 1200);
+    } catch (e) {
+      setErr(supabaseErrToString(e));
     } finally {
       setSaving(null);
     }
