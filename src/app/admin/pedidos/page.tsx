@@ -318,26 +318,26 @@ export default function PedidosPage() {
                                 .slice()
                                 .sort((a, b) => a.articulo.localeCompare(b.articulo, "es", { sensitivity: "base" }))
                                 .map((p) => (
-                                <li key={p.id} className="flex items-center gap-3">
-                                  <div className="min-w-0 flex-1">
-                                    <p className="font-semibold leading-snug text-slate-900">{p.articulo}</p>
-                                  </div>
-                                  <label className="sr-only" htmlFor={`qty-${p.id}`}>
-                                    Cantidad para {p.articulo}
-                                  </label>
-                                  <input
-                                    id={`qty-${p.id}`}
-                                    type="number"
-                                    inputMode="numeric"
-                                    pattern="[0-9]*"
-                                    placeholder="0"
-                                    className="h-16 w-24 shrink-0 rounded-2xl border-2 border-slate-800 bg-white px-2 text-center text-3xl font-black tabular-nums text-slate-900 shadow-inner focus:outline-none focus:ring-4 focus:ring-slate-300"
-                                    value={qty[p.id] ?? ""}
-                                    onChange={(e) => setQty((prev) => ({ ...prev, [p.id]: e.target.value }))}
-                                    min={0}
-                                  />
-                                </li>
-                              ))}
+                                  <li key={p.id} className="flex items-center gap-3">
+                                    <div className="min-w-0 flex-1">
+                                      <p className="font-semibold leading-snug text-slate-900">{p.articulo}</p>
+                                    </div>
+                                    <label className="sr-only" htmlFor={`qty-${p.id}`}>
+                                      Cantidad para {p.articulo}
+                                    </label>
+                                    <input
+                                      id={`qty-${p.id}`}
+                                      type="number"
+                                      inputMode="numeric"
+                                      pattern="[0-9]*"
+                                      placeholder="0"
+                                      className="h-16 w-24 shrink-0 rounded-2xl border-2 border-slate-800 bg-white px-2 text-center text-3xl font-black tabular-nums text-slate-900 shadow-inner focus:outline-none focus:ring-4 focus:ring-slate-300"
+                                      value={qty[p.id] ?? ""}
+                                      onChange={(e) => setQty((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                                      min={0}
+                                    />
+                                  </li>
+                                ))}
                             </ul>
                           </section>
                         ))}
