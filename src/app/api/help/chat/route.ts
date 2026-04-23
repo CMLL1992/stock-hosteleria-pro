@@ -43,6 +43,34 @@ function replyFromGeminiBody(data: GeminiGenerateResponse): string {
     .trim();
 }
 
+type GeminiContentsPayload = {
+  contents: Array<{ role: string; parts: Array<{ text: string }> }>;
+  generationConfig: { temperature: number; maxOutputTokens: number };
+};
+
+async function geminiGenerateContent(
+  modelId: string,
+  googleApiKey: string,
+  contentsPayload: GeminiContentsPayload
+): Promise<{ res: Response; data: GeminiGenerateResponse }> {
+  const url = `https://generativelanguage.googleapis.com/v1/models/${modelId}:generateContent?key=${googleApiKey}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: `models/${modelId}`,
+      ...contentsPayload
+    })
+  });
+  let data: GeminiGenerateResponse = {};
+  try {
+    data = (await res.json()) as GeminiGenerateResponse;
+  } catch {
+    data = {};
+  }
+  return { res, data };
+}
+
 export async function POST(req: Request) {
   try {
     const googleApiKey = String(process.env.GOOGLE_API_KEY ?? "").trim();
@@ -88,7 +116,7 @@ export async function POST(req: Request) {
     }
 
     const mensajeUsuario = messages[messages.length - 1].content;
-    const payload = {
+    const contentsPayload: GeminiContentsPayload = {
       contents: [
         {
           role: "user",
@@ -101,19 +129,10 @@ export async function POST(req: Request) {
       }
     };
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(googleApiKey)}`;
-    const geminiRes = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
+    let { res: geminiRes, data } = await geminiGenerateContent("gemini-1.5-flash", googleApiKey, contentsPayload);
 
-    let data: GeminiGenerateResponse;
-    try {
-      data = (await geminiRes.json()) as GeminiGenerateResponse;
-    } catch (parseErr) {
-      const msg = parseErr instanceof Error ? parseErr.message : String(parseErr);
-      return json({ ok: false, error: `Respuesta Gemini no JSON: ${msg}` }, 502);
+    if (!geminiRes.ok && geminiRes.status === 404) {
+      ({ res: geminiRes, data } = await geminiGenerateContent("gemini-pro", googleApiKey, contentsPayload));
     }
 
     if (!geminiRes.ok) {
