@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { MobileHeader } from "@/components/MobileHeader";
-import { deleteAdminUser, fetchAdminUsersList } from "@/lib/adminApi";
+import { deleteAdminUser, fetchAdminUsersList, patchAdminUserRole } from "@/lib/adminApi";
 import { fetchAdminEstablecimientosList } from "@/lib/fetchAdminEstablecimientos";
 import { supabase } from "@/lib/supabase";
 import { useMyRole } from "@/lib/useMyRole";
@@ -26,10 +26,15 @@ export default function AdminUsersPage() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [nombre, setNombre] = useState("");
   const [rol, setRol] = useState<"superadmin" | "admin" | "staff">("staff");
   const [establecimientoId, setEstablecimientoId] = useState<string>("");
 
   const [confirmDeleteUser, setConfirmDeleteUser] = useState<UsuarioListItem | null>(null);
+  const [editUser, setEditUser] = useState<UsuarioListItem | null>(null);
+  const [editNombre, setEditNombre] = useState("");
+  const [editRol, setEditRol] = useState<"superadmin" | "admin" | "staff">("staff");
+  const [editEstId, setEditEstId] = useState<string>("");
 
   const allowed = !!me?.isSuperadmin && me.profileReady;
 
@@ -59,8 +64,8 @@ export default function AdminUsersPage() {
   }, [allowed, loadAll]);
 
   const canSubmit = useMemo(() => {
-    return !!email.trim() && password.length >= 6 && !!establecimientoId && !busy;
-  }, [busy, email, establecimientoId, password.length]);
+    return !!nombre.trim() && !!email.trim() && password.length >= 6 && !!establecimientoId && !busy;
+  }, [busy, email, establecimientoId, nombre, password.length]);
 
   async function crear() {
     setErr(null);
@@ -74,13 +79,14 @@ export default function AdminUsersPage() {
       const res = await fetch("/api/admin/users", {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-        body: JSON.stringify({ email: email.trim(), password, rol, establecimiento_id: establecimientoId })
+        body: JSON.stringify({ nombre_completo: nombre.trim(), email: email.trim(), password, rol, establecimiento_id: establecimientoId })
       });
       const json = (await res.json()) as { ok?: boolean; reused?: boolean; error?: string };
       if (!res.ok) throw new Error(json.error || "Error creando usuario.");
       setOk(json.reused ? "Usuario ya existía: rol/establecimiento actualizados." : "Usuario creado correctamente.");
       setEmail("");
       setPassword("");
+      setNombre("");
       setRol("staff");
       await loadAll();
       void queryClient.invalidateQueries({ queryKey: ["myRole"] });
@@ -103,6 +109,27 @@ export default function AdminUsersPage() {
       await loadAll();
       void queryClient.invalidateQueries({ queryKey: ["establecimientos"] });
       void queryClient.invalidateQueries({ queryKey: ["myRole"] });
+    } catch (e) {
+      setErr(supabaseErrToString(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function guardarEdicion() {
+    if (!editUser) return;
+    if (!editNombre.trim()) {
+      setErr("El nombre no puede estar vacío.");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    setOk(null);
+    try {
+      await patchAdminUserRole(editUser.id, editRol, editEstId, editNombre.trim());
+      setOk("Usuario actualizado.");
+      setEditUser(null);
+      await loadAll();
     } catch (e) {
       setErr(supabaseErrToString(e));
     } finally {
@@ -152,25 +179,43 @@ export default function AdminUsersPage() {
               const estLabel =
                 (estId && estNombreById.get(estId)) ||
                 (estId ? `${estId.slice(0, 8)}…` : "—");
+              const nombreMostrado = String((u as unknown as { nombre_completo?: unknown }).nombre_completo ?? "").trim();
               return (
                 <li key={u.id} className="flex flex-col gap-2 py-3 first:pt-0 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-slate-900">{u.email ?? u.id}</p>
+                    <p className="truncate text-sm font-medium text-slate-900">{nombreMostrado || u.email || u.id}</p>
                     <p className="text-xs text-slate-500">
                       {u.rol} · {estLabel}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    className="min-h-10 rounded-2xl border border-red-200 bg-red-50 px-4 text-sm font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={isSelf || busy}
-                    onClick={async () => {
-                      if (isSelf) return;
-                      setConfirmDeleteUser(u);
-                    }}
-                  >
-                    {isSelf ? "Tu cuenta" : "Borrar"}
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="min-h-10 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 disabled:opacity-50"
+                      disabled={busy}
+                      onClick={() => {
+                        setErr(null);
+                        setOk(null);
+                        setEditUser(u);
+                        setEditNombre(nombreMostrado || "");
+                        setEditRol((String(u.rol ?? "staff") as "superadmin" | "admin" | "staff") || "staff");
+                        setEditEstId(estId || ests[0]?.id || "");
+                      }}
+                    >
+                      Editar
+                    </button>
+                    <button
+                      type="button"
+                      className="min-h-10 rounded-2xl border border-red-200 bg-red-50 px-4 text-sm font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={isSelf || busy}
+                      onClick={async () => {
+                        if (isSelf) return;
+                        setConfirmDeleteUser(u);
+                      }}
+                    >
+                      {isSelf ? "Tu cuenta" : "Borrar"}
+                    </button>
+                  </div>
                 </li>
               );
             })}
@@ -178,9 +223,74 @@ export default function AdminUsersPage() {
           {usuarios.length === 0 ? <p className="text-sm text-slate-500">No hay usuarios.</p> : null}
         </div>
 
+        {editUser ? (
+          <div className="mb-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-sm font-semibold text-slate-900">Editar usuario</p>
+            <p className="mt-1 text-xs text-slate-500">{editUser.email ?? editUser.id}</p>
+            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div className="space-y-1 md:col-span-2">
+                <label className="text-sm font-semibold text-slate-900">Nombre</label>
+                <input
+                  className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                  value={editNombre}
+                  onChange={(e) => setEditNombre(e.currentTarget.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-semibold text-slate-900">Rol</label>
+                <select
+                  className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                  value={editRol}
+                  onChange={(e) => setEditRol(e.currentTarget.value as "superadmin" | "admin" | "staff")}
+                >
+                  <option value="staff">staff</option>
+                  <option value="admin">admin</option>
+                  <option value="superadmin">superadmin</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-semibold text-slate-900">Establecimiento</label>
+                <select
+                  className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                  value={editEstId}
+                  onChange={(e) => setEditEstId(e.currentTarget.value)}
+                >
+                  {ests.map((x) => (
+                    <option key={x.id} value={x.id}>
+                      {x.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+              <Button onClick={guardarEdicion} disabled={busy || !editNombre.trim() || !editEstId}>
+                {busy ? "Guardando…" : "Guardar cambios"}
+              </Button>
+              <button
+                type="button"
+                className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 hover:bg-slate-50 disabled:opacity-50"
+                onClick={() => setEditUser(null)}
+                disabled={busy}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-sm font-semibold text-slate-900">Crear usuario</p>
           <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="space-y-1 md:col-span-2">
+              <label className="text-sm font-semibold text-slate-900">Nombre (obligatorio)</label>
+              <input
+                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                value={nombre}
+                onChange={(e) => setNombre(e.currentTarget.value)}
+                autoComplete="name"
+              />
+            </div>
             <div className="space-y-1">
               <label className="text-sm font-semibold text-slate-900">Email</label>
               <input

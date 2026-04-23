@@ -21,7 +21,8 @@ export async function fetchAdminUsersList(): Promise<UsuarioListItem[]> {
 export async function patchAdminUserRole(
   userId: string,
   rol: UsuarioRol,
-  establecimientoId?: string
+  establecimientoId?: string,
+  nombreCompleto?: string
 ): Promise<void> {
   const token = await getAccessTokenOrThrow();
   const res = await fetch("/api/admin/users", {
@@ -30,7 +31,8 @@ export async function patchAdminUserRole(
     body: JSON.stringify({
       userId,
       rol,
-      ...(establecimientoId ? { establecimiento_id: establecimientoId } : {})
+      ...(establecimientoId ? { establecimiento_id: establecimientoId } : {}),
+      ...(typeof nombreCompleto === "string" ? { nombre_completo: nombreCompleto } : {})
     })
   });
   const json = (await res.json()) as { ok?: boolean; error?: string };

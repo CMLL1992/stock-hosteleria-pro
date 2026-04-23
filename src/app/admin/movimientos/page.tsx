@@ -22,6 +22,8 @@ type MovRow = {
   productos: ProdEmbed | ProdEmbed[] | null;
 };
 
+type UsuarioMini = { id: string; email: string | null; nombre_completo: string | null };
+
 type PeriodKey = "hoy" | "semana" | "mes";
 
 function startOfDay(d: Date): Date {
@@ -42,6 +44,7 @@ export default function AdminMovimientosPage() {
   const role = getEffectiveRole(me ?? null);
   const canAccessMovimientos = hasPermission(role, "admin");
   const [rows, setRows] = useState<MovRow[]>([]);
+  const [usuariosById, setUsuariosById] = useState<Map<string, UsuarioMini>>(new Map());
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<PeriodKey>("hoy");
@@ -76,6 +79,7 @@ export default function AdminMovimientosPage() {
   const load = useCallback(async () => {
     if (!activeEstablishmentId || !canAccessMovimientos) {
       setRows([]);
+      setUsuariosById(new Map());
       setLoading(false);
       return;
     }
@@ -98,10 +102,47 @@ export default function AdminMovimientosPage() {
 
       if (resArticulo.error) throw resArticulo.error;
       const data = resArticulo.data;
-      setRows((data as unknown as MovRow[]) ?? []);
+      const nextRows = (data as unknown as MovRow[]) ?? [];
+      setRows(nextRows);
+
+      // Lookup de usuarios para mostrar trazabilidad humana.
+      try {
+        const ids = Array.from(
+          new Set(
+            nextRows
+              .map((r) => String(r.usuario_id ?? "").trim())
+              .filter(Boolean)
+          )
+        );
+        if (!ids.length) {
+          setUsuariosById(new Map());
+        } else {
+          const { data: uData, error: uErr } = await supabase()
+            .from("usuarios")
+            .select("id,email,nombre_completo")
+            .in("id", ids)
+            .limit(200);
+          if (uErr) throw uErr;
+          const m = new Map<string, UsuarioMini>();
+          for (const r of ((uData ?? []) as unknown as Array<Record<string, unknown>>)) {
+            const id = String(r.id ?? "").trim();
+            if (!id) continue;
+            m.set(id, {
+              id,
+              email: r.email != null ? String(r.email) : null,
+              nombre_completo: r.nombre_completo != null ? String(r.nombre_completo) : null
+            });
+          }
+          setUsuariosById(m);
+        }
+      } catch {
+        // Si falla el lookup (RLS / tabla sin columna), no rompemos la UI.
+        setUsuariosById(new Map());
+      }
     } catch (e) {
       setErr(supabaseErrToString(e));
       setRows([]);
+      setUsuariosById(new Map());
     } finally {
       setLoading(false);
     }
@@ -173,7 +214,11 @@ export default function AdminMovimientosPage() {
                 String(prod?.articulo ?? prod?.nombre ?? "")
                   .trim() || "—";
               const uid = String(r.usuario_id ?? "").trim();
-              const uidShort = uid ? `${uid.slice(0, 6)}…${uid.slice(-4)}` : "";
+              const u = uid ? usuariosById.get(uid) ?? null : null;
+              const responsable =
+                String(u?.nombre_completo ?? "").trim() ||
+                String(u?.email ?? "").trim() ||
+                (uid ? `${uid.slice(0, 6)}…${uid.slice(-4)}` : "");
               const ts = new Date(r.timestamp);
               return (
                 <li
@@ -185,7 +230,7 @@ export default function AdminMovimientosPage() {
                     <p className="mt-1 text-xs text-slate-500">
                       {ts.toLocaleString(locale, { dateStyle: "short", timeStyle: "short" })} · {labelTipo(r.tipo)}
                       {r.tipo === "salida_barra" && r.genera_vacio ? " · genera vacío" : ""}
-                      {uidShort ? ` · ${uidShort}` : ""}
+                      {responsable ? ` · por ${responsable}` : ""}
                     </p>
                   </div>
                   <p className="shrink-0 text-lg font-bold tabular-nums text-slate-900">{r.cantidad}</p>

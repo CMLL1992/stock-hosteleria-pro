@@ -17,6 +17,7 @@ export type EstablecimientoRow = {
 export type UsuarioListItem = {
   id: string;
   email: string | null;
+  nombre_completo?: string | null;
   rol: string;
   establecimiento_id: string;
 };

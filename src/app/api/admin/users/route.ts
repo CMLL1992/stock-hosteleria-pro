@@ -8,13 +8,14 @@ const MIN_PASSWORD_LEN = 6;
 type Body = {
   email?: string;
   password?: string;
+  nombre_completo?: string;
   rol?: "superadmin" | "admin" | "staff";
   establecimiento_id?: string;
 };
 
 type DeleteBody = { userId?: string };
 
-type PatchBody = { userId?: string; rol?: string; establecimiento_id?: string };
+type PatchBody = { userId?: string; rol?: string; establecimiento_id?: string; nombre_completo?: string };
 
 const VALID_ROLES: UsuarioRol[] = ["superadmin", "admin", "staff"];
 
@@ -27,7 +28,7 @@ export async function GET(req: Request) {
     const { service } = gate;
     const { data, error } = await service
       .from("usuarios")
-      .select("id,email,rol,establecimiento_id")
+      .select("id,email,nombre_completo,rol,establecimiento_id")
       .order("id", { ascending: true });
 
     if (error) return adminError(error.message, 400);
@@ -48,6 +49,7 @@ export async function PATCH(req: Request) {
     const rolRaw = typeof body.rol === "string" ? body.rol.trim().toLowerCase() : "";
     const estReq =
       typeof body.establecimiento_id === "string" ? body.establecimiento_id.trim() : undefined;
+    const nombreReq = typeof body.nombre_completo === "string" ? body.nombre_completo.trim() : undefined;
 
     if (!userId) return adminError("Falta userId.", 400);
     if (!VALID_ROLES.includes(rolRaw as UsuarioRol)) {
@@ -84,7 +86,11 @@ export async function PATCH(req: Request) {
       return adminError("No hay establecimiento disponible para asignar al usuario.", 400);
     }
 
-    const patch: Record<string, unknown> = { rol, establecimiento_id };
+    const patch: Record<string, unknown> = {
+      rol,
+      establecimiento_id,
+      ...(nombreReq !== undefined ? { nombre_completo: nombreReq } : {})
+    };
 
     const { error: upErr } = await service.from("usuarios").update(patch).eq("id", userId);
     if (upErr) return adminError(upErr.message, 400);
@@ -96,9 +102,9 @@ export async function PATCH(req: Request) {
 }
 
 function validateCreateUserBody(body: Body):
-  | { ok: true; email: string; password: string; rol: "superadmin" | "admin" | "staff"; establecimiento_id: string }
+  | { ok: true; email: string; password: string; nombre_completo: string; rol: "superadmin" | "admin" | "staff"; establecimiento_id: string }
   | { ok: false; message: string } {
-  const { email, password, rol, establecimiento_id } = body;
+  const { email, password, rol, establecimiento_id, nombre_completo } = body;
 
   if (establecimiento_id === undefined || establecimiento_id === null) {
     return { ok: false, message: "Falta el campo establecimiento_id en el cuerpo de la petición." };
@@ -123,10 +129,18 @@ function validateCreateUserBody(body: Body):
     return { ok: false, message: "El rol debe ser 'superadmin', 'admin' o 'staff'." };
   }
 
+  if (nombre_completo === undefined || nombre_completo === null) {
+    return { ok: false, message: "Falta el campo nombre_completo." };
+  }
+  if (typeof nombre_completo !== "string" || !nombre_completo.trim()) {
+    return { ok: false, message: "El nombre debe ser un texto no vacío." };
+  }
+
   return {
     ok: true,
     email: email.trim(),
     password,
+    nombre_completo: nombre_completo.trim(),
     rol,
     establecimiento_id: establecimiento_id.trim()
   };
@@ -144,7 +158,7 @@ export async function POST(req: Request) {
     }
 
     const { service: adminClient } = gate;
-    const { email, password, rol, establecimiento_id } = v;
+    const { email, password, nombre_completo, rol, establecimiento_id } = v;
 
     const created = await adminClient.auth.admin.createUser({
       email,
@@ -172,7 +186,7 @@ export async function POST(req: Request) {
         }
         const { error: upErr } = await adminClient
           .from("usuarios")
-          .update({ rol, establecimiento_id })
+          .update({ rol, establecimiento_id, nombre_completo })
           .eq("id", existing.id);
         if (upErr) return adminError(upErr.message, 400);
         return NextResponse.json({ ok: true, reused: true });
@@ -185,6 +199,7 @@ export async function POST(req: Request) {
     const ins = await adminClient.from("usuarios").insert({
       id: uid,
       email,
+      nombre_completo,
       rol,
       establecimiento_id
     });
