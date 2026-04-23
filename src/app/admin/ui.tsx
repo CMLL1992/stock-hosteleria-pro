@@ -48,6 +48,13 @@ const SECTIONS: AdminSection[] = [
         title: "Roles",
         subtitle: "Superadmin, Admin y Staff en un solo lugar.",
         superadminOnly: true
+      },
+      {
+        id: "auditoria-albaranes",
+        href: "/admin/control/albaranes",
+        title: "Auditoría de albaranes",
+        subtitle: "Control de costes y revisión semanal.",
+        superadminOnly: true
       }
     ]
   },
