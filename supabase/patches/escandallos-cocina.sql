@@ -1,10 +1,12 @@
 -- Escandallos de cocina (cálculo teórico; no afecta al stock).
 -- Nota: este módulo NO reutiliza `public.escandallos` (finanzas de compra) para evitar colisiones.
 -- Crea:
--- - public.escandallos_cocina (1 por plato/producto y establecimiento)
+-- - public.escandallos_cocina (1 por nombre de plato y establecimiento; sin producto_id / sin stock)
 -- - public.escandallo_ingredientes (líneas por escandallo)
 --
 -- Ejecuta en Supabase → SQL Editor. Idempotente.
+-- Si ya tenías la versión antigua con `producto_id`, ejecuta también:
+--   supabase/patches/escandallos-cocina-nombre-plato.sql
 
 create extension if not exists pgcrypto;
 
@@ -12,7 +14,7 @@ create extension if not exists pgcrypto;
 create table if not exists public.escandallos_cocina (
   id uuid primary key default gen_random_uuid(),
   establecimiento_id uuid not null references public.establecimientos(id) on delete restrict,
-  producto_id uuid not null references public.productos(id) on delete cascade,
+  nombre_plato text not null,
   raciones_lote numeric(12,3) not null default 1,
   multiplicador numeric(12,3) not null default 3.5,
   iva_final integer not null default 10,
@@ -22,10 +24,10 @@ create table if not exists public.escandallos_cocina (
 
 do $$
 begin
-  -- Un escandallo por plato y establecimiento
-  if not exists (select 1 from pg_constraint where conname = 'escandallos_cocina_unique_plato_est') then
+  -- Un escandallo por nombre de plato y establecimiento
+  if not exists (select 1 from pg_constraint where conname = 'escandallos_cocina_unique_est_nombre') then
     alter table public.escandallos_cocina
-      add constraint escandallos_cocina_unique_plato_est unique (establecimiento_id, producto_id);
+      add constraint escandallos_cocina_unique_est_nombre unique (establecimiento_id, nombre_plato);
   end if;
 
   if not exists (select 1 from pg_constraint where conname = 'escandallos_cocina_iva_chk') then

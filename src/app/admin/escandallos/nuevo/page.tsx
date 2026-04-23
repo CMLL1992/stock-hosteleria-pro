@@ -1,7 +1,7 @@
 "use client";
 
 import type { ChangeEvent } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { MobileHeader } from "@/components/MobileHeader";
 import { Button } from "@/components/ui/Button";
@@ -10,9 +10,6 @@ import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { useMyRole } from "@/lib/useMyRole";
 import { getEffectiveRole, hasPermission } from "@/lib/permissions";
-import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
-
-type PlatoRow = { id: string; nombre: string };
 
 type IngredienteDraft = {
   id: string;
@@ -35,6 +32,12 @@ function toNum(v: unknown): number {
 
 function clampNonNeg(n: number): number {
   return n < 0 ? 0 : n;
+}
+
+function clampIvaCocina(n: number): number {
+  const t = Math.trunc(n);
+  if (t === 0 || t === 4 || t === 10 || t === 21) return t;
+  return 10;
 }
 
 function calcCosteRealIngrediente(pCompraKgL: number, qtyGml: number, mermaPct: number): number {
@@ -98,74 +101,15 @@ export default function NuevoEscandalloCocinaPage() {
 
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const [platos, setPlatos] = useState<PlatoRow[]>([]);
-  const [qPlato, setQPlato] = useState("");
-  const [platoId, setPlatoId] = useState("");
+  const [nombrePlato, setNombrePlato] = useState("");
 
   const [racionesLote, setRacionesLote] = useState("1");
   const [multiplicador, setMultiplicador] = useState("3,5");
   const [ivaFinal, setIvaFinal] = useState("10");
 
   const [ingredientes, setIngredientes] = useState<IngredienteDraft[]>(() => [newIngredienteRow()]);
-
-  useEffect(() => {
-    if (!canEdit) return;
-    if (!activeEstablishmentId) return;
-    let cancelled = false;
-    (async () => {
-      setErr(null);
-      setLoading(true);
-      try {
-        const col = await resolveProductoTituloColumn(activeEstablishmentId);
-        const t = tituloColSql(col);
-        // Plato = producto "comida" (compat: categoria o tipo)
-        const { data, error } = await supabase()
-          .from("productos")
-          .select(`id,${t},categoria,tipo` as "*")
-          .eq("establecimiento_id", activeEstablishmentId)
-          .order(t, { ascending: true });
-        if (error) throw error;
-        const list = ((data ?? []) as unknown as Record<string, unknown>[])
-          .filter((r) => {
-            const c = String(r.categoria ?? "").trim().toLowerCase();
-            const tp = String(r.tipo ?? "").trim().toLowerCase();
-            return c === "comida" || tp === "comida";
-          })
-          .map((r) => ({
-            id: String(r.id ?? ""),
-            nombre: String(r[t] ?? r.articulo ?? r.nombre ?? "").trim() || "—"
-          }))
-          .filter((x) => !!x.id);
-        if (cancelled) return;
-        setPlatos(list);
-      } catch (e) {
-        if (!cancelled) setErr(supabaseErrToString(e));
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeEstablishmentId, canEdit]);
-
-  const platosFiltrados = useMemo(() => {
-    const key = qPlato
-      .trim()
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/\p{Diacritic}+/gu, "");
-    if (!key) return platos;
-    return platos.filter((p) =>
-      p.nombre
-        .toLowerCase()
-        .normalize("NFD")
-        .replace(/\p{Diacritic}+/gu, "")
-        .includes(key)
-    );
-  }, [platos, qPlato]);
 
   const ingredientesRows = useMemo(() => normalizeIngredientesList(ingredientes), [ingredientes]);
 
@@ -214,32 +158,49 @@ export default function NuevoEscandalloCocinaPage() {
       setErr("Selecciona un establecimiento.");
       return;
     }
-    if (!platoId) {
-      setErr("Selecciona un plato.");
+    const nombre = nombrePlato.trim();
+    if (!nombre) {
+      setErr("Indica el nombre del plato.");
       return;
     }
     setErr(null);
     setOk(null);
-    setLoading(true);
+    setSaving(true);
     try {
+      const ivaF = Math.trunc(clampNonNeg(toNum(ivaFinal)) || 10);
+      const ivaOk = [0, 4, 10, 21].includes(ivaF) ? ivaF : 10;
+
       const payloadEsc = {
         establecimiento_id: activeEstablishmentId,
-        producto_id: platoId,
+        nombre_plato: nombre,
         raciones_lote: clampNonNeg(toNum(racionesLote)) || 1,
         multiplicador: clampNonNeg(toNum(multiplicador)) || 3.5,
-        iva_final: Math.trunc(clampNonNeg(toNum(ivaFinal)) || 10)
+        iva_final: ivaOk
       };
 
-      const { data: esc, error: escErr } = await supabase()
+      const { data: escRows, error: escErr } = await supabase()
         .from("escandallos_cocina")
-        .upsert(payloadEsc, { onConflict: "establecimiento_id,producto_id" })
-        .select("id")
-        .maybeSingle();
+        .upsert(payloadEsc, { onConflict: "establecimiento_id,nombre_plato" })
+        .select("id");
       if (escErr) throw escErr;
-      const escId = String((esc as { id?: unknown } | null)?.id ?? "");
-      if (!escId) throw new Error("No se pudo obtener el id del escandallo.");
 
-      // Reescribimos ingredientes (simplifica UX del 'nuevo' y evita estados parciales)
+      let escId = "";
+      const first = Array.isArray(escRows) ? escRows[0] : escRows;
+      const rawId = first && typeof first === "object" ? (first as { id?: unknown }).id : null;
+      if (rawId != null && String(rawId).trim()) escId = String(rawId);
+      if (!escId) {
+        const { data: found, error: findErr } = await supabase()
+          .from("escandallos_cocina")
+          .select("id")
+          .eq("establecimiento_id", activeEstablishmentId)
+          .eq("nombre_plato", nombre)
+          .limit(1)
+          .maybeSingle();
+        if (findErr) throw findErr;
+        escId = String((found as { id?: unknown } | null)?.id ?? "");
+      }
+      if (!escId) throw new Error("No se pudo obtener el id del escandallo tras guardar.");
+
       const { error: delErr } = await supabase()
         .from("escandallo_ingredientes")
         .delete()
@@ -256,7 +217,7 @@ export default function NuevoEscandalloCocinaPage() {
           cantidad_gramos_ml: clampNonNeg(x.qty),
           precio_compra_sin_iva: clampNonNeg(x.precio),
           porcentaje_merma: clampNonNeg(x.merma),
-          iva_ingrediente: Math.trunc(clampNonNeg(toNum(x.iva_ingrediente)) || 10)
+          iva_ingrediente: clampIvaCocina(toNum(x.iva_ingrediente))
         }));
 
       if (ingRows.length) {
@@ -269,7 +230,7 @@ export default function NuevoEscandalloCocinaPage() {
     } catch (e) {
       setErr(supabaseErrToString(e));
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   }
 
@@ -286,13 +247,15 @@ export default function NuevoEscandalloCocinaPage() {
   return (
     <div className="min-h-dvh bg-slate-50">
       <MobileHeader title="Nuevo escandallo (Cocina)" showBack backHref="/admin/escandallos" />
-      <main className="mx-auto grid max-w-6xl gap-4 p-4 pb-28 lg:grid-cols-[1fr_360px]">
-        <section className="space-y-4">
+      <main className="mx-auto flex w-full max-w-6xl min-w-0 flex-col gap-4 p-4 pb-28 lg:flex-row lg:items-start lg:gap-6">
+        <section className="order-1 min-w-0 flex-1 space-y-4">
           <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h1 className="text-lg font-bold text-slate-900">Escandallo de cocina</h1>
-                <p className="mt-1 text-sm text-slate-600">Coste teórico por ración (no toca stock).</p>
+                <p className="mt-1 text-sm text-slate-600">
+                  Ingeniería de menú: coste teórico por ración. Sin vínculo a productos ni inventario.
+                </p>
               </div>
               <Link
                 href="/admin/escandallos"
@@ -312,40 +275,21 @@ export default function NuevoEscandalloCocinaPage() {
 
           <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
             <h2 className="text-sm font-bold uppercase tracking-wide text-slate-700">Plato</h2>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
-                Buscar
-                <input
-                  className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-                  value={qPlato}
-                  onChange={(e) => setQPlato(readInputOrSelectValue(e))}
-                  placeholder="Escribe para filtrar…"
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
-                Selector de plato (comida)
-                <select
-                  className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-                  value={platoId}
-                  onChange={(e) => setPlatoId(readInputOrSelectValue(e))}
-                  disabled={!activeEstablishmentId || loading}
-                >
-                  <option value="">{loading ? "Cargando…" : "(Selecciona…)"}</option>
-                  {platosFiltrados.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.nombre}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            {!loading && activeEstablishmentId && platos.length === 0 ? (
-              <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
-                No hay platos en este establecimiento: solo aparecen productos con{" "}
-                <span className="font-semibold">categoría «comida»</span> o <span className="font-semibold">tipo «comida»</span> (sin distinguir mayúsculas).
-                Crea o edita un producto desde <Link href="/admin/productos" className="font-semibold underline">Productos</Link> y vuelve aquí.
-              </p>
-            ) : null}
+            <label className="mt-3 flex flex-col gap-1 text-xs font-semibold text-slate-600">
+              Nombre del plato
+              <input
+                type="text"
+                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                value={nombrePlato}
+                onChange={(e) => setNombrePlato(readInputOrSelectValue(e))}
+                placeholder="Ej: Tarta de queso"
+                autoComplete="off"
+                disabled={!activeEstablishmentId}
+              />
+            </label>
+            <p className="mt-2 text-xs text-slate-500">
+              El nombre no tiene que existir en el catálogo de productos. Mismo nombre en este local actualiza el escandallo guardado.
+            </p>
           </div>
 
           <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -395,17 +339,17 @@ export default function NuevoEscandalloCocinaPage() {
               </Button>
             </div>
 
-            <div className="mt-3 overflow-x-auto">
-              <table className="w-full min-w-[820px] border-separate border-spacing-0">
+            <div className="-mx-1 mt-3 max-w-full min-w-0 overflow-x-auto rounded-2xl border border-slate-100 px-1 sm:mx-0 sm:border-0 sm:px-0">
+              <table className="w-full min-w-[720px] border-separate border-spacing-0 sm:min-w-[820px]">
                 <thead>
                   <tr className="text-left text-xs font-bold uppercase tracking-wide text-slate-500">
-                    <th className="px-2 py-2">Ingrediente</th>
-                    <th className="px-2 py-2 text-right">Cantidad (g/ml)</th>
-                    <th className="px-2 py-2 text-right">Precio (€/kg o €/L)</th>
-                    <th className="px-2 py-2 text-right">Merma (%)</th>
-                    <th className="px-2 py-2 text-right">IVA ing. (%)</th>
-                    <th className="px-2 py-2 text-right">Coste real</th>
-                    <th className="px-2 py-2"></th>
+                    <th className="min-w-[10rem] px-2 py-2">Ingrediente</th>
+                    <th className="min-w-[6.5rem] px-2 py-2 text-right">Cantidad (g/ml)</th>
+                    <th className="min-w-[7rem] px-2 py-2 text-right">Precio (€/kg o €/L)</th>
+                    <th className="min-w-[5.5rem] px-2 py-2 text-right">Merma (%)</th>
+                    <th className="min-w-[5.5rem] px-2 py-2 text-right">IVA ing. (%)</th>
+                    <th className="min-w-[6rem] px-2 py-2 text-right">Coste real</th>
+                    <th className="min-w-[4.5rem] px-2 py-2"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -418,7 +362,7 @@ export default function NuevoEscandalloCocinaPage() {
                       <tr key={it.id} className="border-t border-slate-100">
                         <td className="px-2 py-2 align-top">
                           <input
-                            className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                            className="min-h-11 min-w-[9.5rem] w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
                             value={it.nombre_ingrediente}
                             onChange={(e) => {
                               const v = readInputOrSelectValue(e);
@@ -431,7 +375,7 @@ export default function NuevoEscandalloCocinaPage() {
                         </td>
                         <td className="px-2 py-2 align-top">
                           <input
-                            className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-right text-sm text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-black/10"
+                            className="min-h-11 min-w-[6.25rem] w-full rounded-2xl border border-slate-200 bg-white px-3 text-right text-sm text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-black/10"
                             inputMode="decimal"
                             value={it.cantidad_gramos_ml}
                             onChange={(e) => {
@@ -444,7 +388,7 @@ export default function NuevoEscandalloCocinaPage() {
                         </td>
                         <td className="px-2 py-2 align-top">
                           <input
-                            className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-right text-sm text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-black/10"
+                            className="min-h-11 min-w-[6.25rem] w-full rounded-2xl border border-slate-200 bg-white px-3 text-right text-sm text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-black/10"
                             inputMode="decimal"
                             value={it.precio_compra_sin_iva}
                             onChange={(e) => {
@@ -457,7 +401,7 @@ export default function NuevoEscandalloCocinaPage() {
                         </td>
                         <td className="px-2 py-2 align-top">
                           <input
-                            className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-right text-sm text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-black/10"
+                            className="min-h-11 min-w-[5rem] w-full rounded-2xl border border-slate-200 bg-white px-3 text-right text-sm text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-black/10"
                             inputMode="decimal"
                             value={it.porcentaje_merma}
                             onChange={(e) => {
@@ -470,7 +414,7 @@ export default function NuevoEscandalloCocinaPage() {
                         </td>
                         <td className="px-2 py-2 align-top">
                           <input
-                            className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-right text-sm text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-black/10"
+                            className="min-h-11 min-w-[5rem] w-full rounded-2xl border border-slate-200 bg-white px-3 text-right text-sm text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-black/10"
                             inputMode="numeric"
                             value={it.iva_ingrediente}
                             onChange={(e) => {
@@ -508,14 +452,18 @@ export default function NuevoEscandalloCocinaPage() {
             </div>
 
             <div className="mt-4">
-              <Button onClick={() => void guardar()} disabled={loading || !platoId || !activeEstablishmentId} className="min-h-12 w-full sm:w-auto">
-                {loading ? "Guardando…" : "Guardar escandallo"}
+              <Button
+                onClick={() => void guardar()}
+                disabled={saving || !nombrePlato.trim() || !activeEstablishmentId}
+                className="min-h-12 w-full sm:w-auto"
+              >
+                {saving ? "Guardando…" : "Guardar escandallo"}
               </Button>
             </div>
           </div>
         </section>
 
-        <aside className="space-y-4 lg:sticky lg:top-4 lg:self-start">
+        <aside className="order-2 w-full min-w-0 max-w-full space-y-4 lg:sticky lg:top-4 lg:w-[360px] lg:max-w-full lg:shrink-0 lg:self-start">
           <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
             <h2 className="text-sm font-bold uppercase tracking-wide text-slate-700">Resultados</h2>
             <dl className="mt-3 space-y-2 text-sm">
