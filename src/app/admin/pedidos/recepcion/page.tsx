@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MobileHeader } from "@/components/MobileHeader";
 import { Drawer } from "@/components/ui/Drawer";
@@ -12,7 +12,7 @@ import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { useQueryClient } from "@tanstack/react-query";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 import { requireUserId } from "@/lib/session";
-import { Camera, Check, Loader2, XCircle } from "lucide-react";
+import { Camera } from "lucide-react";
 
 type PedidoEstado = "pendiente" | "parcial" | "recibido";
 
@@ -72,12 +72,6 @@ export default function RecepcionPedidosPage() {
   const [items, setItems] = useState<PedidoItemRow[]>([]);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false); // usado para acciones "globales" (cerrar/eliminar/albarán)
-  const applyTimersRef = useRef<Record<string, number>>({});
-  const lastAppliedRef = useRef<Record<string, string>>({});
-  const savedTimersRef = useRef<Record<string, number>>({});
-
-  type RowStatus = "idle" | "saving" | "saved" | "error";
-  const [rowStatus, setRowStatus] = useState<Record<string, RowStatus>>({});
 
   const [uploadingAlbaran, setUploadingAlbaran] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
@@ -228,11 +222,12 @@ export default function RecepcionPedidosPage() {
     }
   }
 
-  async function aplicarLinea(it: PedidoItemRow) {
+  async function finalizarYActualizarStock() {
     if (!activeEstablishmentId || !sel) return;
-    if (!it?.producto_id) return;
+    if (saving) return; // prevención de doble click
     setErr(null);
-    setRowStatus((prev) => ({ ...prev, [it.producto_id]: "saving" }));
+    setOkMsg(null);
+    setSaving(true);
     try {
       const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
       if (!uuidRe.test(String(activeEstablishmentId).trim())) {
@@ -243,74 +238,86 @@ export default function RecepcionPedidosPage() {
         throw new Error(`usuario_id inválido (no es UUID): "${String(uid)}"`);
       }
 
-      const recibidoHoy = Math.max(0, toInt(draft[it.producto_id] ?? ""));
-      if (recibidoHoy <= 0) return;
-      const signature = `${sel.id}:${it.producto_id}:${recibidoHoy}`;
-      if (lastAppliedRef.current[it.producto_id] === signature) return;
-      lastAppliedRef.current[it.producto_id] = signature;
-
-      const pedido = Math.max(0, toInt(it.cantidad_pedida));
-      const previo = Math.max(0, toInt(it.cantidad_recibida));
-      const faltan = Math.max(0, pedido - previo);
-      const delta = Math.min(faltan, recibidoHoy);
-      if (delta <= 0) return;
-
-      // Optimista: refleja el acumulado al instante (sin saltos de refresh)
-      const nuevoTotal = Math.max(0, previo + delta);
-      setItems((prev) =>
-        prev.map((x) => (x.producto_id === it.producto_id ? { ...x, cantidad_recibida: nuevoTotal } : x))
-      );
-
-      // 1) Insert movimiento (entrada) por el delta de esta línea
-      const movimiento = {
+      // Calcula deltas por producto: "lo que llega hoy" (input) capado por faltante
+      const receivedByProd = items.map((it) => ({
         producto_id: it.producto_id,
-        cantidad: Number(delta),
-        tipo: "entrada" as const,
-        usuario_id: uid,
-        establecimiento_id: activeEstablishmentId
-      };
-      const ins = await supabase().from("movimientos").insert([movimiento] as unknown as Record<string, unknown>[]);
-      if (ins.error) throw ins.error;
+        recibido_hoy: Math.max(0, toInt(draft[it.producto_id] ?? "")),
+        pedido: Math.max(0, toInt(it.cantidad_pedida)),
+        previo: Math.max(0, toInt(it.cantidad_recibida))
+      }));
 
-      // 2) Stock actual (solo suma, nunca resta)
-      const { data: prodRow, error: prodSelErr } = await supabase()
-        .from("productos")
-        .select("id,stock_actual")
-        .eq("id", it.producto_id)
-        .eq("establecimiento_id", activeEstablishmentId)
-        .maybeSingle();
-      if (prodSelErr) throw prodSelErr;
-      const curr = Number((prodRow as { stock_actual?: unknown } | null)?.stock_actual ?? 0) || 0;
-      const add = Math.max(0, Number(delta) || 0);
-      const { error: prodUpErr } = await supabase()
-        .from("productos")
-        .update({ stock_actual: curr + add })
-        .eq("id", it.producto_id)
-        .eq("establecimiento_id", activeEstablishmentId);
-      if (prodUpErr) throw prodUpErr;
+      const movimientos = receivedByProd
+        .map((x) => {
+          const faltan = Math.max(0, x.pedido - x.previo);
+          const delta = Math.min(faltan, Math.max(0, x.recibido_hoy));
+          return { ...x, delta };
+        })
+        .filter((x) => x.delta > 0)
+        .map((x) => ({
+          producto_id: x.producto_id,
+          cantidad: Number(x.delta),
+          tipo: "entrada" as const,
+          usuario_id: uid,
+          establecimiento_id: activeEstablishmentId
+        }));
 
-      // 3) Guardar acumulado en pedido_items
-      const estado = nuevoTotal <= 0 ? "pendiente" : nuevoTotal < pedido ? "parcial" : "recibido";
-      const { error: upErr } = await supabase()
-        .from("pedido_items")
-        .update({ cantidad_recibida: nuevoTotal, estado })
-        .eq("pedido_id", sel.id)
-        .eq("producto_id", it.producto_id)
-        .eq("establecimiento_id", activeEstablishmentId);
-      if (upErr) throw upErr;
+      if (movimientos.length) {
+        const ins = await supabase().from("movimientos").insert(movimientos as unknown as Record<string, unknown>[]);
+        if (ins.error) throw ins.error;
 
-      // 4) Limpiar input (representa "lo que llega ahora")
-      setDraft((prev) => ({ ...prev, [it.producto_id]: "" }));
+        // Stock: Nuevo_Stock = Stock_Actual + Cantidad_Recibida_Hoy (delta)
+        const deltaByProd = new Map<string, number>();
+        for (const m of movimientos) {
+          const pid = String(m.producto_id ?? "").trim();
+          const add = Math.max(0, Number((m as { cantidad?: unknown }).cantidad ?? 0) || 0);
+          if (!pid || add <= 0) continue;
+          deltaByProd.set(pid, (deltaByProd.get(pid) ?? 0) + add);
+        }
+        for (const [pid, add] of deltaByProd.entries()) {
+          const { data: prodRow, error: prodSelErr } = await supabase()
+            .from("productos")
+            .select("id,stock_actual")
+            .eq("id", pid)
+            .eq("establecimiento_id", activeEstablishmentId)
+            .maybeSingle();
+          if (prodSelErr) throw prodSelErr;
+          const curr = Number((prodRow as { stock_actual?: unknown } | null)?.stock_actual ?? 0) || 0;
+          const { error: prodUpErr } = await supabase()
+            .from("productos")
+            .update({ stock_actual: curr + add })
+            .eq("id", pid)
+            .eq("establecimiento_id", activeEstablishmentId);
+          if (prodUpErr) throw prodUpErr;
+        }
+      }
 
-      // 5) Estado del pedido (parcial/recibido) recalculado con items actuales
-      const nextRows = items.map((x) =>
-        x.producto_id === it.producto_id ? { ...x, cantidad_recibida: nuevoTotal } : x
-      );
-      const allReceived = nextRows.every((x) => Math.max(0, toInt(x.cantidad_recibida)) >= Math.max(0, toInt(x.cantidad_pedida)));
-      const anyReceived = nextRows.some((x) => Math.max(0, toInt(x.cantidad_recibida)) > 0);
+      // Actualiza pedido_items acumulando el delta (idempotente si se pulsa otra vez con inputs vacíos)
+      for (const x of receivedByProd) {
+        if (!x.producto_id) continue;
+        const faltan = Math.max(0, x.pedido - x.previo);
+        const delta = Math.min(faltan, Math.max(0, x.recibido_hoy));
+        const nuevoTotal = Math.max(0, x.previo + Math.max(0, delta));
+        const estado = nuevoTotal <= 0 ? "pendiente" : nuevoTotal < x.pedido ? "parcial" : "recibido";
+        const { error: upErr } = await supabase()
+          .from("pedido_items")
+          .update({ cantidad_recibida: nuevoTotal, estado })
+          .eq("pedido_id", sel.id)
+          .eq("producto_id", x.producto_id)
+          .eq("establecimiento_id", activeEstablishmentId);
+        if (upErr) throw upErr;
+      }
+
+      // Estado del pedido
+      const allReceived = receivedByProd.every((x) => {
+        const faltan = Math.max(0, x.pedido - x.previo);
+        const delta = Math.min(faltan, Math.max(0, x.recibido_hoy));
+        return x.previo + delta >= x.pedido;
+      });
+      const anyReceived = receivedByProd.some((x) => Math.max(0, x.recibido_hoy) > 0);
       const pedidoEstado = allReceived ? "recibido" : anyReceived ? "parcial" : "pendiente";
       const patch: Record<string, unknown> = { estado: pedidoEstado };
       if (pedidoEstado === "recibido") patch.received_at = new Date().toISOString();
+
       const { error: pedidoErr } = await supabase()
         .from("pedidos")
         .update(patch)
@@ -318,45 +325,25 @@ export default function RecepcionPedidosPage() {
         .eq("establecimiento_id", activeEstablishmentId);
       if (pedidoErr) throw pedidoErr;
 
-      await queryClient.invalidateQueries({ queryKey: ["productos", activeEstablishmentId] });
       await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", activeEstablishmentId] });
-      // Cero refrescos: no hacemos refresh duro aquí. Solo ajustamos estado local.
-      setSel((prev) => (prev ? { ...prev, estado: pedidoEstado } : prev));
-      setPedidos((prev) => prev.map((p) => (p.id === sel.id ? { ...p, estado: pedidoEstado } : p)));
+      await queryClient.invalidateQueries({ queryKey: ["productos", activeEstablishmentId] });
+      await queryClient.invalidateQueries({ queryKey: ["movimientos", activeEstablishmentId] });
+      await queryClient.invalidateQueries({ queryKey: ["productos"] });
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] });
 
-      setRowStatus((prev) => ({ ...prev, [it.producto_id]: "saved" }));
-      const existing = savedTimersRef.current[it.producto_id];
-      if (existing) window.clearTimeout(existing);
-      savedTimersRef.current[it.producto_id] = window.setTimeout(() => {
-        setRowStatus((prev) => ({ ...prev, [it.producto_id]: "idle" }));
-      }, 2000);
+      // Limpieza y cierre para prevenir dobles sumas
+      setOkMsg(pedidoEstado === "recibido" ? "Recepción completada." : "Recepción parcial guardada. El pedido seguirá pendiente.");
+      setOpen(false);
+      setSel(null);
+      setItems([]);
+      setDraft({});
+      await refresh();
+      router.refresh();
     } catch (e) {
-      // eslint-disable-next-line no-console
-      console.error("Error al guardar línea de recepción:", {
-        pedido_id: sel?.id,
-        producto_id: it.producto_id,
-        establecimiento_id: activeEstablishmentId,
-        message: (e as { message?: unknown })?.message,
-        details: (e as { details?: unknown })?.details,
-        hint: (e as { hint?: unknown })?.hint,
-        code: (e as { code?: unknown })?.code
-      });
       setErr(supabaseErrToString(e));
-      setRowStatus((prev) => ({ ...prev, [it.producto_id]: "error" }));
     } finally {
-      // No bloqueamos edición de otras filas.
+      setSaving(false);
     }
-  }
-
-  function scheduleApply(it: PedidoItemRow) {
-    if (!it?.producto_id) return;
-    const key = it.producto_id;
-    const existing = applyTimersRef.current[key];
-    if (existing) window.clearTimeout(existing);
-    // Debounce suave para no spamear DB mientras se escribe.
-    applyTimersRef.current[key] = window.setTimeout(() => {
-      void aplicarLinea(it);
-    }, 600);
   }
 
   async function cerrarPedidoDescartando() {
@@ -601,27 +588,23 @@ export default function RecepcionPedidosPage() {
                           if (!it || !it.producto_id) return;
                           const raw = readEvtValue(e);
                           setDraft((prev) => ({ ...prev, [it.producto_id]: digitsOnly(raw) }));
-                          scheduleApply(it);
-                        }}
-                        onBlur={() => {
-                          void aplicarLinea(it);
                         }}
                         disabled={saving}
                         aria-label={`Cantidad que llega hoy para ${it.articulo}`}
                       />
-                      <div className="flex h-8 w-7 items-center justify-center">
-                        {rowStatus[it.producto_id] === "saving" ? (
-                          <Loader2 className="h-4 w-4 animate-spin text-slate-500" aria-label="Guardando" />
-                        ) : rowStatus[it.producto_id] === "saved" ? (
-                          <Check className="h-5 w-5 text-emerald-600" aria-label="Guardado" />
-                        ) : rowStatus[it.producto_id] === "error" ? (
-                          <XCircle className="h-5 w-5 text-red-600" aria-label="Error al guardar" />
-                        ) : null}
-                      </div>
                     </div>
                   </li>
                 ))}
               </ul>
+
+              <button
+                type="button"
+                onClick={() => void finalizarYActualizarStock()}
+                disabled={saving || !sel || items.length === 0}
+                className="min-h-14 w-full rounded-3xl bg-emerald-500 px-4 text-base font-extrabold text-white shadow-md hover:bg-emerald-600 disabled:opacity-50"
+              >
+                {saving ? "Procesando…" : "Finalizar y Actualizar Stock"}
+              </button>
 
               {sel?.estado === "parcial" && canAdmin ? (
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
