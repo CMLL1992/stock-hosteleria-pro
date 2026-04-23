@@ -6,7 +6,7 @@
 export const CATEGORIA_PRODUCTO = ["vino", "cerveza", "agua", "refresco", "licor", "comida", "otros"] as const;
 export type CategoriaProductoValor = (typeof CATEGORIA_PRODUCTO)[number];
 
-export const UNIDAD_PRODUCTO = ["caja", "barril", "gas", "botella", "bolsa"] as const;
+export const UNIDAD_PRODUCTO = ["caja", "barril", "gas", "botella", "bolsa", "unidades"] as const;
 export type UnidadProductoValor = (typeof UNIDAD_PRODUCTO)[number];
 
 export const CATEGORIA_OPTIONS: ReadonlyArray<{
@@ -30,7 +30,8 @@ export const UNIDAD_OPTIONS: ReadonlyArray<{
   { value: "barril", label: "Barril" },
   { value: "gas", label: "Gas" },
   { value: "botella", label: "Botella" },
-  { value: "bolsa", label: "Bolsa" }
+  { value: "bolsa", label: "Bolsa" },
+  { value: "unidades", label: "Unidades" }
 ];
 
 /** Clase Tailwind: ≥48px de alto y 16px de fuente (evita zoom en iOS). */
@@ -81,13 +82,11 @@ export function mapUnidadDbToValor(raw: string | null | undefined): UnidadProduc
   if (n === "gas" || n.includes("gas")) return "gas";
   if (n === "botella" || n.includes("botella") || n === "lata" || n.includes("lata")) return "botella";
   if (n === "bolsa" || n.includes("bolsa") || n.includes("bag")) return "bolsa";
+  if (n === "unidades" || n === "uds" || n === "ud" || n === "unidad" || n.includes("unidad")) return "unidades";
 
   if (UNIDAD_PRODUCTO.includes(n as UnidadProductoValor)) {
     return n as UnidadProductoValor;
   }
-
-  // "unidad" genérico u otros → botella como comodín de producto suelto
-  if (n === "unidad" || n === "uds" || n === "ud") return "botella";
 
   return "botella";
 }

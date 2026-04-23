@@ -31,13 +31,6 @@ type ProductoPedido = {
   categoria: string | null;
 };
 
-type LegacyPedidoRow = {
-  proveedor_id: string;
-  proveedor_nombre: string;
-  lineas: number;
-  last_ts: string;
-};
-
 function parseQty(raw: string): number {
   // En móvil (iOS/Android) `type="number"` puede dar problemas con coma/teclado.
   // Parseamos de forma tolerante y nos quedamos con entero >= 0.
@@ -155,13 +148,11 @@ export default function PedidosPage() {
 
   const { activeEstablishmentId, activeEstablishmentName } = useActiveEstablishment();
   const nombreLocal = activeEstablishmentName?.trim() || "Piqui Blinders";
-  const [legacy, setLegacy] = useState<LegacyPedidoRow[]>([]);
 
   const refresh = useCallback(async () => {
     if (!activeEstablishmentId) {
       setProveedores([]);
       setProductos([]);
-      setLegacy([]);
       return;
     }
     setLoadingData(true);
@@ -177,77 +168,6 @@ export default function PedidosPage() {
         }
         return next;
       });
-
-      // Pedidos legacy (sin tabla pedidos/pedido_items): agrupamos movimientos tipo 'pedido' por proveedor.
-      try {
-        const closedMap = new Map<string, string>();
-        try {
-          const closed = await supabase()
-            .from("pedidos")
-            .select("proveedor_id,received_at,created_at,estado")
-            .eq("establecimiento_id", activeEstablishmentId)
-            .eq("estado", "recibido")
-            .order("received_at", { ascending: false })
-            .limit(500);
-          if (!closed.error) {
-            for (const r of ((closed.data ?? []) as unknown as Record<string, unknown>[])) {
-              const pid = String(r.proveedor_id ?? "").trim();
-              if (!pid) continue;
-              const ts = String(r.received_at ?? r.created_at ?? "").trim();
-              if (!ts) continue;
-              if (!closedMap.has(pid)) closedMap.set(pid, ts);
-            }
-          }
-        } catch {
-          // ignore
-        }
-
-        const mv = await supabase()
-          .from("movimientos")
-          .select("proveedor_id,producto_id,cantidad,timestamp,proveedor:proveedores(nombre)")
-          .eq("establecimiento_id", activeEstablishmentId)
-          .eq("tipo", "pedido")
-          .order("timestamp", { ascending: false })
-          .limit(300);
-        if (!mv.error) {
-          const list = (mv.data ?? []) as unknown as Record<string, unknown>[];
-          const byProv = new Map<string, { proveedor_nombre: string; lineas: Set<string>; last_ts: string }>();
-          for (const r of list) {
-            const proveedor_id = String(r.proveedor_id ?? "").trim();
-            if (!proveedor_id) continue;
-            const ts = String(r.timestamp ?? new Date().toISOString());
-            const provRaw = r.proveedor as { nombre?: unknown } | { nombre?: unknown }[] | null | undefined;
-            const prov = Array.isArray(provRaw) ? provRaw[0] ?? null : provRaw;
-            const proveedor_nombre = String(prov?.nombre ?? "Proveedor").trim() || "Proveedor";
-            const producto_id = String(r.producto_id ?? "").trim();
-
-            let g = byProv.get(proveedor_id);
-            if (!g) {
-              g = { proveedor_nombre, lineas: new Set<string>(), last_ts: ts };
-              byProv.set(proveedor_id, g);
-            }
-            if (producto_id) g.lineas.add(producto_id);
-            if (ts > g.last_ts) g.last_ts = ts;
-          }
-          const out: LegacyPedidoRow[] = Array.from(byProv.entries()).map(([proveedor_id, g]) => ({
-            proveedor_id,
-            proveedor_nombre: g.proveedor_nombre,
-            lineas: g.lineas.size,
-            last_ts: g.last_ts
-          }));
-          const filtered = out.filter((p) => {
-            const closedAt = closedMap.get(p.proveedor_id);
-            if (!closedAt) return true;
-            return p.last_ts > closedAt;
-          });
-          filtered.sort((a, b) => b.last_ts.localeCompare(a.last_ts));
-          setLegacy(filtered);
-        } else {
-          setLegacy([]);
-        }
-      } catch {
-        setLegacy([]);
-      }
     } catch (e) {
       setErr(supabaseErrToString(e));
     } finally {
@@ -396,33 +316,6 @@ export default function PedidosPage() {
           <p className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{err}</p>
         ) : null}
         {loadingData ? <p className="text-sm text-slate-500">Cargando catálogo…</p> : null}
-
-        {canAccessRecepcion && legacy.length > 0 ? (
-          <section className="mb-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-sm font-semibold text-slate-900">Pedidos legacy (pendientes de limpiar)</p>
-            <p className="mt-1 text-sm text-slate-600">
-              Detectados desde movimientos tipo <span className="font-mono">pedido</span>. Abre “Gestión de Recepción” para recepcionar y limpiar.
-            </p>
-            <ul className="mt-3 space-y-2">
-              {legacy.slice(0, 6).map((p) => (
-                <li key={p.proveedor_id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-bold text-slate-900">{p.proveedor_nombre}</p>
-                    <p className="text-xs text-slate-600">
-                      Líneas: <span className="font-mono font-semibold">{p.lineas}</span>
-                    </p>
-                  </div>
-                  <Link
-                    href="/admin/pedidos/recepcion"
-                    className="min-h-10 shrink-0 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-900 hover:bg-slate-50"
-                  >
-                    Recepcionar
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
 
         {!canAccessPedidosAdmin ? (
           <p className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">

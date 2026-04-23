@@ -17,7 +17,7 @@ type EnvaseRow = {
   coste: number;
 };
 
-type ProductoOpt = { id: string; articulo: string };
+type ProductoOpt = { id: string; articulo: string; categoria: string };
 
 function toNum(v: string): number {
   const n = Number(String(v ?? "").replace(",", "."));
@@ -79,14 +79,15 @@ export default function CatalogoEnvasesPage() {
         const t = tituloColSql(col);
         const { data, error } = await supabase()
           .from("productos")
-          .select(`id,${t}` as "*")
+          .select(`id,${t},categoria,tipo` as "*")
           .eq("establecimiento_id", activeEstablishmentId)
           .order(t, { ascending: true });
         if (cancelled) return;
         if (error) throw error;
         const list = ((data ?? []) as unknown as Record<string, unknown>[]).map((r) => ({
           id: String(r.id ?? ""),
-          articulo: String(r[t] ?? r.articulo ?? r.nombre ?? "—").trim() || "—"
+          articulo: String(r[t] ?? r.articulo ?? r.nombre ?? "—").trim() || "—",
+          categoria: String(r.categoria ?? r.tipo ?? "Otros").trim() || "Otros"
         }));
         setProductos(list);
       } catch {
@@ -99,6 +100,24 @@ export default function CatalogoEnvasesPage() {
   }, [activeEstablishmentId, canManage]);
 
   const disabled = useMemo(() => !activeEstablishmentId || !productoId || saving, [activeEstablishmentId, productoId, saving]);
+  const productosByCat = useMemo(() => {
+    const map = new Map<string, ProductoOpt[]>();
+    for (const p of productos) {
+      const k = p.categoria || "Otros";
+      const arr = map.get(k) ?? [];
+      arr.push(p);
+      map.set(k, arr);
+    }
+    // Orden estable: categorías por nombre, productos por artículo
+    const cats = Array.from(map.keys()).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+    for (const c of cats) {
+      map.set(
+        c,
+        (map.get(c) ?? []).slice().sort((a, b) => a.articulo.localeCompare(b.articulo, "es", { sensitivity: "base" }))
+      );
+    }
+    return { map, cats };
+  }, [productos]);
 
   async function crear() {
     if (!activeEstablishmentId) return;
@@ -191,10 +210,14 @@ export default function CatalogoEnvasesPage() {
                 onChange={(e) => setProductoId(e.currentTarget.value)}
               >
                 <option value="">(Selecciona…)</option>
-                {productos.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.articulo}
-                  </option>
+                {productosByCat.cats.map((cat) => (
+                  <optgroup key={cat} label={cat}>
+                    {(productosByCat.map.get(cat) ?? []).map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.articulo}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
               <p className="mt-1 text-xs text-slate-600">El nombre del envase será el del producto.</p>

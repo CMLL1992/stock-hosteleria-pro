@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { MobileHeader } from "@/components/MobileHeader";
 import { supabase } from "@/lib/supabase";
@@ -22,6 +22,20 @@ type MovRow = {
   productos: ProdEmbed | ProdEmbed[] | null;
 };
 
+type PeriodKey = "hoy" | "semana" | "mes";
+
+function startOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+}
+
+function startOfMonth(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
+}
+
+function iso(d: Date): string {
+  return d.toISOString();
+}
+
 export default function AdminMovimientosPage() {
   const { data: me, isLoading: meLoading } = useMyRole();
   const { activeEstablishmentId } = useActiveEstablishment();
@@ -30,6 +44,7 @@ export default function AdminMovimientosPage() {
   const [rows, setRows] = useState<MovRow[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [period, setPeriod] = useState<PeriodKey>("hoy");
 
   const locale = "es-ES";
   function labelTipo(tipo: string): string {
@@ -44,6 +59,20 @@ export default function AdminMovimientosPage() {
     return tipo;
   }
 
+  const range = useMemo(() => {
+    const now = new Date();
+    const hoy = startOfDay(now);
+    const semana = new Date(now);
+    semana.setDate(semana.getDate() - 7);
+    const semanaStart = startOfDay(semana);
+    const mesStart = startOfMonth(now);
+
+    if (period === "hoy") return { from: hoy, to: null as Date | null };
+    if (period === "semana") return { from: semanaStart, to: null as Date | null };
+    // "Este mes": resto del mes actual, excluyendo la última semana (para segmentar sin solaparse)
+    return { from: mesStart, to: semanaStart };
+  }, [period]);
+
   const load = useCallback(async () => {
     if (!activeEstablishmentId || !canAccessMovimientos) {
       setRows([]);
@@ -55,13 +84,17 @@ export default function AdminMovimientosPage() {
     try {
       const col = await resolveProductoTituloColumn(activeEstablishmentId);
       const t = tituloColSql(col);
-      const resArticulo = await supabase()
+      let q = supabase()
         .from("movimientos")
         // Nota: no hacemos join con 'usuarios' porque no existe relación en Supabase.
         .select(`id,tipo,cantidad,timestamp,genera_vacio,usuario_id,productos(${t})` as "*")
         .eq("establecimiento_id", activeEstablishmentId)
-        .order("timestamp", { ascending: false })
-        .limit(150);
+        .gte("timestamp", iso(range.from))
+        .order("timestamp", { ascending: false });
+
+      if (range.to) q = q.lt("timestamp", iso(range.to));
+
+      const resArticulo = await q.limit(200);
 
       if (resArticulo.error) throw resArticulo.error;
       const data = resArticulo.data;
@@ -72,7 +105,7 @@ export default function AdminMovimientosPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeEstablishmentId, canAccessMovimientos]);
+  }, [activeEstablishmentId, canAccessMovimientos, range.from, range.to]);
 
   useEffect(() => {
     load().catch(() => undefined);
@@ -97,6 +130,28 @@ export default function AdminMovimientosPage() {
       <main className="mx-auto max-w-3xl p-4 pb-28">
         <p className="text-sm text-slate-600">Últimos movimientos del establecimiento activo.</p>
 
+        <div className="mt-4 flex flex-wrap gap-2">
+          {(
+            [
+              { key: "hoy", label: "Hoy" },
+              { key: "semana", label: "Esta semana" },
+              { key: "mes", label: "Este mes" }
+            ] as const
+          ).map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setPeriod(t.key)}
+              className={[
+                "min-h-10 rounded-2xl border px-3 text-sm font-semibold",
+                period === t.key ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
+              ].join(" ")}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
         {err ? (
           <p className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{err}</p>
         ) : null}
@@ -110,7 +165,7 @@ export default function AdminMovimientosPage() {
             No hay movimientos registrados todavía.
           </p>
         ) : (
-          <ul className="mt-4 flex flex-col gap-2" aria-label="Movimientos recientes">
+          <ul className="mt-4 flex flex-col gap-2" aria-label="Movimientos">
             {rows.map((r) => {
               const raw = r.productos;
               const prod = Array.isArray(raw) ? raw[0] ?? null : raw;
