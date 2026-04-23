@@ -196,27 +196,12 @@ export default function RecepcionPedidosPage() {
           cantidad: x.delta,
           usuario_id: uid,
           timestamp: nowIso,
-          proveedor_id: sel.proveedor_id,
-          // Si existe la columna en BD, se guardará; si no, lo ignoramos con retry sin este campo.
-          motivo: `Recepcion Pedido #${sel.id}`
+          proveedor_id: sel.proveedor_id
         }));
 
       if (movimientos.length) {
-        const ins1 = await supabase().from("movimientos").insert(movimientos as unknown as Record<string, unknown>[]);
-        if (ins1.error) {
-          // Fallback si la columna `motivo` no existe.
-          const msg = String((ins1.error as { message?: unknown })?.message ?? "").toLowerCase();
-          if (msg.includes("motivo") || msg.includes("column") || msg.includes("schema cache")) {
-            const stripped = movimientos.map(({ motivo, ...rest }) => {
-              void motivo;
-              return rest;
-            });
-            const ins2 = await supabase().from("movimientos").insert(stripped as unknown as Record<string, unknown>[]);
-            if (ins2.error) throw ins2.error;
-          } else {
-            throw ins1.error;
-          }
-        }
+        const ins = await supabase().from("movimientos").insert(movimientos as unknown as Record<string, unknown>[]);
+        if (ins.error) throw ins.error;
       }
 
       // 2) Actualizar pedido_items sumando lo recibido hoy.

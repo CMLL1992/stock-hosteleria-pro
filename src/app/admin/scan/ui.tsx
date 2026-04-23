@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { useMyRole } from "@/lib/useMyRole";
 import { getEffectiveRole, hasPermission } from "@/lib/permissions";
+import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 
 function isMissingEscandallosTable(e: unknown): boolean {
   const anyErr = e as { code?: unknown; message?: unknown };
@@ -159,10 +160,12 @@ export function ScanGoClient() {
                     if (!pid) return;
                     compareBeep();
                     try {
+                      const col = await resolveProductoTituloColumn(null);
+                      const t = tituloColSql(col);
                       try {
                         const { data, error } = await supabase()
                           .from("escandallos")
-                          .select("producto_id,precio_tarifa,productos:productos(articulo,nombre)")
+                          .select(`producto_id,precio_tarifa,productos:productos(${t})` as "*")
                           .eq("producto_id", pid)
                           .maybeSingle();
                         if (error) throw error;
@@ -172,8 +175,8 @@ export function ScanGoClient() {
                               producto_id?: string;
                               precio_tarifa?: unknown;
                               productos?:
-                                | { articulo?: string | null; nombre?: string | null }
-                                | { articulo?: string | null; nombre?: string | null }[]
+                                | Record<string, unknown>
+                                | Record<string, unknown>[]
                                 | null;
                             };
                       if (!row?.producto_id) throw new Error("Producto no encontrado.");
@@ -181,27 +184,26 @@ export function ScanGoClient() {
                         const prod = Array.isArray(prodRaw) ? prodRaw[0] ?? null : prodRaw;
                         setCompareProd({
                           id: String(row.producto_id),
-                          articulo: String(prod?.articulo ?? prod?.nombre ?? "—").trim() || "—",
+                          articulo: String((prod as Record<string, unknown> | null)?.[t] ?? "—").trim() || "—",
                           precio_tarifa: Number(row.precio_tarifa ?? 0) || 0
                         });
                       } catch (e) {
                         if (!isMissingEscandallosTable(e)) throw e;
                         const { data, error } = await supabase()
                           .from("productos")
-                          .select("id,articulo,nombre,precio_tarifa")
+                          .select(`id,${t},precio_tarifa` as "*")
                           .eq("id", pid)
                           .maybeSingle();
                         if (error) throw error;
                         const row = (data ?? null) as null | {
                           id?: string;
-                          articulo?: string | null;
-                          nombre?: string | null;
+                          [k: string]: unknown;
                           precio_tarifa?: unknown;
                         };
                         if (!row?.id) throw new Error("Producto no encontrado.");
                         setCompareProd({
                           id: String(row.id),
-                          articulo: String(row.articulo ?? row.nombre ?? "—").trim() || "—",
+                          articulo: String(row[t] ?? "—").trim() || "—",
                           precio_tarifa: Number(row.precio_tarifa ?? 0) || 0
                         });
                       }

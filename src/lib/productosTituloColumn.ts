@@ -6,31 +6,35 @@ export type ProductoTituloCol = "articulo" | "nombre";
 let cachedTituloCol: ProductoTituloCol | null = null;
 
 /**
- * Detecta columna de título: prueba `articulo` y, si falla, `nombre`.
- * Así cubrimos esquemas con solo una de las dos sin depender del texto exacto del error.
+ * Detecta columna de título sin provocar 400 en PostgREST.
+ * Usamos `select('*').limit(1)` y miramos las keys devueltas.
+ *
+ * Nota: si el establecimiento no tiene productos todavía, por defecto usamos `nombre`.
  */
 export async function resolveProductoTituloColumn(establecimientoId: string | null): Promise<ProductoTituloCol> {
   if (cachedTituloCol) return cachedTituloCol;
 
-  let q1 = supabase().from("productos").select("id,articulo").limit(1);
-  if (establecimientoId) q1 = q1.eq("establecimiento_id", establecimientoId);
-  const r1 = await q1;
+  let q = supabase().from("productos").select("*").limit(1);
+  if (establecimientoId) q = q.eq("establecimiento_id", establecimientoId);
+  const r = await q;
+  if (r.error) throw r.error;
 
-  if (!r1.error) {
+  const row = (Array.isArray(r.data) ? (r.data[0] as Record<string, unknown> | undefined) : undefined) ?? undefined;
+  if (!row) {
+    cachedTituloCol = "nombre";
+    return cachedTituloCol;
+  }
+  if (Object.prototype.hasOwnProperty.call(row, "articulo")) {
     cachedTituloCol = "articulo";
     return cachedTituloCol;
   }
-
-  let q2 = supabase().from("productos").select("id,nombre").limit(1);
-  if (establecimientoId) q2 = q2.eq("establecimiento_id", establecimientoId);
-  const r2 = await q2;
-
-  if (!r2.error) {
+  if (Object.prototype.hasOwnProperty.call(row, "nombre")) {
     cachedTituloCol = "nombre";
     return cachedTituloCol;
   }
 
-  throw r1.error ?? r2.error ?? new Error("No se pudo leer la tabla productos.");
+  cachedTituloCol = "nombre";
+  return cachedTituloCol;
 }
 
 /** Solo tests / cambio de entorno. */
