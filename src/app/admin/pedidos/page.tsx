@@ -140,11 +140,7 @@ export default function PedidosPage() {
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [qty, setQty] = useState<Record<string, string>>({});
   const [search, setSearch] = useState<Record<string, string>>({});
-  const [confirm, setConfirm] = useState<null | {
-    proveedor: ProveedorRow & { id: string };
-    lineas: Array<{ producto_id: string; articulo: string; unidad: string | null; cantidad: number }>;
-  }>(null);
-  const [confirming, setConfirming] = useState(false);
+  const [sending, setSending] = useState<string | null>(null);
 
   const { activeEstablishmentId, activeEstablishmentName } = useActiveEstablishment();
   const nombreLocal = activeEstablishmentName?.trim() || "Piqui Blinders";
@@ -228,29 +224,6 @@ export default function PedidosPage() {
     const ts = new Date().toISOString();
     const usuario_id = await requireUserId();
 
-    for (const l of lineas) {
-      if (l.cantidad <= 0) continue;
-      const payload = {
-        client_uuid: newClientUuid(),
-        producto_id: l.producto_id,
-        establecimiento_id: activeEstablishmentId,
-        tipo: "pedido" as const,
-        cantidad: l.cantidad,
-        usuario_id,
-        timestamp: ts,
-        proveedor_id: proveedor.id
-      };
-
-      if (typeof navigator !== "undefined" && navigator.onLine) {
-        const { error } = await supabase()
-          .from("movimientos")
-          .upsert(payload, { onConflict: "client_uuid", ignoreDuplicates: true });
-        if (error) throw error;
-      } else {
-        await enqueueMovimiento(payload);
-      }
-    }
-
     // Seguimiento de pedido (cabecera + líneas) - aditivo.
     // Si la tabla no existe aún en Supabase, no interrumpimos el flujo actual.
     try {
@@ -280,6 +253,33 @@ export default function PedidosPage() {
       if (itemsPayload.length) {
         const { error: iErr } = await supabase().from("pedido_items").insert(itemsPayload);
         if (iErr) throw iErr;
+      }
+
+      // Movimientos "pedido" después del registro (si fallan no bloquean el pedido ya creado).
+      for (const l of lineas) {
+        if (l.cantidad <= 0) continue;
+        const payload = {
+          client_uuid: newClientUuid(),
+          producto_id: l.producto_id,
+          establecimiento_id: activeEstablishmentId,
+          tipo: "pedido" as const,
+          cantidad: l.cantidad,
+          usuario_id,
+          timestamp: ts,
+          proveedor_id: proveedor.id
+        };
+        try {
+          if (typeof navigator !== "undefined" && navigator.onLine) {
+            const { error } = await supabase()
+              .from("movimientos")
+              .upsert(payload, { onConflict: "client_uuid", ignoreDuplicates: true });
+            if (error) throw error;
+          } else {
+            await enqueueMovimiento(payload);
+          }
+        } catch {
+          // ignore
+        }
       }
     } catch {
       // ignore
@@ -443,24 +443,42 @@ export default function PedidosPage() {
                           tieneLineas ? "bg-emerald-500 hover:bg-emerald-600" : "pointer-events-none bg-slate-300"
                         ].join(" ")}
                         aria-disabled={!tieneLineas}
-                        onClick={(e) => {
-                          if (!tieneLineas) e.preventDefault();
-                          if (!tieneLineas) return;
-                          setConfirm({
-                            proveedor: { id: g.id, nombre: g.nombre, telefono_whatsapp: g.telefono_whatsapp },
-                            lineas: g.productos
+                        onClick={async (e) => {
+                          if (!tieneLineas) {
+                            e.preventDefault();
+                            return;
+                          }
+                          e.preventDefault();
+                          if (!activeEstablishmentId) return;
+                          if (sending === g.id) return;
+                          setSending(g.id);
+                          setErr(null);
+                          try {
+                            const lineas = g.productos
                               .map((p) => ({
                                 producto_id: p.id,
                                 articulo: p.articulo,
                                 unidad: p.unidad,
                                 cantidad: parseQty(qty[p.id] ?? "")
                               }))
-                              .filter((l) => l.cantidad > 0)
-                          });
+                              .filter((l) => l.cantidad > 0);
+
+                            // Registrar ANTES de abrir WhatsApp (ID estable, sin popup).
+                            await registrarComoPedido(
+                              { id: g.id, nombre: g.nombre, telefono_whatsapp: g.telefono_whatsapp },
+                              lineas
+                            );
+
+                            window.open(urlWa, "_blank", "noopener,noreferrer");
+                          } catch (err) {
+                            setErr(supabaseErrToString(err));
+                          } finally {
+                            setSending(null);
+                          }
                         }}
                       >
                         <IconWhatsApp className="h-8 w-8 shrink-0 text-white" />
-                        Enviar pedido a {g.nombre} por WhatsApp
+                        {sending === g.id ? "Registrando…" : `Enviar pedido a ${g.nombre} por WhatsApp`}
                       </a>
                     </div>
                   ) : null}
@@ -471,45 +489,6 @@ export default function PedidosPage() {
         ) : null}
       </main>
 
-      {confirm ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-base font-semibold text-slate-900">¿Se ha enviado correctamente el pedido?</p>
-            <p className="mt-1 text-sm text-slate-600">
-              Si confirmas, registraremos estos productos como <span className="font-semibold">Pedidos</span>.
-            </p>
-            <div className="mt-4 grid grid-cols-1 gap-2">
-              <button
-                type="button"
-                disabled={confirming}
-                onClick={async () => {
-                  setConfirming(true);
-                  setErr(null);
-                  try {
-                    await registrarComoPedido(confirm.proveedor, confirm.lineas);
-                    setConfirm(null);
-                  } catch (e) {
-                    setErr(supabaseErrToString(e));
-                  } finally {
-                    setConfirming(false);
-                  }
-                }}
-                className="min-h-12 w-full rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-950 disabled:opacity-50"
-              >
-                {confirming ? "Registrando…" : "Sí, registrar como pedido"}
-              </button>
-              <button
-                type="button"
-                disabled={confirming}
-                onClick={() => setConfirm(null)}
-                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 hover:bg-slate-50 disabled:opacity-50"
-              >
-                No
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
