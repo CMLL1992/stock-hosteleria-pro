@@ -37,11 +37,16 @@ export function MobileHeader({
                 aria-label="Volver"
                 title="Volver"
                 onClick={() => {
-                  router.back();
-                  // fallback si no hay historial útil
-                  window.setTimeout(() => {
-                    if (backHref) window.location.href = backHref;
-                  }, 150);
+                  const fallback = backHref || "/admin";
+                  try {
+                    if (typeof window !== "undefined" && window.history.length > 1) {
+                      router.back();
+                      return;
+                    }
+                  } catch {
+                    // ignore
+                  }
+                  router.replace(fallback);
                 }}
               >
                 <ArrowLeft className="h-4 w-4 text-slate-800" />

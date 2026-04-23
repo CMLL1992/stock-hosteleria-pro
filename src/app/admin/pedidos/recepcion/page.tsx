@@ -8,6 +8,8 @@ import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { useMyRole } from "@/lib/useMyRole";
 import { getEffectiveRole, hasPermission } from "@/lib/permissions";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
+import { useQueryClient } from "@tanstack/react-query";
+import { requireUserId } from "@/lib/session";
 
 type PedidoEstado = "pendiente" | "parcial" | "recibido";
 
@@ -56,6 +58,7 @@ export default function RecepcionPedidosPage() {
   const canReceive = hasPermission(role, "staff");
 
   const { activeEstablishmentId } = useActiveEstablishment();
+  const queryClient = useQueryClient();
 
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -105,6 +108,29 @@ export default function RecepcionPedidosPage() {
       // Fallback: pedidos antiguos registrados solo como movimientos tipo 'pedido'
       // (sin cabecera/items). Los mostramos como "legacy" para poder recepcionar manualmente.
       try {
+        // Marcadores de cierre: último pedido "recibido" por proveedor.
+        const closedMap = new Map<string, string>();
+        try {
+          const closed = await supabase()
+            .from("pedidos")
+            .select("proveedor_id,received_at,created_at,estado")
+            .eq("establecimiento_id", activeEstablishmentId)
+            .eq("estado", "recibido")
+            .order("received_at", { ascending: false })
+            .limit(500);
+          if (!closed.error) {
+            for (const r of ((closed.data ?? []) as unknown as Record<string, unknown>[])) {
+              const pid = String(r.proveedor_id ?? "").trim();
+              if (!pid) continue;
+              const ts = String(r.received_at ?? r.created_at ?? "").trim();
+              if (!ts) continue;
+              if (!closedMap.has(pid)) closedMap.set(pid, ts);
+            }
+          }
+        } catch {
+          // ignore
+        }
+
         const mv = await supabase()
           .from("movimientos")
           .select("proveedor_id,producto_id,cantidad,timestamp,productos:productos(articulo,nombre,unidad),proveedor:proveedores(nombre)")
@@ -156,12 +182,19 @@ export default function RecepcionPedidosPage() {
               g.items.set(producto_id, { producto_id, articulo, unidad, cantidad_pedida: cantidad });
             }
           }
-          const legacyRows: LegacyPedidoRow[] = Array.from(byProv.entries()).map(([proveedor_id, g]) => ({
-            id: `legacy:${proveedor_id}`,
-            proveedor_id,
-            proveedor_nombre: g.proveedor_nombre,
-            created_at: g.created_at
-          }));
+          const legacyRows: LegacyPedidoRow[] = Array.from(byProv.entries())
+            .filter(([proveedor_id, g]) => {
+              const closedAt = closedMap.get(proveedor_id);
+              if (!closedAt) return true;
+              // Si ya hay un "recibido" posterior al último pedido legacy, lo consideramos limpio.
+              return g.created_at > closedAt;
+            })
+            .map(([proveedor_id, g]) => ({
+              id: `legacy:${proveedor_id}`,
+              proveedor_id,
+              proveedor_nombre: g.proveedor_nombre,
+              created_at: g.created_at
+            }));
           legacyRows.sort((a, b) => b.created_at.localeCompare(a.created_at));
           setLegacy(legacyRows);
         }
@@ -246,6 +279,9 @@ export default function RecepcionPedidosPage() {
       if (error) throw error;
       const ok = ((data ?? null) as { ok?: boolean } | null)?.ok ?? true;
       if (!ok) throw new Error("No se pudo confirmar la recepción.");
+      await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", activeEstablishmentId] });
+      await queryClient.invalidateQueries({ queryKey: ["productos", activeEstablishmentId] });
+      await queryClient.invalidateQueries({ queryKey: ["movimientos", activeEstablishmentId] });
       await refresh();
       setOpen(false);
       setSel(null);
@@ -331,6 +367,23 @@ export default function RecepcionPedidosPage() {
       const ok = ((data ?? null) as { ok?: boolean } | null)?.ok ?? true;
       if (!ok) throw new Error("No se pudo confirmar la recepción.");
 
+      // Cierre: crear un "pedido" recibido para marcarlo como limpio (sin items).
+      try {
+        const uid = await requireUserId();
+        await supabase().from("pedidos").insert({
+          establecimiento_id: activeEstablishmentId,
+          proveedor_id: legacySel.proveedor_id,
+          creado_por: uid,
+          estado: "recibido",
+          received_at: new Date().toISOString()
+        } as unknown as Record<string, unknown>);
+      } catch {
+        // ignore
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", activeEstablishmentId] });
+      await queryClient.invalidateQueries({ queryKey: ["productos", activeEstablishmentId] });
+      await queryClient.invalidateQueries({ queryKey: ["movimientos", activeEstablishmentId] });
       await refresh();
       setLegacyOpen(false);
       setLegacySel(null);

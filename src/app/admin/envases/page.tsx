@@ -9,6 +9,7 @@ import { useMyRole } from "@/lib/useMyRole";
 import { getEffectiveRole, hasPermission } from "@/lib/permissions";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
+import { useQueryClient } from "@tanstack/react-query";
 
 type EnvaseRow = {
   id: string;
@@ -28,6 +29,7 @@ export default function CatalogoEnvasesPage() {
   const role = getEffectiveRole(me ?? null);
   const canManage = hasPermission(role, "admin");
   const { activeEstablishmentId } = useActiveEstablishment();
+  const queryClient = useQueryClient();
 
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -125,6 +127,9 @@ export default function CatalogoEnvasesPage() {
       setCoste("0");
       setProductoId("");
       await refresh();
+      await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", activeEstablishmentId] });
+      await queryClient.invalidateQueries({ queryKey: ["productos", activeEstablishmentId] });
+      await queryClient.invalidateQueries({ queryKey: ["catalogo", "envases", activeEstablishmentId] });
     } catch (e) {
       setErr(supabaseErrToString(e));
     } finally {
@@ -142,6 +147,9 @@ export default function CatalogoEnvasesPage() {
       const { error } = await supabase().from("envases_catalogo").delete().eq("id", id).eq("establecimiento_id", activeEstablishmentId);
       if (error) throw error;
       await refresh();
+      await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", activeEstablishmentId] });
+      await queryClient.invalidateQueries({ queryKey: ["productos", activeEstablishmentId] });
+      await queryClient.invalidateQueries({ queryKey: ["catalogo", "envases", activeEstablishmentId] });
     } catch (e) {
       setErr(supabaseErrToString(e));
     } finally {

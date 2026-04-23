@@ -180,6 +180,28 @@ export default function PedidosPage() {
 
       // Pedidos legacy (sin tabla pedidos/pedido_items): agrupamos movimientos tipo 'pedido' por proveedor.
       try {
+        const closedMap = new Map<string, string>();
+        try {
+          const closed = await supabase()
+            .from("pedidos")
+            .select("proveedor_id,received_at,created_at,estado")
+            .eq("establecimiento_id", activeEstablishmentId)
+            .eq("estado", "recibido")
+            .order("received_at", { ascending: false })
+            .limit(500);
+          if (!closed.error) {
+            for (const r of ((closed.data ?? []) as unknown as Record<string, unknown>[])) {
+              const pid = String(r.proveedor_id ?? "").trim();
+              if (!pid) continue;
+              const ts = String(r.received_at ?? r.created_at ?? "").trim();
+              if (!ts) continue;
+              if (!closedMap.has(pid)) closedMap.set(pid, ts);
+            }
+          }
+        } catch {
+          // ignore
+        }
+
         const mv = await supabase()
           .from("movimientos")
           .select("proveedor_id,producto_id,cantidad,timestamp,proveedor:proveedores(nombre)")
@@ -213,8 +235,13 @@ export default function PedidosPage() {
             lineas: g.lineas.size,
             last_ts: g.last_ts
           }));
-          out.sort((a, b) => b.last_ts.localeCompare(a.last_ts));
-          setLegacy(out);
+          const filtered = out.filter((p) => {
+            const closedAt = closedMap.get(p.proveedor_id);
+            if (!closedAt) return true;
+            return p.last_ts > closedAt;
+          });
+          filtered.sort((a, b) => b.last_ts.localeCompare(a.last_ts));
+          setLegacy(filtered);
         } else {
           setLegacy([]);
         }
