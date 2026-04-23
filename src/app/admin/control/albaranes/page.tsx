@@ -10,10 +10,10 @@ import { supabaseErrToString } from "@/lib/supabaseErrToString";
 
 type AlbaranRow = {
   id: string;
-  establecimiento_id: string;
   proveedor_id: string | null;
   created_at: string;
-  paths: string[] | null;
+  total_importe: number | null;
+  imagen_url: string | null;
 };
 
 type AlbaranItemRow = {
@@ -65,7 +65,8 @@ export default function ControlAlbaranesPage() {
     try {
       const res = await supabase()
         .from("albaranes")
-        .select("id,establecimiento_id,proveedor_id,created_at,paths")
+        // Modo mínimo: evitar errores de columnas inexistentes en entornos desincronizados.
+        .select("id,created_at,total_importe,imagen_url,proveedor_id")
         .eq("establecimiento_id", activeEstablishmentId)
         .order("created_at", { ascending: false })
         .limit(50);
@@ -223,7 +224,15 @@ export default function ControlAlbaranesPage() {
                 const remaining = Math.max(0, 30 - ageDays);
                 const alerts = alertsByAlbaran.get(a.id) ?? [];
                 const bucket = "albaranes";
-                const paths = (a.paths ?? []).filter(Boolean);
+                const raw = String(a.imagen_url ?? "").trim();
+                const imagenUrl = (() => {
+                  if (!raw) return "";
+                  // Si ya es URL completa, úsala tal cual.
+                  if (/^https?:\/\//i.test(raw)) return raw;
+                  // Si es path relativo en Storage, construimos URL pública con bucket fijo.
+                  const { data } = supabase().storage.from(bucket).getPublicUrl(raw.replace(/^\/+/, ""));
+                  return data?.publicUrl ?? "";
+                })();
                 return (
                   <li key={a.id} className="p-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -232,6 +241,9 @@ export default function ControlAlbaranesPage() {
                         <p className="mt-0.5 text-xs text-slate-500">
                           {created.toLocaleString("es-ES")} · Se eliminará en {remaining} días
                         </p>
+                        {typeof a.total_importe === "number" && Number.isFinite(a.total_importe) ? (
+                          <p className="mt-0.5 text-xs font-semibold text-slate-700">Total: {a.total_importe.toFixed(2)}€</p>
+                        ) : null}
                       </div>
                       {alerts.length ? (
                         <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-semibold text-red-700 ring-1 ring-red-200">
@@ -257,34 +269,26 @@ export default function ControlAlbaranesPage() {
                       </div>
                     ) : null}
 
-                    {paths.length ? (
+                    {imagenUrl ? (
                       <div className="mt-4">
                         <p className="text-xs font-semibold text-slate-700">Fotos del albarán</p>
                         <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
-                          {paths.slice(0, 8).map((p) => {
-                            const { data } = supabase().storage.from(bucket).getPublicUrl(p);
-                            const url = data?.publicUrl ?? "";
-                            return (
-                              <a
-                                key={p}
-                                href={url || "#"}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="group relative overflow-hidden rounded-xl border border-slate-200 bg-slate-50"
-                                title={p}
-                              >
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  src={url}
-                                  alt="Albarán"
-                                  className="h-20 w-full object-cover transition group-hover:scale-[1.02]"
-                                  loading="lazy"
-                                />
-                              </a>
-                            );
-                          })}
+                          <a
+                            href={imagenUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="group relative overflow-hidden rounded-xl border border-slate-200 bg-slate-50"
+                            title="Abrir albarán"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={imagenUrl}
+                              alt="Albarán"
+                              className="h-20 w-full object-cover transition group-hover:scale-[1.02]"
+                              loading="lazy"
+                            />
+                          </a>
                         </div>
-                        {paths.length > 8 ? <p className="mt-2 text-xs text-slate-500">… y {paths.length - 8} más</p> : null}
                       </div>
                     ) : (
                       <p className="mt-3 text-xs text-slate-500">Sin fotos asociadas.</p>
