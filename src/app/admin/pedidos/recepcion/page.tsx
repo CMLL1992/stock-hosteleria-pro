@@ -302,12 +302,13 @@ export default function RecepcionPedidosPage() {
           cantidad: delta,
           establecimiento_id: activeEstablishmentId,
           usuario_id: uid,
+          pedido_id: sel.id,
           tipo: "entrada"
         } as unknown as Record<string, unknown>);
         if (sm.error) throw sm.error;
       } catch (e) {
         // eslint-disable-next-line no-console
-        console.error("No se pudo insertar en stock_movimientos (se continúa):", e);
+        console.warn("No se pudo insertar en stock_movimientos (se continúa):", e);
         try {
           const mv = await supabase().from("movimientos").insert({
             producto_id: it.producto_id,
@@ -319,7 +320,7 @@ export default function RecepcionPedidosPage() {
           if (mv.error) throw mv.error;
         } catch (e2) {
           // eslint-disable-next-line no-console
-          console.error("No se pudo insertar movimiento fallback (se continúa):", e2);
+          console.warn("No se pudo insertar movimiento fallback (se continúa):", e2);
         }
       }
 
