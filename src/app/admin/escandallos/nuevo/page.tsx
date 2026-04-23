@@ -303,6 +303,13 @@ export default function NuevoEscandalloCocinaPage() {
                 </select>
               </label>
             </div>
+            {!loading && activeEstablishmentId && platos.length === 0 ? (
+              <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                No hay platos en este establecimiento: solo aparecen productos con{" "}
+                <span className="font-semibold">categoría «comida»</span> o <span className="font-semibold">tipo «comida»</span> (sin distinguir mayúsculas).
+                Crea o edita un producto desde <Link href="/admin/productos" className="font-semibold underline">Productos</Link> y vuelve aquí.
+              </p>
+            ) : null}
           </div>
 
           <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
