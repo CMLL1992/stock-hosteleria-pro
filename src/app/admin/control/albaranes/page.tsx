@@ -13,7 +13,6 @@ type AlbaranRow = {
   establecimiento_id: string;
   proveedor_id: string | null;
   created_at: string;
-  bucket: string | null;
   paths: string[] | null;
 };
 
@@ -66,7 +65,7 @@ export default function ControlAlbaranesPage() {
     try {
       const res = await supabase()
         .from("albaranes")
-        .select("id,establecimiento_id,proveedor_id,created_at,bucket,paths")
+        .select("id,establecimiento_id,proveedor_id,created_at,paths")
         .eq("establecimiento_id", activeEstablishmentId)
         .order("created_at", { ascending: false })
         .limit(50);
@@ -223,7 +222,7 @@ export default function ControlAlbaranesPage() {
                 const ageDays = daysBetween(new Date(), created);
                 const remaining = Math.max(0, 30 - ageDays);
                 const alerts = alertsByAlbaran.get(a.id) ?? [];
-                const bucket = a.bucket ?? "albaranes";
+                const bucket = "albaranes";
                 const paths = (a.paths ?? []).filter(Boolean);
                 return (
                   <li key={a.id} className="p-4">
