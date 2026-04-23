@@ -12,7 +12,6 @@ import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { useQueryClient } from "@tanstack/react-query";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 import { requireUserId } from "@/lib/session";
-import { newClientUuid } from "@/lib/offlineQueue";
 
 type PedidoEstado = "pendiente" | "parcial" | "recibido";
 
@@ -190,32 +189,21 @@ export default function RecepcionPedidosPage() {
         })
         .filter((x) => x.delta > 0)
         .map((x) => ({
-          client_uuid: newClientUuid(),
           producto_id: x.producto_id,
+          establecimiento_id: activeEstablishmentId,
           tipo: "entrada" as const,
-          cantidad: x.delta,
+          cantidad: Number(x.delta),
           usuario_id: uid,
-          timestamp: nowIso,
-          proveedor_id: sel.proveedor_id
+          // No enviamos columnas opcionales (timestamp/proveedor_id/client_uuid/motivo) para evitar 400 por schema.
         }));
 
       if (movimientos.length) {
-        // Insert robusto: algunos esquemas legacy no tienen columnas SaaS (proveedor_id, timestamp, etc).
-        const first = await supabase().from("movimientos").insert(movimientos as unknown as Record<string, unknown>[]);
-        if (first.error) {
-          const msg = String((first.error as { message?: unknown })?.message ?? "").toLowerCase();
-          const looksLikeUnknownColumn = msg.includes("column") || msg.includes("schema cache") || msg.includes("does not exist");
-          if (!looksLikeUnknownColumn) throw first.error;
-          // Fallback mínimo para garantizar subida de stock (trigger apply_stock_movement).
-          const minimal = movimientos.map((m) => ({
-            producto_id: m.producto_id,
-            tipo: m.tipo,
-            cantidad: m.cantidad,
-            usuario_id: m.usuario_id,
-            timestamp: m.timestamp
-          }));
-          const second = await supabase().from("movimientos").insert(minimal as unknown as Record<string, unknown>[]);
-          if (second.error) throw second.error;
+        const ins = await supabase().from("movimientos").insert(movimientos as unknown as Record<string, unknown>[]);
+        if (ins.error) {
+          // Log detallado para diagnosticar 400/403 en producción
+          // eslint-disable-next-line no-console
+          console.error("Error detallado de Supabase (insert movimientos):", ins.error);
+          throw ins.error;
         }
       }
 
@@ -251,7 +239,11 @@ export default function RecepcionPedidosPage() {
         .update(patch)
         .eq("id", sel.id)
         .eq("establecimiento_id", activeEstablishmentId);
-      if (pedidoErr) throw pedidoErr;
+      if (pedidoErr) {
+        // eslint-disable-next-line no-console
+        console.error("Error detallado de Supabase (update pedido):", pedidoErr);
+        throw pedidoErr;
+      }
 
       await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", activeEstablishmentId] });
       await queryClient.invalidateQueries({ queryKey: ["productos", activeEstablishmentId] });
