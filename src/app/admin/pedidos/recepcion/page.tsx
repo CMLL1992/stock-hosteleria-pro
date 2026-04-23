@@ -253,11 +253,13 @@ export default function RecepcionPedidosPage() {
         throw new Error(`usuario_id inválido (no es UUID): "${String(uid)}"`);
       }
 
+      // Simplicidad absoluta:
+      // - No usamos cantidad pedida para calcular stock.
+      // - delta = total_nuevo - total_prev (en BD) y solo sumamos (nunca restamos).
       const nuevoTotal = Math.max(0, toInt(draft[it.producto_id] ?? ""));
       const previo = Math.max(0, toInt(it.cantidad_recibida));
-      const pedido = Math.max(0, toInt(it.cantidad_pedida));
-      const cappedTotal = Math.min(pedido, nuevoTotal);
-      const delta = Math.max(0, cappedTotal - previo);
+      const pedido = Math.max(0, toInt(it.cantidad_pedida)); // solo para estado visual del pedido
+      const delta = Math.max(0, nuevoTotal - previo);
       if (delta <= 0) {
         setRowDone((prev) => ({ ...prev, [it.producto_id]: true }));
         setRowStatus((prev) => ({ ...prev, [it.producto_id]: "saved" }));
@@ -286,10 +288,10 @@ export default function RecepcionPedidosPage() {
       if (prodUpErr) throw prodUpErr;
 
       // 2) pedido_items total recibido
-      const estadoLinea = cappedTotal <= 0 ? "pendiente" : cappedTotal < pedido ? "parcial" : "recibido";
+      const estadoLinea = nuevoTotal <= 0 ? "pendiente" : nuevoTotal < pedido ? "parcial" : "recibido";
       const { error: upErr } = await supabase()
         .from("pedido_items")
-        .update({ cantidad_recibida: cappedTotal, estado: estadoLinea })
+        .update({ cantidad_recibida: nuevoTotal, estado: estadoLinea })
         .eq("pedido_id", sel.id)
         .eq("producto_id", it.producto_id)
         .eq("establecimiento_id", activeEstablishmentId);
@@ -326,7 +328,7 @@ export default function RecepcionPedidosPage() {
 
       // 4) estado pedido (consecuencia)
       const nextRows = items.map((x) =>
-        x.producto_id === it.producto_id ? { ...x, cantidad_recibida: cappedTotal } : x
+        x.producto_id === it.producto_id ? { ...x, cantidad_recibida: nuevoTotal } : x
       );
       const allReceived = nextRows.every((x) => Math.max(0, toInt(x.cantidad_recibida)) >= Math.max(0, toInt(x.cantidad_pedida)));
       const anyReceived = nextRows.some((x) => Math.max(0, toInt(x.cantidad_recibida)) > 0);
@@ -341,7 +343,7 @@ export default function RecepcionPedidosPage() {
       if (pedidoErr) throw pedidoErr;
 
       // UI local: reflejar total recibido y marcar como cargado (solo si stock OK)
-      setItems((prev) => prev.map((x) => (x.producto_id === it.producto_id ? { ...x, cantidad_recibida: cappedTotal } : x)));
+      setItems((prev) => prev.map((x) => (x.producto_id === it.producto_id ? { ...x, cantidad_recibida: nuevoTotal } : x)));
       setRowDone((prev) => ({ ...prev, [it.producto_id]: true }));
       setSel((prev) => (prev ? { ...prev, estado: pedidoEstado } : prev));
       setPedidos((prev) => prev.map((p) => (p.id === sel.id ? { ...p, estado: pedidoEstado } : p)));
