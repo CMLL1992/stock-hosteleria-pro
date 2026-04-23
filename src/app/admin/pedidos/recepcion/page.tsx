@@ -301,6 +301,9 @@ export default function RecepcionPedidosPage() {
       await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", activeEstablishmentId] });
       await queryClient.invalidateQueries({ queryKey: ["productos", activeEstablishmentId] });
       await queryClient.invalidateQueries({ queryKey: ["movimientos", activeEstablishmentId] });
+      // Invalidación "global" por compatibilidad (algunas pantallas usan keys sin establecimiento).
+      await queryClient.invalidateQueries({ queryKey: ["productos"] });
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       await refresh();
       router.refresh();
       setOkMsg(pedidoEstado === "recibido" ? "Recepción completada." : "Recepción parcial guardada. El pedido seguirá pendiente.");
