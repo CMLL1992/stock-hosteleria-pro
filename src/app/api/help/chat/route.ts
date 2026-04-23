@@ -1,8 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
 
-/** Node: las variables de entorno del proyecto (p. ej. GOOGLE_API_KEY) se resuelven de forma fiable aquí; Edge a veces no ve env nuevas hasta redeploy. */
 export const runtime = "nodejs";
 
 function json(data: unknown, status = 200) {
@@ -31,8 +29,25 @@ type ChatMsg = { role?: unknown; content?: unknown };
 
 type RoleMsg = { role: "user" | "assistant"; content: string };
 
+type GeminiGenerateResponse = {
+  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  error?: { message?: string; code?: number; status?: string };
+};
+
+function replyFromGeminiBody(data: GeminiGenerateResponse): string {
+  const parts = data.candidates?.[0]?.content?.parts;
+  if (!parts?.length) return "";
+  return parts
+    .map((p) => String(p.text ?? ""))
+    .join("")
+    .trim();
+}
+
 export async function POST(req: Request) {
   try {
+    const googleApiKey = String(process.env.GOOGLE_API_KEY ?? "").trim();
+    console.log("API KEY EXISTE:", !!googleApiKey);
+
     const { supabaseUrl, anonKey } = getEnv();
     if (!supabaseUrl || !anonKey) return json({ ok: false, error: "Missing Supabase env" }, 500);
 
@@ -61,7 +76,6 @@ export async function POST(req: Request) {
       return json({ ok: false, error: "Invalid messages" }, 400);
     }
 
-    const googleApiKey = String(process.env.GOOGLE_API_KEY ?? "").trim();
     if (!googleApiKey) {
       return json(
         {
@@ -73,48 +87,44 @@ export async function POST(req: Request) {
       );
     }
 
-    // Gemini exige que el historial empiece por "user"; quitamos saludos iniciales del asistente si los hay.
-    let turnos = [...messages];
-    while (turnos.length > 0 && turnos[0].role === "assistant") {
-      turnos = turnos.slice(1);
-    }
-    if (!turnos.length || turnos[turnos.length - 1].role !== "user") {
-      return json({ ok: false, error: "Invalid messages" }, 400);
-    }
-
-    const genAI = new GoogleGenerativeAI(googleApiKey);
-    // El SDK usa v1beta por defecto; API estable: v1. Las reglas van en el primer turno (user), no en systemInstruction (no válido en v1 para este flujo).
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" }, { apiVersion: "v1" });
-
-    const primeraPregunta = turnos[0].content;
-    const contents = [
-      {
-        role: "user" as const,
-        parts: [{ text: `${SYSTEM}\n\nUsuario dice: ${primeraPregunta}` }]
-      },
-      ...turnos.slice(1).map((m) => ({
-        role: m.role === "assistant" ? ("model" as const) : ("user" as const),
-        parts: [{ text: m.content }]
-      }))
-    ];
-
-    const result = await model.generateContent({
-      contents,
+    const mensajeUsuario = messages[messages.length - 1].content;
+    const payload = {
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: SYSTEM + "\n\n" + mensajeUsuario }]
+        }
+      ],
       generationConfig: {
         temperature: 0.3,
         maxOutputTokens: 1024
       }
+    };
+
+    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(googleApiKey)}`;
+    const geminiRes = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
     });
 
-    let reply = OFF_TOPIC_REPLY;
+    let data: GeminiGenerateResponse;
     try {
-      reply = String(result.response.text() ?? "").trim() || OFF_TOPIC_REPLY;
-    } catch {
-      reply = OFF_TOPIC_REPLY;
+      data = (await geminiRes.json()) as GeminiGenerateResponse;
+    } catch (parseErr) {
+      const msg = parseErr instanceof Error ? parseErr.message : String(parseErr);
+      return json({ ok: false, error: `Respuesta Gemini no JSON: ${msg}` }, 502);
     }
 
+    if (!geminiRes.ok) {
+      const apiMsg = data.error?.message ?? geminiRes.statusText;
+      return json({ ok: false, error: apiMsg || `HTTP ${geminiRes.status}` }, geminiRes.status >= 400 && geminiRes.status < 600 ? geminiRes.status : 502);
+    }
+
+    const reply = replyFromGeminiBody(data) || OFF_TOPIC_REPLY;
     return json({ ok: true, reply });
   } catch (e) {
-    return json({ ok: false, error: e instanceof Error ? e.message : "Error" }, 500);
+    const message = e instanceof Error ? e.message : String(e);
+    return json({ ok: false, error: message }, 500);
   }
 }
