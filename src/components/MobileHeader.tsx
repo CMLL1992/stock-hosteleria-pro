@@ -135,14 +135,16 @@ export function MobileHeader({
           ) : null}
         </div>
         <div className="flex items-center gap-2">
-          <button
-            className="grid h-10 w-10 place-items-center rounded-full border border-slate-200 bg-white shadow-sm hover:bg-slate-50"
-            aria-label="Mi perfil"
-            title="Mi perfil"
-            onClick={() => setPerfilOpen(true)}
-          >
-            <User className="h-5 w-5 text-slate-700" />
-          </button>
+          {getEffectiveRole(me) === "superadmin" ? (
+            <button
+              className="grid h-10 w-10 place-items-center rounded-full border border-slate-200 bg-white shadow-sm hover:bg-slate-50"
+              aria-label="Mi perfil"
+              title="Mi perfil"
+              onClick={() => setPerfilOpen(true)}
+            >
+              <User className="h-5 w-5 text-slate-700" />
+            </button>
+          ) : null}
           <button
             className="grid h-10 w-10 place-items-center rounded-full border border-slate-200 bg-white shadow-sm"
             aria-label="Salir"
