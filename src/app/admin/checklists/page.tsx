@@ -118,6 +118,11 @@ export default function AdminChecklistsHistorialPage() {
       <main className="mx-auto max-w-3xl px-4 pb-28 pt-4 sm:px-5">
         <h1 className="text-xl font-semibold text-slate-900">Historial de checklists</h1>
         <p className="mt-1 text-sm text-slate-600">Completados por día y establecimiento.</p>
+        <p className="mt-2 text-sm">
+          <Link href="/admin/checklists/tareas" className="font-semibold text-slate-900 underline">
+            Gestionar tareas del local activo
+          </Link>
+        </p>
 
         {err ? <p className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{err}</p> : null}
         {loading ? <p className="mt-4 text-sm text-slate-600">Cargando…</p> : null}

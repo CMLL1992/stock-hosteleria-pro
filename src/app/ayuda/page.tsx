@@ -56,6 +56,10 @@ export default function AyudaPage() {
               <li>
                 El superadmin ve el historial en <Link className="font-semibold underline" href="/admin/checklists">Admin → Checklists</Link> (por día y local).
               </li>
+              <li>
+                Los administradores editan la lista de tareas en{" "}
+                <Link className="font-semibold underline" href="/admin/checklists/tareas">Admin → Tareas checklist</Link> (del establecimiento activo).
+              </li>
             </ul>
           </section>
 

@@ -117,6 +117,12 @@ const SECTIONS: AdminSection[] = [
         href: "/admin/movimientos",
         title: "Movimientos",
         subtitle: "Histórico de entradas y salidas de stock."
+      },
+      {
+        id: "checklists-tareas",
+        href: "/admin/checklists/tareas",
+        title: "Tareas checklist",
+        subtitle: "Apertura y cierre de tu local."
       }
     ]
   }
