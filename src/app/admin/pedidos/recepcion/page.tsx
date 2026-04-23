@@ -331,6 +331,16 @@ export default function RecepcionPedidosPage() {
         setRowStatus((prev) => ({ ...prev, [it.producto_id]: "idle" }));
       }, 2000);
     } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error("Error al guardar línea de recepción:", {
+        pedido_id: sel?.id,
+        producto_id: it.producto_id,
+        establecimiento_id: activeEstablishmentId,
+        message: (e as { message?: unknown })?.message,
+        details: (e as { details?: unknown })?.details,
+        hint: (e as { hint?: unknown })?.hint,
+        code: (e as { code?: unknown })?.code
+      });
       setErr(supabaseErrToString(e));
       setRowStatus((prev) => ({ ...prev, [it.producto_id]: "error" }));
     } finally {

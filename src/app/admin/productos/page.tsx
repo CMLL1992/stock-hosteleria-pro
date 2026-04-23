@@ -378,6 +378,14 @@ export default function AdminProductosPage() {
         setItems(base.map((p) => ({ ...p, precio_tarifa: priceById.get(p.id) ?? 0 })));
       } catch (e) {
         if (cancelled) return;
+        // eslint-disable-next-line no-console
+        console.error("Error cargando productos (stock):", {
+          establecimiento_id: activeEstablishmentId,
+          message: (e as { message?: unknown })?.message,
+          details: (e as { details?: unknown })?.details,
+          hint: (e as { hint?: unknown })?.hint,
+          code: (e as { code?: unknown })?.code
+        });
         setErr(supabaseErrToString(e));
       } finally {
         if (cancelled) return;
@@ -448,41 +456,53 @@ export default function AdminProductosPage() {
 
   async function refetch() {
     if (!activeEstablishmentId) return;
-    const col = await resolveProductoTituloColumn(activeEstablishmentId);
-    const t = tituloColSql(col);
-    const lite = await supabase()
-      .from("productos")
-      .select(`id,${t},categoria,tipo,unidad,stock_actual,stock_minimo,proveedor_id` as "*")
-      .eq("establecimiento_id", activeEstablishmentId)
-      .order(t, { ascending: true });
-    if (lite.error) throw lite.error;
-    const base = ((lite.data ?? []) as unknown as Record<string, unknown>[]).map((r) => mapProductoQueryRow(r, t));
-    const priceById = new Map<string, number>();
     try {
-      const esc = await supabase()
-        .from("escandallos")
-        .select("producto_id,precio_tarifa")
-        .eq("establecimiento_id", activeEstablishmentId);
-      if (esc.error) throw esc.error;
-      for (const r of (esc.data as unknown as Record<string, unknown>[]) ?? []) {
-        const pid = String(r.producto_id ?? "").trim();
-        if (!pid) continue;
-        const n = Number(r.precio_tarifa ?? 0);
-        priceById.set(pid, Number.isFinite(n) ? n : 0);
+      const col = await resolveProductoTituloColumn(activeEstablishmentId);
+      const t = tituloColSql(col);
+      const lite = await supabase()
+        .from("productos")
+        .select(`id,${t},categoria,tipo,unidad,stock_actual,stock_minimo,proveedor_id` as "*")
+        .eq("establecimiento_id", activeEstablishmentId)
+        .order(t, { ascending: true });
+      if (lite.error) throw lite.error;
+      const base = ((lite.data ?? []) as unknown as Record<string, unknown>[]).map((r) => mapProductoQueryRow(r, t));
+      const priceById = new Map<string, number>();
+      try {
+        const esc = await supabase()
+          .from("escandallos")
+          .select("producto_id,precio_tarifa")
+          .eq("establecimiento_id", activeEstablishmentId);
+        if (esc.error) throw esc.error;
+        for (const r of (esc.data as unknown as Record<string, unknown>[]) ?? []) {
+          const pid = String(r.producto_id ?? "").trim();
+          if (!pid) continue;
+          const n = Number(r.precio_tarifa ?? 0);
+          priceById.set(pid, Number.isFinite(n) ? n : 0);
+        }
+      } catch (e) {
+        if (!isMissingEscandallosTable(e)) throw e;
+        const legacy = await supabase().from("productos").select("id,precio_tarifa").eq("establecimiento_id", activeEstablishmentId);
+        if (legacy.error) throw legacy.error;
+        for (const r of (legacy.data as unknown as Record<string, unknown>[]) ?? []) {
+          const pid = String(r.id ?? "").trim();
+          if (!pid) continue;
+          const n = Number(r.precio_tarifa ?? 0);
+          priceById.set(pid, Number.isFinite(n) ? n : 0);
+        }
       }
+      setHasPrecioTarifa(true);
+      setItems(base.map((p) => ({ ...p, precio_tarifa: priceById.get(p.id) ?? 0 })));
     } catch (e) {
-      if (!isMissingEscandallosTable(e)) throw e;
-      const legacy = await supabase().from("productos").select("id,precio_tarifa").eq("establecimiento_id", activeEstablishmentId);
-      if (legacy.error) throw legacy.error;
-      for (const r of (legacy.data as unknown as Record<string, unknown>[]) ?? []) {
-        const pid = String(r.id ?? "").trim();
-        if (!pid) continue;
-        const n = Number(r.precio_tarifa ?? 0);
-        priceById.set(pid, Number.isFinite(n) ? n : 0);
-      }
+      // eslint-disable-next-line no-console
+      console.error("Error refetch productos (stock):", {
+        establecimiento_id: activeEstablishmentId,
+        message: (e as { message?: unknown })?.message,
+        details: (e as { details?: unknown })?.details,
+        hint: (e as { hint?: unknown })?.hint,
+        code: (e as { code?: unknown })?.code
+      });
+      setErr(supabaseErrToString(e));
     }
-    setHasPrecioTarifa(true);
-    setItems(base.map((p) => ({ ...p, precio_tarifa: priceById.get(p.id) ?? 0 })));
   }
 
   // Realtime: cualquier cambio en tablas clave del establecimiento refresca la lista (Stock).
