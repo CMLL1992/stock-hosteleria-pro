@@ -198,6 +198,8 @@ export default function RecepcionPedidosPage() {
         }));
 
       if (movimientos.length) {
+        // eslint-disable-next-line no-console
+        console.log("Datos que voy a insertar en movimientos:", movimientos);
         const ins = await supabase().from("movimientos").insert(movimientos as unknown as Record<string, unknown>[]);
         if (ins.error) {
           // Log detallado para diagnosticar 400/403 en producción
@@ -205,6 +207,23 @@ export default function RecepcionPedidosPage() {
           console.error("Error detallado de Supabase (insert movimientos):", ins.error);
           throw ins.error;
         }
+
+        // Optimistic: actualiza caches de productos/dashboard para que la gráfica suba al instante.
+        const applyDelta = (prevList: Array<{ id: string; stock_actual?: number }>) =>
+          prevList.map((p) => {
+            const add = movimientos
+              .filter((m) => String(m.producto_id) === String(p.id))
+              .reduce((sum, m) => sum + (Number((m as { cantidad?: unknown }).cantidad ?? 0) || 0), 0);
+            if (add <= 0) return p;
+            const curr = Number(p.stock_actual ?? 0) || 0;
+            return { ...p, stock_actual: curr + add };
+          });
+        queryClient.setQueryData(["productos", activeEstablishmentId], (old) =>
+          applyDelta(((old as Array<{ id: string; stock_actual?: number }> | undefined) ?? []) as Array<{ id: string; stock_actual?: number }>)
+        );
+        queryClient.setQueryData(["dashboard", "productos", activeEstablishmentId], (old) =>
+          applyDelta(((old as Array<{ id: string; stock_actual?: number }> | undefined) ?? []) as Array<{ id: string; stock_actual?: number }>)
+        );
       }
 
       // 2) Actualizar pedido_items sumando lo recibido hoy.
