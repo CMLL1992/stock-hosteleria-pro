@@ -13,6 +13,8 @@ export type DashboardProducto = {
   /** Coste del envase unido desde `envases_catalogo` (si disponible). */
   envase_coste?: number | null;
   stock_actual: number;
+  /** Unidades pendientes por recibir (pedidos pendiente/parcial). */
+  unidades_pendientes?: number;
   stock_minimo: number;
   stock_vacios: number;
   unidad: string | null;
@@ -52,6 +54,7 @@ export function normalizeProductoRow(raw: Record<string, unknown>, tituloKey?: s
     envase_catalogo_id: raw.envase_catalogo_id != null ? String(raw.envase_catalogo_id).trim() : null,
     envase_coste: Number.isFinite(coste as number) ? (coste as number) : null,
     stock_actual: toIntStock(raw.stock_actual, 0),
+    unidades_pendientes: 0,
     stock_minimo: toIntStock(raw.stock_minimo, 0),
     stock_vacios: toIntStock(raw.stock_vacios, 0),
     unidad: raw.unidad != null && String(raw.unidad).trim() !== "" ? String(raw.unidad).trim() : null,
@@ -80,7 +83,45 @@ export async function fetchDashboardProductos(establecimientoId: string): Promis
     .order(t, { ascending: true });
 
   if (!error) {
-    return ((data ?? []) as unknown as Record<string, unknown>[]).map((r) => normalizeProductoRow(r, t));
+    const base = ((data ?? []) as unknown as Record<string, unknown>[]).map((r) => normalizeProductoRow(r, t));
+    // Enriquecer con unidades pendientes de pedidos (pendiente/parcial) para valoración contable.
+    // Si las tablas pedidos/pedido_items no existen, no bloqueamos.
+    try {
+      const { data: pedidos, error: pErr } = await supabase()
+        .from("pedidos")
+        .select("id")
+        .eq("establecimiento_id", establecimientoId)
+        .in("estado", ["pendiente", "parcial"])
+        .limit(500);
+      if (pErr) throw pErr;
+      const ids = ((pedidos ?? []) as unknown as Array<Record<string, unknown>>)
+        .map((r) => String(r.id ?? "").trim())
+        .filter(Boolean);
+      if (!ids.length) return base;
+
+      const { data: items, error: iErr } = await supabase()
+        .from("pedido_items")
+        .select("pedido_id,producto_id,cantidad_pedida,cantidad_recibida")
+        .eq("establecimiento_id", establecimientoId)
+        .in("pedido_id", ids)
+        .limit(5000);
+      if (iErr) throw iErr;
+
+      const pend = new Map<string, number>();
+      for (const it of ((items ?? []) as unknown as Array<Record<string, unknown>>)) {
+        const pid = String(it.producto_id ?? "").trim();
+        if (!pid) continue;
+        const ped = toIntStock(it.cantidad_pedida, 0);
+        const rec = toIntStock(it.cantidad_recibida, 0);
+        const faltan = Math.max(0, ped - rec);
+        if (faltan <= 0) continue;
+        pend.set(pid, (pend.get(pid) ?? 0) + faltan);
+      }
+
+      return base.map((p) => ({ ...p, unidades_pendientes: pend.get(p.id) ?? 0 }));
+    } catch {
+      return base;
+    }
   }
 
   const msg = (error as { message?: string }).message?.toLowerCase?.() ?? "";

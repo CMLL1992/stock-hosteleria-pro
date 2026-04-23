@@ -148,7 +148,10 @@ export function DashboardClient() {
       const descTipo = esc?.descuento_tipo ?? "%";
       const afterDesc = descTipo === "%" ? tarifa * (1 - descVal / 100) : tarifa - descVal;
       const coste = Math.max(0, afterDesc - rappel);
-      const qty = Math.max(0, Number(p.stock_actual ?? 0) || 0);
+      // Contabilidad SaaS: el valor de stock solo refleja stock físico.
+      // Excluimos unidades pendientes de pedidos (pendiente/parcial) hasta que existan movimientos de entrada.
+      const pendientes = Math.max(0, Number((p as { unidades_pendientes?: unknown }).unidades_pendientes ?? 0) || 0);
+      const qty = Math.max(0, (Number(p.stock_actual ?? 0) || 0) - pendientes);
       total += qty * coste;
     }
     return total;
