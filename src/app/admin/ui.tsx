@@ -78,7 +78,8 @@ const SECTIONS: AdminSection[] = [
         id: "importar-csv",
         href: "/admin/importar-csv",
         title: "Importar CSV",
-        subtitle: "Carga masiva con validador (;)."
+        subtitle: "Carga masiva con validador (;).",
+        superadminOnly: true
       },
       {
         id: "escandallos",

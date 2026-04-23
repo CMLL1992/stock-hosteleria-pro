@@ -9,6 +9,7 @@ import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { MobileHeader } from "@/components/MobileHeader";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { hasPermission } from "@/lib/permissions";
+import { DangerConfirmModal } from "@/components/ui/DangerConfirmModal";
 
 function normalizeWhatsappPhone(input: string): string {
   const trimmed = input.trim();
@@ -38,6 +39,8 @@ export default function EditarProveedorPage({ params }: { params: { id: string }
   const [telefono, setTelefono] = useState("");
   const [categoria, setCategoria] = useState("");
   const [notas, setNotas] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -141,23 +144,23 @@ export default function EditarProveedorPage({ params }: { params: { id: string }
       );
       return;
     }
-    const ok = window.confirm(`¿Eliminar el proveedor "${prov.nombre}"?`);
-    if (!ok) return;
     setErr(null);
-    const { error, count } = await supabase()
-      .from("proveedores")
-      .delete({ count: "exact" })
-      .eq("id", prov.id)
-      .eq("establecimiento_id", prov.establecimiento_id || activeEstablishmentId);
-    if (error) {
-      setErr(error.message);
-      return;
+    setDeleting(true);
+    try {
+      const { data, error } = await supabase().rpc("delete_proveedor_safe", { p_proveedor_id: prov.id });
+      if (error) throw error;
+      const okRes = ((data ?? null) as { ok?: boolean; message?: string } | null)?.ok ?? false;
+      if (!okRes) {
+        const msg = ((data ?? null) as { message?: string } | null)?.message ?? "No se pudo eliminar el proveedor.";
+        throw new Error(msg);
+      }
+      window.location.href = "/admin/proveedores";
+    } catch (e) {
+      setErr(supabaseErrToString(e));
+    } finally {
+      setDeleting(false);
+      setConfirmDelete(false);
     }
-    if (!count) {
-      setErr("No se pudo eliminar: proveedor no encontrado en el establecimiento activo o sin permisos.");
-      return;
-    }
-    window.location.href = "/admin/proveedores";
   }
 
   if (loading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
@@ -175,6 +178,22 @@ export default function EditarProveedorPage({ params }: { params: { id: string }
       <MobileHeader title="Editar proveedor" showBack backHref="/admin/proveedores" />
       <main className="mx-auto max-w-md bg-slate-50 p-4 pb-28 text-slate-900">
         <h1 className="mb-3 text-xl font-semibold">Editar proveedor</h1>
+
+      <DangerConfirmModal
+        open={confirmDelete}
+        title="Eliminar proveedor"
+        description={prov ? `Vas a borrar "${prov.nombre}". Esta acción es irreversible.` : "Acción irreversible."}
+        confirmLabel="Eliminar"
+        keyword="BORRAR"
+        busy={deleting}
+        onClose={() => {
+          if (deleting) return;
+          setConfirmDelete(false);
+        }}
+        onConfirm={async () => {
+          await borrar();
+        }}
+      />
 
       {err ? (
         <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
@@ -228,7 +247,7 @@ export default function EditarProveedorPage({ params }: { params: { id: string }
           type="button"
           className="min-h-12 w-full rounded-2xl border border-red-200 bg-red-50 px-4 text-sm font-semibold text-red-800 hover:bg-red-100"
           onClick={() => {
-            void borrar();
+            setConfirmDelete(true);
           }}
         >
           Eliminar proveedor…

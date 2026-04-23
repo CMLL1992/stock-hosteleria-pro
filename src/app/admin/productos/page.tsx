@@ -22,6 +22,7 @@ import { updateProductoCategoriaCompat } from "@/lib/productoWriteCompat";
 import { enqueueMovimiento, newClientUuid } from "@/lib/offlineQueue";
 import { requireUserId } from "@/lib/session";
 import { useCambiosGlobalesRealtime } from "@/lib/useCambiosGlobalesRealtime";
+import { DangerConfirmModal } from "@/components/ui/DangerConfirmModal";
 
 type ProveedorOpt = { id: string; nombre: string };
 
@@ -322,6 +323,8 @@ export default function AdminProductosPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [editing, setEditing] = useState<ProductoRow | null>(null);
   const [busyDeltaId, setBusyDeltaId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ProductoRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [proveedoresOpts, setProveedoresOpts] = useState<ProveedorOpt[]>([]);
   const [stockQuickDraft, setStockQuickDraft] = useState<Record<string, string>>({});
 
@@ -654,9 +657,8 @@ export default function AdminProductosPage() {
 
   async function onDelete(p: ProductoRow) {
     if (!activeEstablishmentId) return;
-    const ok = window.confirm(`¿Eliminar "${p.articulo}"? Esta acción no se puede deshacer.`);
-    if (!ok) return;
     try {
+      setDeleting(true);
       setErr(null);
       const { data, error } = await supabase().rpc("delete_producto_cascade", { p_producto_id: p.id });
       if (error) throw error;
@@ -672,6 +674,9 @@ export default function AdminProductosPage() {
     } catch (e) {
       setErr(supabaseErrToString(e));
       setToast({ kind: "error", message: "No se pudo eliminar el producto." });
+    } finally {
+      setDeleting(false);
+      setDeleteTarget(null);
     }
   }
 
@@ -736,6 +741,27 @@ export default function AdminProductosPage() {
         {err ? (
           <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{err}</p>
         ) : null}
+
+        <DangerConfirmModal
+          open={!!deleteTarget}
+          title="Eliminar producto"
+          description={
+            deleteTarget
+              ? `Vas a borrar "${deleteTarget.articulo}". Esta acción no se puede deshacer.`
+              : null
+          }
+          confirmLabel="Eliminar"
+          keyword="BORRAR"
+          busy={deleting}
+          onClose={() => {
+            if (deleting) return;
+            setDeleteTarget(null);
+          }}
+          onConfirm={async () => {
+            if (!deleteTarget) return;
+            await onDelete(deleteTarget);
+          }}
+        />
 
         <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
           <div className="sm:col-span-2">
@@ -869,7 +895,7 @@ export default function AdminProductosPage() {
         }}
         onSave={onSave}
         onDelete={() => {
-          if (editing) void onDelete(editing);
+          if (editing) setDeleteTarget(editing);
         }}
       />
       <ToastView toast={toast} onClose={() => setToast(null)} />

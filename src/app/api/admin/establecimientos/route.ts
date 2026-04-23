@@ -8,15 +8,57 @@ type Body = { nombre?: string; plan_suscripcion?: string; logo_url?: string | nu
 type DeleteBody = { id?: string };
 
 /**
- * Orden: movimientos → productos → proveedores → usuarios (public) → auth por usuario → establecimiento.
+ * Orden (robusto): borrar tablas dependientes por establecimiento antes del establecimiento.
+ *
+ * Nota:
+ * - No dependemos de ON DELETE CASCADE.
+ * - Todas las operaciones están filtradas por establecimientoId (o id) para borrar SOLO el establecimiento elegido.
  * FKs en public suelen ser restrict al establecimiento; evitamos depender de ON DELETE CASCADE.
  */
 async function deleteEstablecimientoCascade(
   service: SupabaseClient,
   establecimientoId: string
 ): Promise<{ ok: true } | { ok: false; message: string }> {
+  // 0) Pedido items + pedidos (si existen)
+  try {
+    const pi = await service.from("pedido_items").delete().eq("establecimiento_id", establecimientoId);
+    if (pi.error) return { ok: false, message: pi.error.message };
+  } catch {
+    // ignore: tabla puede no existir en algunos entornos
+  }
+  try {
+    const ped = await service.from("pedidos").delete().eq("establecimiento_id", establecimientoId);
+    if (ped.error) return { ok: false, message: ped.error.message };
+  } catch {
+    // ignore
+  }
+
+  // 1) Stock movimientos (si existe)
+  try {
+    const sm = await service.from("stock_movimientos").delete().eq("establecimiento_id", establecimientoId);
+    if (sm.error) return { ok: false, message: sm.error.message };
+  } catch {
+    // ignore
+  }
+
   const m = await service.from("movimientos").delete().eq("establecimiento_id", establecimientoId);
   if (m.error) return { ok: false, message: m.error.message };
+
+  // 2) Catálogo de envases (si existe)
+  try {
+    const env = await service.from("envases_catalogo").delete().eq("establecimiento_id", establecimientoId);
+    if (env.error) return { ok: false, message: env.error.message };
+  } catch {
+    // ignore
+  }
+
+  // 3) Escandallos (si existe)
+  try {
+    const esc = await service.from("escandallos").delete().eq("establecimiento_id", establecimientoId);
+    if (esc.error) return { ok: false, message: esc.error.message };
+  } catch {
+    // ignore
+  }
 
   const p = await service.from("productos").delete().eq("establecimiento_id", establecimientoId);
   if (p.error) return { ok: false, message: p.error.message };

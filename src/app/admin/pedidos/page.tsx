@@ -16,6 +16,8 @@ import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { Search } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useCambiosGlobalesRealtime } from "@/lib/useCambiosGlobalesRealtime";
+import { useQueryClient } from "@tanstack/react-query";
 
 type ProveedorRow = {
   id: string;
@@ -130,6 +132,7 @@ function readEvtValue(
 
 export default function PedidosPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [role, setRole] = useState<AppRole | null>(null);
   const canAccessRecepcion = hasPermission(role, "staff");
   const canAccessPedidosAdmin = hasPermission(role, "admin");
@@ -200,6 +203,23 @@ export default function PedidosPage() {
     if (!canAccessRecepcion && !canAccessPedidosAdmin) return;
     refresh();
   }, [canAccessPedidosAdmin, canAccessRecepcion, refresh]);
+
+  // Realtime: si cambia catálogo/pedidos en este establecimiento, refresca datos.
+  useCambiosGlobalesRealtime({
+    establecimientoId: activeEstablishmentId,
+    queryClient,
+    queryKeys: [
+      ["productos", activeEstablishmentId],
+      ["dashboard", "productos", activeEstablishmentId],
+      ["pedidos", activeEstablishmentId],
+      ["movimientos", activeEstablishmentId]
+    ],
+    onChange: () => {
+      if (!canAccessRecepcion && !canAccessPedidosAdmin) return;
+      void refresh();
+    },
+    tables: ["productos", "pedidos", "movimientos"]
+  });
 
   // FASE 2: al volver a la app tras WhatsApp, preguntamos si se envió correctamente.
   useEffect(() => {

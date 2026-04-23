@@ -1,5 +1,6 @@
 -- Delete product safely (cascade in app logic) to avoid FK violations (23503).
--- Deletes movimientos + escandallos rows for a given producto_id, then deletes the product.
+-- Deletes dependent rows (pedido_items / movimientos / stock_movimientos / escandallos) for a given producto_id,
+-- then deletes the product.
 -- SECURITY DEFINER: bypass RLS for consistent cleanup.
 
 create or replace function public.delete_producto_cascade(p_producto_id uuid)
@@ -49,6 +50,20 @@ begin
 
   -- 1) Movimientos (incluye compras/pedidos/vacíos)
   delete from public.movimientos m where m.producto_id = p_producto_id;
+
+  -- 1.1) Stock movimientos (si existe)
+  begin
+    delete from public.stock_movimientos sm where sm.producto_id = p_producto_id;
+  exception when undefined_table then
+    null;
+  end;
+
+  -- 1.2) Líneas de pedidos (si existe; evita FK restrict)
+  begin
+    delete from public.pedido_items pi where pi.producto_id = p_producto_id;
+  exception when undefined_table then
+    null;
+  end;
 
   -- 2) Escandallos (si existe)
   begin

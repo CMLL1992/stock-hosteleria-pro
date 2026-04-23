@@ -13,6 +13,7 @@ import { createIdbPersister } from "@/lib/queryPersist";
 import { Footer } from "@/components/Footer";
 import { CookieBanner } from "@/components/CookieBanner";
 import { SessionGuard } from "@/components/SessionGuard";
+import { GlobalRealtimeSync } from "@/components/GlobalRealtimeSync";
 
 export function Providers({ children }: { children: ReactNode }) {
   const [persister] = useState(() => createIdbPersister());
@@ -44,6 +45,7 @@ export function Providers({ children }: { children: ReactNode }) {
       <AuthQuerySync />
       <AuthBootstrap />
       <SessionGuard />
+      <GlobalRealtimeSync />
       <OfflineSync />
       <div className="min-h-dvh bg-slate-50 pb-[calc(env(safe-area-inset-bottom)+6.5rem)] text-slate-900">
         {children}

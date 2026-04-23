@@ -154,7 +154,7 @@ function downloadTemplate() {
 
 export default function ImportarCsvPage() {
   const [role, setRole] = useState<AppRole | null>(null);
-  const canManage = hasPermission(role, "admin");
+  const canManage = hasPermission(role, "superadmin");
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const { activeEstablishmentId } = useActiveEstablishment();
@@ -332,7 +332,9 @@ export default function ImportarCsvPage() {
       ...tituloWritePayload(col, articuloVal),
       categoria,
       unidad,
-      stock_actual: parseFloat(String(r.stock_actual)) || 0,
+      // Emergencia / reconstrucción: siempre empezamos con stock 0.
+      // El stock real se reconstruye vía Recepción (deltas) en el flujo nuevo.
+      stock_actual: 0,
       stock_minimo: parseFloat(String(r.stock_minimo)) || 0,
       establecimiento_id: activeId,
       proveedor_id: null,
@@ -409,7 +411,7 @@ export default function ImportarCsvPage() {
   if (!canManage) {
     return (
       <main className="mx-auto max-w-md p-4">
-        <h1 className="text-xl font-semibold">Importar CSV (Admin)</h1>
+        <h1 className="text-xl font-semibold">Importar CSV (Superadmin)</h1>
         <p className="mt-2 text-sm text-slate-600">Acceso denegado.</p>
       </main>
     );

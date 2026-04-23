@@ -13,6 +13,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 import { requireUserId } from "@/lib/session";
 import { Camera } from "lucide-react";
+import { useCambiosGlobalesRealtime } from "@/lib/useCambiosGlobalesRealtime";
+import { DangerConfirmModal } from "@/components/ui/DangerConfirmModal";
 
 type PedidoEstado = "pendiente" | "parcial" | "recibido" | "finalizado";
 
@@ -58,6 +60,7 @@ export default function RecepcionPedidosPage() {
   const role = getEffectiveRole(me ?? null);
   const canReceive = hasPermission(role, "staff");
   const canAdmin = hasPermission(role, "admin");
+  const isSuperadmin = !!me?.isSuperadmin;
 
   const { activeEstablishmentId } = useActiveEstablishment();
   const queryClient = useQueryClient();
@@ -72,6 +75,7 @@ export default function RecepcionPedidosPage() {
   const [items, setItems] = useState<PedidoItemRow[]>([]);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false); // usado para acciones "globales" (cerrar/eliminar/albarán)
+  const [confirmDeletePedido, setConfirmDeletePedido] = useState(false);
 
   const [uploadingAlbaran, setUploadingAlbaran] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
@@ -174,6 +178,24 @@ export default function RecepcionPedidosPage() {
     if (!canReceive) return;
     void refresh();
   }, [canReceive, refresh]);
+
+  // Realtime: cambios en pedidos/productos/movimientos deben refrescar listado/detalle.
+  useCambiosGlobalesRealtime({
+    establecimientoId: activeEstablishmentId,
+    queryClient,
+    queryKeys: [
+      ["productos", activeEstablishmentId],
+      ["dashboard", "productos", activeEstablishmentId],
+      ["movimientos", activeEstablishmentId],
+      ["pedidos", activeEstablishmentId]
+    ],
+    onChange: () => {
+      if (!canReceive) return;
+      void refresh();
+      if (sel) void openPedido(sel);
+    },
+    tables: ["productos", "pedidos", "movimientos"]
+  });
 
   async function openPedido(p: PedidoRow) {
     if (!activeEstablishmentId) return;
@@ -370,17 +392,10 @@ export default function RecepcionPedidosPage() {
 
   async function eliminarPedido() {
     if (!activeEstablishmentId || !sel) return;
-    if (!canAdmin) {
-      setErr("Solo Admin/Superadmin puede eliminar pedidos.");
+    if (!isSuperadmin) {
+      setErr("Solo Superadmin puede eliminar pedidos.");
       return;
     }
-    const yaConEntradas = items.some((it) => Math.max(0, toInt(it.cantidad_recibida)) > 0);
-    const ok = window.confirm(
-      yaConEntradas
-        ? "Atención: Ya has registrado entrada de género.\n\n¿Seguro que quieres eliminar el pedido?\nSe borrará el pedido y sus líneas (NO se revierte el stock)."
-        : "¿Eliminar pedido?\n\nSe borrará el pedido y sus líneas. Esta acción no se puede deshacer."
-    );
-    if (!ok) return;
     setErr(null);
     setOkMsg(null);
     setSaving(true);
@@ -545,6 +560,26 @@ export default function RecepcionPedidosPage() {
         }}
       >
         <div className="space-y-3 pb-4">
+          <DangerConfirmModal
+            open={confirmDeletePedido}
+            title="Eliminar pedido completo"
+            description={
+              sel
+                ? `Vas a borrar el pedido de "${sel.proveedor_nombre}". Esta acción es irreversible.\n\nEscribe BORRAR para confirmar.`
+                : "Escribe BORRAR para confirmar."
+            }
+            confirmLabel="Eliminar"
+            keyword="BORRAR"
+            busy={saving}
+            onClose={() => {
+              if (saving) return;
+              setConfirmDeletePedido(false);
+            }}
+            onConfirm={async () => {
+              await eliminarPedido();
+              setConfirmDeletePedido(false);
+            }}
+          />
           {items.length === 0 ? (
             <p className="text-sm text-slate-600">No hay líneas.</p>
           ) : (
@@ -612,10 +647,10 @@ export default function RecepcionPedidosPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => void eliminarPedido()}
-                  disabled={saving || !sel || !canAdmin}
+                  onClick={() => setConfirmDeletePedido(true)}
+                  disabled={saving || !sel || !isSuperadmin}
                   className="min-h-12 w-full rounded-3xl border border-red-200 bg-red-50 px-4 text-sm font-extrabold text-red-800 hover:bg-red-100 disabled:opacity-50"
-                  title={!canAdmin ? "Solo Admin/Superadmin" : "Borra el pedido y sus líneas"}
+                  title={!isSuperadmin ? "Solo Superadmin" : "Borra el pedido y sus líneas"}
                 >
                   Eliminar pedido completo
                 </button>
