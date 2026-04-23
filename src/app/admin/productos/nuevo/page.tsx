@@ -19,6 +19,7 @@ import {
 import { insertProductoCategoriaCompat } from "@/lib/productoWriteCompat";
 import { resolveProductoTituloColumn, tituloWritePayload } from "@/lib/productosTituloColumn";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
+import { requireUserId } from "@/lib/session";
 
 type Proveedor = { id: string; nombre: string; telefono_whatsapp: string | null };
 type EnvaseOpt = { id: string; nombre: string; coste: number };
@@ -135,7 +136,7 @@ export default function NuevoProductoPage() {
 
     const { error } = await insertProductoCategoriaCompat(
       async (fields) => {
-        const r = await supabase().from("productos").insert(fields);
+        const r = await supabase().from("productos").insert(fields).select("id").maybeSingle();
         return { error: r.error };
       },
       row
@@ -145,6 +146,43 @@ export default function NuevoProductoPage() {
       setErr(supabaseErrToString(error));
       return;
     }
+
+    // Stock inicial: registrar primer movimiento en stock_movimientos (best-effort pero con error visible).
+    if (sa > 0) {
+      try {
+        const usuarioId = await requireUserId();
+        const prodId = String((row as { id?: unknown }).id ?? "").trim();
+        // Si no tenemos id en payload (normal), resolvemos por qr_code_uid + establecimiento (único por producto).
+        const pid =
+          prodId ||
+          String(
+            (
+              await supabase()
+                .from("productos")
+                .select("id")
+                .eq("establecimiento_id", activeEstablishmentId)
+                .eq("qr_code_uid", uid)
+                .maybeSingle()
+            ).data?.id ?? ""
+          ).trim();
+        if (pid) {
+          const smIns = await supabase().from("stock_movimientos").insert({
+            producto_id: pid,
+            establecimiento_id: activeEstablishmentId,
+            usuario_id: usuarioId,
+            tipo: "entrada",
+            cantidad: sa
+          } as unknown as Record<string, unknown>);
+          if (smIns.error) throw smIns.error;
+        }
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error("Error registrando stock inicial en stock_movimientos:", e);
+        setErr(supabaseErrToString(e));
+        return;
+      }
+    }
+
     // Redirección limpia sin “saltos” de scroll por recarga completa.
     router.replace("/admin/productos?toast=guardado");
   }
