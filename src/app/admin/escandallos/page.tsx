@@ -211,9 +211,7 @@ export default function EscandallosPage() {
 
   const [items, setItems] = useState<ProductoRow[]>([]);
   const [proveedores, setProveedores] = useState<ProveedorRow[]>([]);
-  const { activeEstablishmentId, isSuperadmin, activeEstablishmentName } = useActiveEstablishment();
-  const [fixing, setFixing] = useState(false);
-  const [fixOk, setFixOk] = useState<string | null>(null);
+  const { activeEstablishmentId } = useActiveEstablishment();
 
   // Selector de consulta (evita lista infinita)
   const [verId, setVerId] = useState<string>("");
@@ -354,30 +352,6 @@ export default function EscandallosPage() {
       void load();
     }
   });
-
-  async function fixEscandallosSinEstablecimiento() {
-    if (!isSuperadmin) return;
-    if (!activeEstablishmentId) return;
-    setErr(null);
-    setFixOk(null);
-    setFixing(true);
-    try {
-      const { error } = await supabase()
-        .from("escandallos")
-        .update({ establecimiento_id: activeEstablishmentId })
-        .is("establecimiento_id", null);
-      if (error) throw error;
-      setFixOk(
-        `Fix aplicado: escandallos sin establecimiento vinculados a ${activeEstablishmentName ?? "establecimiento activo"}.`
-      );
-      await load();
-      setTimeout(() => setFixOk(null), 2500);
-    } catch (e) {
-      setErr(supabaseErrToString(e));
-    } finally {
-      setFixing(false);
-    }
-  }
 
   useEffect(() => {
     if (!canSeeFinance) return;
@@ -572,17 +546,6 @@ export default function EscandallosPage() {
           >
             Nuevo (Cocina)
           </Link>
-          {isSuperadmin ? (
-            <Button
-              type="button"
-              className="min-h-11"
-              onClick={() => void fixEscandallosSinEstablecimiento()}
-              disabled={fixing || !activeEstablishmentId}
-              title="Vincula escandallos sin establecimiento al establecimiento activo"
-            >
-              {fixing ? "Aplicando fix…" : "Fix escandallos (NULL)"}
-            </Button>
-          ) : null}
           <input
             ref={fileRef}
             type="file"
@@ -715,11 +678,6 @@ export default function EscandallosPage() {
         </div>
       </div>
 
-      {fixOk ? (
-        <p className="mb-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-900">
-          {fixOk}
-        </p>
-      ) : null}
       {err ? (
         <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{err}</p>
       ) : null}
