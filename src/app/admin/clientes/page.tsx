@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { MobileHeader } from "@/components/MobileHeader";
-import { ConfirmModal } from "@/components/ui/ConfirmModal";
+import { DangerConfirmModal } from "@/components/ui/DangerConfirmModal";
 import { deleteAdminEstablecimiento } from "@/lib/adminApi";
 import { fetchAdminEstablecimientosList } from "@/lib/fetchAdminEstablecimientos";
 import { supabase } from "@/lib/supabase";
@@ -300,16 +300,18 @@ export default function AdminClientesPage() {
         </div>
       </main>
 
-      <ConfirmModal
+      <DangerConfirmModal
         open={!!confirmDeleteEst}
         title="Eliminar establecimiento"
-        message={
-          "ATENCIÓN: Se borrará el establecimiento y todos sus datos asociados (usuarios, productos, movimientos, proveedores). ¿Deseas continuar?"
+        description={
+          confirmDeleteEst
+            ? `ATENCIÓN: Se borrará el establecimiento "${confirmDeleteEst.nombre}" y todos sus datos asociados.\n\nEscribe BORRAR para confirmar.`
+            : "ATENCIÓN: Se borrará el establecimiento y todos sus datos asociados.\n\nEscribe BORRAR para confirmar."
         }
         confirmLabel="Sí, eliminar todo"
-        danger
+        keyword="BORRAR"
         busy={busy}
-        onCancel={() => setConfirmDeleteEst(null)}
+        onClose={() => setConfirmDeleteEst(null)}
         onConfirm={ejecutarBorrarEstablecimiento}
       />
     </div>
