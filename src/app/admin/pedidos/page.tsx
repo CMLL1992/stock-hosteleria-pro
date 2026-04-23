@@ -12,10 +12,10 @@ import { IconWhatsApp } from "@/components/IconWhatsApp";
 import { waUrlPedidoAgrupadoProveedor } from "@/lib/whatsappPedido";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 import { requireUserId } from "@/lib/session";
-import { enqueueMovimiento, newClientUuid } from "@/lib/offlineQueue";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { Search } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 type ProveedorRow = {
   id: string;
@@ -129,6 +129,7 @@ function readEvtValue(
 }
 
 export default function PedidosPage() {
+  const router = useRouter();
   const [role, setRole] = useState<AppRole | null>(null);
   const canAccessRecepcion = hasPermission(role, "staff");
   const canAccessPedidosAdmin = hasPermission(role, "admin");
@@ -141,6 +142,11 @@ export default function PedidosPage() {
   const [qty, setQty] = useState<Record<string, string>>({});
   const [search, setSearch] = useState<Record<string, string>>({});
   const [sending, setSending] = useState<string | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<null | {
+    proveedor: ProveedorRow;
+    lineas: Array<{ producto_id: string; articulo: string; unidad: string | null; cantidad: number }>;
+    urlWa: string;
+  }>(null);
 
   const { activeEstablishmentId, activeEstablishmentName } = useActiveEstablishment();
   const nombreLocal = activeEstablishmentName?.trim() || "Piqui Blinders";
@@ -195,6 +201,58 @@ export default function PedidosPage() {
     refresh();
   }, [canAccessPedidosAdmin, canAccessRecepcion, refresh]);
 
+  // FASE 2: al volver a la app tras WhatsApp, preguntamos si se envió correctamente.
+  useEffect(() => {
+    function readPending(): null | {
+      estId: string;
+      proveedor: ProveedorRow;
+      lineas: Array<{ producto_id: string; articulo: string; unidad: string | null; cantidad: number }>;
+      urlWa: string;
+    } {
+      try {
+        const raw = sessionStorage.getItem("ops_pending_whatsapp_pedido");
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as {
+          estId?: unknown;
+          proveedor?: unknown;
+          lineas?: unknown;
+          urlWa?: unknown;
+        };
+        if (!parsed?.estId || !parsed?.proveedor || !parsed?.lineas || !parsed?.urlWa) return null;
+        return {
+          estId: String(parsed.estId),
+          proveedor: parsed.proveedor as ProveedorRow,
+          lineas: parsed.lineas as Array<{ producto_id: string; articulo: string; unidad: string | null; cantidad: number }>,
+          urlWa: String(parsed.urlWa)
+        };
+      } catch {
+        return null;
+      }
+    }
+
+    function maybePrompt() {
+      const p = readPending();
+      if (!p) return;
+      if (!activeEstablishmentId) return;
+      if (String(p.estId) !== String(activeEstablishmentId)) return;
+      setPendingConfirm({
+        proveedor: p.proveedor,
+        lineas: p.lineas,
+        urlWa: p.urlWa
+      });
+    }
+
+    const onVis = () => {
+      if (document.visibilityState === "visible") maybePrompt();
+    };
+    window.addEventListener("focus", maybePrompt);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("focus", maybePrompt);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [activeEstablishmentId]);
+
   const sinProveedor = useMemo(
     () => productos.filter((p) => !p.proveedor_id || !proveedores.some((pr) => pr.id === p.proveedor_id)),
     [productos, proveedores]
@@ -221,11 +279,9 @@ export default function PedidosPage() {
     lineas: Array<{ producto_id: string; articulo: string; unidad: string | null; cantidad: number }>
   ) {
     if (!activeEstablishmentId) return;
-    const ts = new Date().toISOString();
     const usuario_id = await requireUserId();
 
-    // Seguimiento de pedido (cabecera + líneas) - aditivo.
-    // Si la tabla no existe aún en Supabase, no interrumpimos el flujo actual.
+    // Registro en BD (solo aquí, tras confirmar envío).
     try {
       const { data: pedido, error: pErr } = await supabase()
         .from("pedidos")
@@ -253,33 +309,6 @@ export default function PedidosPage() {
       if (itemsPayload.length) {
         const { error: iErr } = await supabase().from("pedido_items").insert(itemsPayload);
         if (iErr) throw iErr;
-      }
-
-      // Movimientos "pedido" después del registro (si fallan no bloquean el pedido ya creado).
-      for (const l of lineas) {
-        if (l.cantidad <= 0) continue;
-        const payload = {
-          client_uuid: newClientUuid(),
-          producto_id: l.producto_id,
-          establecimiento_id: activeEstablishmentId,
-          tipo: "pedido" as const,
-          cantidad: l.cantidad,
-          usuario_id,
-          timestamp: ts,
-          proveedor_id: proveedor.id
-        };
-        try {
-          if (typeof navigator !== "undefined" && navigator.onLine) {
-            const { error } = await supabase()
-              .from("movimientos")
-              .upsert(payload, { onConflict: "client_uuid", ignoreDuplicates: true });
-            if (error) throw error;
-          } else {
-            await enqueueMovimiento(payload);
-          }
-        } catch {
-          // ignore
-        }
       }
     } catch {
       // ignore
@@ -448,7 +477,6 @@ export default function PedidosPage() {
                             e.preventDefault();
                             return;
                           }
-                          e.preventDefault();
                           if (!activeEstablishmentId) return;
                           if (sending === g.id) return;
                           setSending(g.id);
@@ -462,13 +490,20 @@ export default function PedidosPage() {
                                 cantidad: parseQty(qty[p.id] ?? "")
                               }))
                               .filter((l) => l.cantidad > 0);
-
-                            // Registrar ANTES de abrir WhatsApp (ID estable, sin popup).
-                            await registrarComoPedido(
-                              { id: g.id, nombre: g.nombre, telefono_whatsapp: g.telefono_whatsapp },
-                              lineas
-                            );
-
+                            // FASE 1: NO registramos en BD. Guardamos borrador y abrimos WhatsApp.
+                            try {
+                              sessionStorage.setItem(
+                                "ops_pending_whatsapp_pedido",
+                                JSON.stringify({
+                                  estId: activeEstablishmentId,
+                                  proveedor: { id: g.id, nombre: g.nombre, telefono_whatsapp: g.telefono_whatsapp },
+                                  lineas,
+                                  urlWa
+                                })
+                              );
+                            } catch {
+                              /* ignore */
+                            }
                             window.open(urlWa, "_blank", "noopener,noreferrer");
                           } catch (err) {
                             setErr(supabaseErrToString(err));
@@ -489,6 +524,54 @@ export default function PedidosPage() {
         ) : null}
       </main>
 
+      {pendingConfirm ? (
+        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 p-4 sm:items-center">
+          <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-base font-semibold text-slate-900">¿Has enviado el pedido correctamente?</p>
+            <p className="mt-1 text-sm text-slate-600">
+              Si confirmas, guardaremos el pedido como <span className="font-semibold">pendiente</span> y podrás recepcionarlo.
+            </p>
+            <div className="mt-4 grid grid-cols-1 gap-2">
+              <button
+                type="button"
+                disabled={sending === pendingConfirm.proveedor.id}
+                onClick={async () => {
+                  if (!activeEstablishmentId) return;
+                  setSending(pendingConfirm.proveedor.id);
+                  setErr(null);
+                  try {
+                    await registrarComoPedido(pendingConfirm.proveedor, pendingConfirm.lineas);
+                    try {
+                      sessionStorage.removeItem("ops_pending_whatsapp_pedido");
+                    } catch {
+                      /* ignore */
+                    }
+                    setPendingConfirm(null);
+                    router.push("/admin/pedidos/recepcion");
+                  } catch (e) {
+                    setErr(supabaseErrToString(e));
+                  } finally {
+                    setSending(null);
+                  }
+                }}
+                className="min-h-12 w-full rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-950 disabled:opacity-50"
+              >
+                {sending === pendingConfirm.proveedor.id ? "Guardando…" : "Sí, registrar pedido"}
+              </button>
+              <button
+                type="button"
+                disabled={sending === pendingConfirm.proveedor.id}
+                onClick={() => {
+                  setPendingConfirm(null);
+                }}
+                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 hover:bg-slate-50 disabled:opacity-50"
+              >
+                No
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

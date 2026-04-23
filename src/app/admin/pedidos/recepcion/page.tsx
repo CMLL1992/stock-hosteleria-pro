@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MobileHeader } from "@/components/MobileHeader";
 import { Drawer } from "@/components/ui/Drawer";
@@ -14,7 +14,7 @@ import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTitulo
 import { requireUserId } from "@/lib/session";
 import { Camera } from "lucide-react";
 
-type PedidoEstado = "pendiente" | "parcial" | "recibido";
+type PedidoEstado = "pendiente" | "parcial" | "recibido" | "finalizado";
 
 type PedidoRow = {
   id: string;
@@ -72,11 +72,6 @@ export default function RecepcionPedidosPage() {
   const [items, setItems] = useState<PedidoItemRow[]>([]);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false); // usado para acciones "globales" (cerrar/eliminar/albarán)
-
-  type RowStatus = "idle" | "saving" | "saved" | "error";
-  const [rowStatus, setRowStatus] = useState<Record<string, RowStatus>>({});
-  const [rowDone, setRowDone] = useState<Record<string, boolean>>({});
-  const savedTimersRef = useRef<Record<string, number>>({});
 
   const [uploadingAlbaran, setUploadingAlbaran] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
@@ -216,20 +211,10 @@ export default function RecepcionPedidosPage() {
         } satisfies PedidoItemRow;
       });
       setItems(rows);
-      // UX: el input representa el TOTAL recibido (editable). El stock se carga por línea manualmente.
+      // UX: el input representa el TOTAL recibido (editable).
       setDraft(() => {
         const next: Record<string, string> = {};
         for (const it of rows) next[it.producto_id] = String(Math.max(0, toInt(it.cantidad_recibida)));
-        return next;
-      });
-      setRowDone(() => {
-        const next: Record<string, boolean> = {};
-        for (const it of rows) next[it.producto_id] = false;
-        return next;
-      });
-      setRowStatus(() => {
-        const next: Record<string, RowStatus> = {};
-        for (const it of rows) next[it.producto_id] = "idle";
         return next;
       });
     } catch (e) {
@@ -237,12 +222,12 @@ export default function RecepcionPedidosPage() {
     }
   }
 
-  async function cargarLineaStock(it: PedidoItemRow) {
+  async function registrarEntradaGenero() {
     if (!activeEstablishmentId || !sel) return;
-    if (!it?.producto_id) return;
-    if (rowStatus[it.producto_id] === "saving") return;
+    if (saving) return;
     setErr(null);
-    setRowStatus((prev) => ({ ...prev, [it.producto_id]: "saving" }));
+    setOkMsg(null);
+    setSaving(true);
     try {
       const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
       if (!uuidRe.test(String(activeEstablishmentId).trim())) {
@@ -253,83 +238,62 @@ export default function RecepcionPedidosPage() {
         throw new Error(`usuario_id inválido (no es UUID): "${String(uid)}"`);
       }
 
-      // Simplicidad absoluta:
-      // - No usamos cantidad pedida para calcular stock.
-      // - delta = total_nuevo - total_prev (en BD) y solo sumamos (nunca restamos).
-      const nuevoTotal = Math.max(0, toInt(draft[it.producto_id] ?? ""));
-      const previo = Math.max(0, toInt(it.cantidad_recibida));
-      const pedido = Math.max(0, toInt(it.cantidad_pedida)); // solo para estado visual del pedido
-      const delta = Math.max(0, nuevoTotal - previo);
-      if (delta <= 0) {
-        setRowDone((prev) => ({ ...prev, [it.producto_id]: true }));
-        setRowStatus((prev) => ({ ...prev, [it.producto_id]: "saved" }));
-        const existing = savedTimersRef.current[it.producto_id];
-        if (existing) window.clearTimeout(existing);
-        savedTimersRef.current[it.producto_id] = window.setTimeout(() => {
-          setRowStatus((prev) => ({ ...prev, [it.producto_id]: "idle" }));
-        }, 2000);
-        return;
+      // a) Delta por línea: total_nuevo - total_prev
+      const deltas = items
+        .map((it) => {
+          const nuevoTotal = Math.max(0, toInt(draft[it.producto_id] ?? ""));
+          const previo = Math.max(0, toInt(it.cantidad_recibida));
+          const delta = Math.max(0, nuevoTotal - previo);
+          return { it, nuevoTotal, previo, delta };
+        })
+        .filter((x) => x.delta > 0);
+
+      // b) Sumar delta al stock_actual
+      for (const x of deltas) {
+        const { data: prodRow, error: prodSelErr } = await supabase()
+          .from("productos")
+          .select("id,stock_actual")
+          .eq("id", x.it.producto_id)
+          .eq("establecimiento_id", activeEstablishmentId)
+          .maybeSingle();
+        if (prodSelErr) throw prodSelErr;
+        const curr = Number((prodRow as { stock_actual?: unknown } | null)?.stock_actual ?? 0) || 0;
+        const { error: prodUpErr } = await supabase()
+          .from("productos")
+          .update({ stock_actual: curr + x.delta })
+          .eq("id", x.it.producto_id)
+          .eq("establecimiento_id", activeEstablishmentId);
+        if (prodUpErr) throw prodUpErr;
       }
 
-      // 1) Stock (COALESCE) +delta
-      const { data: prodRow, error: prodSelErr } = await supabase()
-        .from("productos")
-        .select("id,stock_actual")
-        .eq("id", it.producto_id)
-        .eq("establecimiento_id", activeEstablishmentId)
-        .maybeSingle();
-      if (prodSelErr) throw prodSelErr;
-      const curr = Number((prodRow as { stock_actual?: unknown } | null)?.stock_actual ?? 0) || 0;
-      const { error: prodUpErr } = await supabase()
-        .from("productos")
-        .update({ stock_actual: curr + delta })
-        .eq("id", it.producto_id)
-        .eq("establecimiento_id", activeEstablishmentId);
-      if (prodUpErr) throw prodUpErr;
+      // c) Actualizar cantidad_recibida en pedido_items + d) registrar stock_movimientos
+      for (const x of deltas) {
+        const pedido = Math.max(0, toInt(x.it.cantidad_pedida));
+        const estadoLinea = x.nuevoTotal <= 0 ? "pendiente" : x.nuevoTotal < pedido ? "parcial" : "recibido";
+        const { error: upErr } = await supabase()
+          .from("pedido_items")
+          .update({ cantidad_recibida: x.nuevoTotal, estado: estadoLinea })
+          .eq("pedido_id", sel.id)
+          .eq("producto_id", x.it.producto_id)
+          .eq("establecimiento_id", activeEstablishmentId);
+        if (upErr) throw upErr;
 
-      // 2) pedido_items total recibido
-      const estadoLinea = nuevoTotal <= 0 ? "pendiente" : nuevoTotal < pedido ? "parcial" : "recibido";
-      const { error: upErr } = await supabase()
-        .from("pedido_items")
-        .update({ cantidad_recibida: nuevoTotal, estado: estadoLinea })
-        .eq("pedido_id", sel.id)
-        .eq("producto_id", it.producto_id)
-        .eq("establecimiento_id", activeEstablishmentId);
-      if (upErr) throw upErr;
-
-      // 3) movimiento (best-effort). Si falla, NO bloquea stock ni pedido_items.
-      try {
         const sm = await supabase().from("stock_movimientos").insert({
-          producto_id: it.producto_id,
-          cantidad: delta,
+          producto_id: x.it.producto_id,
           establecimiento_id: activeEstablishmentId,
-          usuario_id: uid,
+          cantidad: x.delta,
+          tipo: "entrada",
           pedido_id: sel.id,
-          tipo: "entrada"
+          usuario_id: uid
         } as unknown as Record<string, unknown>);
         if (sm.error) throw sm.error;
-      } catch (e) {
-        // eslint-disable-next-line no-console
-        console.warn("No se pudo insertar en stock_movimientos (se continúa):", e);
-        try {
-          const mv = await supabase().from("movimientos").insert({
-            producto_id: it.producto_id,
-            cantidad: delta,
-            tipo: "entrada",
-            establecimiento_id: activeEstablishmentId,
-            usuario_id: uid
-          } as unknown as Record<string, unknown>);
-          if (mv.error) throw mv.error;
-        } catch (e2) {
-          // eslint-disable-next-line no-console
-          console.warn("No se pudo insertar movimiento fallback (se continúa):", e2);
-        }
       }
 
       // 4) estado pedido (consecuencia)
-      const nextRows = items.map((x) =>
-        x.producto_id === it.producto_id ? { ...x, cantidad_recibida: nuevoTotal } : x
-      );
+      const nextRows = items.map((x) => ({
+        ...x,
+        cantidad_recibida: Math.max(0, toInt(draft[x.producto_id] ?? String(x.cantidad_recibida)))
+      }));
       const allReceived = nextRows.every((x) => Math.max(0, toInt(x.cantidad_recibida)) >= Math.max(0, toInt(x.cantidad_pedida)));
       const anyReceived = nextRows.some((x) => Math.max(0, toInt(x.cantidad_recibida)) > 0);
       const pedidoEstado = allReceived ? "recibido" : anyReceived ? "parcial" : "pendiente";
@@ -342,26 +306,18 @@ export default function RecepcionPedidosPage() {
         .eq("establecimiento_id", activeEstablishmentId);
       if (pedidoErr) throw pedidoErr;
 
-      // UI local: reflejar total recibido y marcar como cargado (solo si stock OK)
-      setItems((prev) => prev.map((x) => (x.producto_id === it.producto_id ? { ...x, cantidad_recibida: nuevoTotal } : x)));
-      setRowDone((prev) => ({ ...prev, [it.producto_id]: true }));
+      // UI local: reflejar totales recibidos
+      setItems(nextRows);
       setSel((prev) => (prev ? { ...prev, estado: pedidoEstado } : prev));
       setPedidos((prev) => prev.map((p) => (p.id === sel.id ? { ...p, estado: pedidoEstado } : p)));
 
       await queryClient.invalidateQueries({ queryKey: ["productos", activeEstablishmentId] });
       await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", activeEstablishmentId] });
-
-      setRowStatus((prev) => ({ ...prev, [it.producto_id]: "saved" }));
-      const existing = savedTimersRef.current[it.producto_id];
-      if (existing) window.clearTimeout(existing);
-      savedTimersRef.current[it.producto_id] = window.setTimeout(() => {
-        setRowStatus((prev) => ({ ...prev, [it.producto_id]: "idle" }));
-      }, 2000);
+      setOkMsg("Entrada registrada.");
     } catch (e) {
       // eslint-disable-next-line no-console
-      console.error("Error al cargar línea a stock:", {
+      console.error("Error al registrar entrada de género:", {
         pedido_id: sel?.id,
-        producto_id: it.producto_id,
         establecimiento_id: activeEstablishmentId,
         message: (e as { message?: unknown })?.message,
         details: (e as { details?: unknown })?.details,
@@ -369,28 +325,28 @@ export default function RecepcionPedidosPage() {
         code: (e as { code?: unknown })?.code
       });
       setErr(supabaseErrToString(e));
-      setRowStatus((prev) => ({ ...prev, [it.producto_id]: "error" }));
+    } finally {
+      setSaving(false);
     }
   }
 
-  async function cerrarPedidoDescartando() {
+  async function descartarRestanteYCerrarPedido() {
     if (!activeEstablishmentId || !sel) return;
     if (!canAdmin) {
-      setErr("Solo Admin/Superadmin puede cerrar pedidos descartando faltantes.");
+      setErr("Solo Admin/Superadmin puede descartar restante / cerrar pedidos.");
       return;
     }
     const ok = window.confirm(
-      "¿Cerrar pedido y descartar faltantes?\n\nEl pedido se marcará como RECIBIDO y desaparecerá de pendientes, aunque falten unidades."
+      "¿Descartar restante y cerrar pedido?\n\nEl pedido se archivará como FINALIZADO y desaparecerá de pendientes.\nNo se tocará el stock."
     );
     if (!ok) return;
     setErr(null);
     setOkMsg(null);
     setSaving(true);
     try {
-      const nowIso = new Date().toISOString();
       const { error: pedidoErr } = await supabase()
         .from("pedidos")
-        .update({ estado: "recibido", received_at: nowIso })
+        .update({ estado: "finalizado" })
         .eq("id", sel.id)
         .eq("establecimiento_id", activeEstablishmentId);
       if (pedidoErr) throw pedidoErr;
@@ -400,7 +356,7 @@ export default function RecepcionPedidosPage() {
       await queryClient.invalidateQueries({ queryKey: ["movimientos", activeEstablishmentId] });
       await refresh();
       router.refresh();
-      setOkMsg("Pedido cerrado (faltantes descartados).");
+      setOkMsg("Pedido finalizado (restante descartado).");
       setOpen(false);
       setSel(null);
       setItems([]);
@@ -418,20 +374,31 @@ export default function RecepcionPedidosPage() {
       setErr("Solo Admin/Superadmin puede eliminar pedidos.");
       return;
     }
+    const yaConEntradas = items.some((it) => Math.max(0, toInt(it.cantidad_recibida)) > 0);
     const ok = window.confirm(
-      "¿Eliminar pedido?\n\nSe borrará el pedido y sus líneas. Esta acción no se puede deshacer."
+      yaConEntradas
+        ? "Atención: Ya has registrado entrada de género.\n\n¿Seguro que quieres eliminar el pedido?\nSe borrará el pedido y sus líneas (NO se revierte el stock)."
+        : "¿Eliminar pedido?\n\nSe borrará el pedido y sus líneas. Esta acción no se puede deshacer."
     );
     if (!ok) return;
     setErr(null);
     setOkMsg(null);
     setSaving(true);
     try {
-      const { error: delErr } = await supabase()
+      // Primero borramos líneas (evita fallos si no hay cascade).
+      const { error: delItemsErr } = await supabase()
+        .from("pedido_items")
+        .delete()
+        .eq("pedido_id", sel.id)
+        .eq("establecimiento_id", activeEstablishmentId);
+      if (delItemsErr) throw delItemsErr;
+
+      const { error: delPedidoErr } = await supabase()
         .from("pedidos")
         .delete()
         .eq("id", sel.id)
         .eq("establecimiento_id", activeEstablishmentId);
-      if (delErr) throw delErr;
+      if (delPedidoErr) throw delPedidoErr;
 
       await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", activeEstablishmentId] });
       await queryClient.invalidateQueries({ queryKey: ["productos", activeEstablishmentId] });
@@ -589,7 +556,7 @@ export default function RecepcionPedidosPage() {
               <ul className="flex flex-col gap-2">
                 {items.map((it) => (
                   <li key={it.producto_id} className="rounded-2xl border border-slate-200 bg-white p-3">
-                    <div className="grid grid-cols-[1fr_96px_110px] items-center gap-2">
+                    <div className="grid grid-cols-[1fr_96px] items-center gap-2">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-bold text-slate-900">{it.articulo}</p>
                         <p className="mt-0.5 text-xs text-slate-600">
@@ -619,47 +586,40 @@ export default function RecepcionPedidosPage() {
                         disabled={saving}
                         aria-label={`Cantidad total recibida para ${it.articulo}`}
                       />
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => void cargarLineaStock(it)}
-                          disabled={saving || rowStatus[it.producto_id] === "saving"}
-                          className={[
-                            "min-h-12 rounded-2xl px-3 text-sm font-extrabold transition",
-                            rowDone[it.producto_id]
-                              ? "border border-emerald-200 bg-emerald-50 text-emerald-900"
-                              : "border border-slate-200 bg-white text-slate-900 hover:bg-slate-50",
-                            rowStatus[it.producto_id] === "saving" ? "opacity-60" : ""
-                          ].join(" ")}
-                        >
-                          {rowStatus[it.producto_id] === "saving" ? "Cargando…" : rowDone[it.producto_id] ? "✅" : "Cargar"}
-                        </button>
-                      </div>
                     </div>
                   </li>
                 ))}
               </ul>
 
-              {sel?.estado === "parcial" && canAdmin ? (
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => void cerrarPedidoDescartando()}
-                    disabled={saving || !sel}
-                    className="min-h-12 w-full rounded-3xl border border-amber-200 bg-amber-50 px-4 text-sm font-extrabold text-amber-900 hover:bg-amber-100 disabled:opacity-50"
-                  >
-                    Cerrar pedido (descartar)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void eliminarPedido()}
-                    disabled={saving || !sel}
-                    className="min-h-12 w-full rounded-3xl border border-red-200 bg-red-50 px-4 text-sm font-extrabold text-red-800 hover:bg-red-100 disabled:opacity-50"
-                  >
-                    Eliminar pedido
-                  </button>
-                </div>
-              ) : null}
+              <button
+                type="button"
+                onClick={() => void registrarEntradaGenero()}
+                disabled={saving || !sel || items.length === 0}
+                className="min-h-14 w-full rounded-3xl bg-emerald-500 px-4 text-base font-extrabold text-white shadow-md hover:bg-emerald-600 disabled:opacity-50"
+              >
+                {saving ? "Registrando…" : "Registrar Entrada de Género"}
+              </button>
+
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => void descartarRestanteYCerrarPedido()}
+                  disabled={saving || !sel || !canAdmin}
+                  className="min-h-12 w-full rounded-3xl border border-amber-200 bg-amber-50 px-4 text-sm font-extrabold text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                  title={!canAdmin ? "Solo Admin/Superadmin" : "Archiva el pedido sin tocar stock"}
+                >
+                  Descartar restante / Cerrar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void eliminarPedido()}
+                  disabled={saving || !sel || !canAdmin}
+                  className="min-h-12 w-full rounded-3xl border border-red-200 bg-red-50 px-4 text-sm font-extrabold text-red-800 hover:bg-red-100 disabled:opacity-50"
+                  title={!canAdmin ? "Solo Admin/Superadmin" : "Borra el pedido y sus líneas"}
+                >
+                  Eliminar pedido completo
+                </button>
+              </div>
               <p className="text-center text-xs text-slate-500">
                 Se generan movimientos <span className="font-mono">entrada</span> solo por cantidades &gt; 0 (lo que llega hoy).
               </p>
