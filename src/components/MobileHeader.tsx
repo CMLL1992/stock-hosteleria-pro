@@ -156,90 +156,94 @@ export function MobileHeader({
       </div>
 
       {perfilOpen ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
-          <div className="w-full max-w-lg rounded-2xl bg-white p-4 shadow-xl">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-slate-900">Mi perfil</p>
-                <p className="mt-0.5 text-xs text-slate-500">Edita tu nombre (tabla `usuarios`).</p>
+        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/40 p-4 sm:items-center">
+          <div className="w-[90%] max-w-md rounded-2xl bg-white shadow-xl">
+            <div className="flex max-h-[85vh] flex-col overflow-hidden rounded-2xl">
+              <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Mi perfil</p>
+                  <p className="mt-0.5 text-xs text-slate-500">Edita tu nombre (tabla `usuarios`).</p>
+                </div>
+                <button
+                  className="min-h-10 rounded-xl px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  type="button"
+                  onClick={() => setPerfilOpen(false)}
+                  disabled={perfilSaving}
+                >
+                  Cerrar
+                </button>
               </div>
-              <button
-                className="min-h-10 rounded-xl px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                type="button"
-                onClick={() => setPerfilOpen(false)}
-                disabled={perfilSaving}
-              >
-                Cerrar
-              </button>
-            </div>
 
-            <div className="mt-4 space-y-2">
-              <label className="text-sm font-semibold text-slate-900" htmlFor="mi-nombre">
-                Nombre
-              </label>
-              <input
-                id="mi-nombre"
-                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-                value={perfilNombre}
-                onChange={(e) => setPerfilNombre(e.currentTarget.value)}
-                placeholder="Tu nombre completo"
-              />
-              {perfilErr ? (
-                <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{perfilErr}</p>
-              ) : null}
-              {perfilOk ? (
-                <p className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
-                  {perfilOk}
-                </p>
-              ) : null}
-            </div>
+              <div className="flex-1 overflow-y-auto p-4 pb-6">
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-slate-900" htmlFor="mi-nombre">
+                    Nombre
+                  </label>
+                  <input
+                    id="mi-nombre"
+                    className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                    value={perfilNombre}
+                    onChange={(e) => setPerfilNombre(e.currentTarget.value)}
+                    placeholder="Tu nombre completo"
+                  />
+                  {perfilErr ? (
+                    <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{perfilErr}</p>
+                  ) : null}
+                  {perfilOk ? (
+                    <p className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                      {perfilOk}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
 
-            <div className="mt-4 flex items-center justify-end gap-2">
-              <button
-                className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                type="button"
-                onClick={() => setPerfilOpen(false)}
-                disabled={perfilSaving}
-              >
-                Cancelar
-              </button>
-              <button
-                className="min-h-12 rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
-                type="button"
-                disabled={perfilSaving || !perfilNombre.trim()}
-                onClick={async () => {
-                  setPerfilSaving(true);
-                  setPerfilErr(null);
-                  setPerfilOk(null);
-                  try {
-                    const { data: auth } = await supabase().auth.getUser();
-                    const uid = auth?.user?.id;
-                    if (!uid) throw new Error("No se pudo obtener el usuario autenticado.");
+              <div className="flex items-center justify-end gap-2 border-t border-slate-100 p-4">
+                <button
+                  className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  type="button"
+                  onClick={() => setPerfilOpen(false)}
+                  disabled={perfilSaving}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="min-h-12 rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                  type="button"
+                  disabled={perfilSaving || !perfilNombre.trim()}
+                  onClick={async () => {
+                    setPerfilSaving(true);
+                    setPerfilErr(null);
+                    setPerfilOk(null);
+                    try {
+                      const { data: auth } = await supabase().auth.getUser();
+                      const uid = auth?.user?.id;
+                      if (!uid) throw new Error("No se pudo obtener el usuario autenticado.");
 
-                    // Preferimos RPC para limitar el update a nombre_completo.
-                    const rpc = await supabase().rpc("update_my_nombre_completo", {
-                      p_nombre_completo: perfilNombre.trim()
-                    });
-                    if (rpc.error) {
-                      // Fallback: update directo (requiere policy adecuada)
-                      const up = await supabase()
-                        .from("usuarios")
-                        .update({ nombre_completo: perfilNombre.trim() })
-                        .eq("id", uid);
-                      if (up.error) throw up.error;
+                      // Preferimos RPC para limitar el update a nombre_completo.
+                      const rpc = await supabase().rpc("update_my_nombre_completo", {
+                        p_nombre_completo: perfilNombre.trim()
+                      });
+                      if (rpc.error) {
+                        // Fallback: update directo (requiere policy adecuada)
+                        const up = await supabase()
+                          .from("usuarios")
+                          .update({ nombre_completo: perfilNombre.trim() })
+                          .eq("id", uid);
+                        if (up.error) throw up.error;
+                      }
+                      setPerfilOk("Nombre actualizado.");
+                      router.refresh();
+                      setPerfilOpen(false);
+                    } catch (e) {
+                      setPerfilErr(supabaseErrToString(e));
+                    } finally {
+                      setPerfilSaving(false);
                     }
-                    setPerfilOk("Nombre actualizado.");
-                    router.refresh();
-                    setPerfilOpen(false);
-                  } catch (e) {
-                    setPerfilErr(supabaseErrToString(e));
-                  } finally {
-                    setPerfilSaving(false);
-                  }
-                }}
-              >
-                {perfilSaving ? "Guardando…" : "Guardar"}
-              </button>
+                  }}
+                >
+                  {perfilSaving ? "Guardando…" : "Guardar"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
