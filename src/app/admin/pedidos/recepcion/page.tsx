@@ -382,6 +382,105 @@ export default function RecepcionPedidosPage() {
     }
   }
 
+  async function aplicarLinea(it: PedidoItemRow) {
+    if (!activeEstablishmentId || !sel) return;
+    if (!it?.producto_id) return;
+    if (saving) return;
+    setErr(null);
+    setOkMsg(null);
+    setSaving(true);
+    try {
+      const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (!uuidRe.test(String(activeEstablishmentId).trim())) {
+        throw new Error(`establecimiento_id inválido (no es UUID): "${String(activeEstablishmentId)}"`);
+      }
+      const uid = await requireUserId();
+      if (!uuidRe.test(String(uid).trim())) {
+        throw new Error(`usuario_id inválido (no es UUID): "${String(uid)}"`);
+      }
+
+      const recibidoHoy = Math.max(0, toInt(draft[it.producto_id] ?? ""));
+      if (recibidoHoy <= 0) return;
+
+      const pedido = Math.max(0, toInt(it.cantidad_pedida));
+      const previo = Math.max(0, toInt(it.cantidad_recibida));
+      const faltan = Math.max(0, pedido - previo);
+      const delta = Math.min(faltan, recibidoHoy);
+      if (delta <= 0) return;
+
+      // 1) Insert movimiento (entrada) por el delta de esta línea
+      const movimiento = {
+        producto_id: it.producto_id,
+        cantidad: Number(delta),
+        tipo: "entrada" as const,
+        usuario_id: uid,
+        establecimiento_id: activeEstablishmentId
+      };
+      const ins = await supabase().from("movimientos").insert([movimiento] as unknown as Record<string, unknown>[]);
+      if (ins.error) throw ins.error;
+
+      // 2) Stock actual (solo suma, nunca resta)
+      const { data: prodRow, error: prodSelErr } = await supabase()
+        .from("productos")
+        .select("id,stock_actual")
+        .eq("id", it.producto_id)
+        .eq("establecimiento_id", activeEstablishmentId)
+        .maybeSingle();
+      if (prodSelErr) throw prodSelErr;
+      const curr = Number((prodRow as { stock_actual?: unknown } | null)?.stock_actual ?? 0) || 0;
+      const add = Math.max(0, Number(delta) || 0);
+      const { error: prodUpErr } = await supabase()
+        .from("productos")
+        .update({ stock_actual: curr + add })
+        .eq("id", it.producto_id)
+        .eq("establecimiento_id", activeEstablishmentId);
+      if (prodUpErr) throw prodUpErr;
+
+      // 3) Guardar acumulado en pedido_items
+      const nuevoTotal = Math.max(0, previo + delta);
+      const estado = nuevoTotal <= 0 ? "pendiente" : nuevoTotal < pedido ? "parcial" : "recibido";
+      const { error: upErr } = await supabase()
+        .from("pedido_items")
+        .update({ cantidad_recibida: nuevoTotal, estado })
+        .eq("pedido_id", sel.id)
+        .eq("producto_id", it.producto_id)
+        .eq("establecimiento_id", activeEstablishmentId);
+      if (upErr) throw upErr;
+
+      // 4) Refrescar estado local de la línea y limpiar input
+      setItems((prev) =>
+        prev.map((x) => (x.producto_id === it.producto_id ? { ...x, cantidad_recibida: nuevoTotal } : x))
+      );
+      setDraft((prev) => ({ ...prev, [it.producto_id]: "" }));
+
+      // 5) Estado del pedido (parcial/recibido) recalculado con items actuales
+      const nextRows = items.map((x) =>
+        x.producto_id === it.producto_id ? { ...x, cantidad_recibida: nuevoTotal } : x
+      );
+      const allReceived = nextRows.every((x) => Math.max(0, toInt(x.cantidad_recibida)) >= Math.max(0, toInt(x.cantidad_pedida)));
+      const anyReceived = nextRows.some((x) => Math.max(0, toInt(x.cantidad_recibida)) > 0);
+      const pedidoEstado = allReceived ? "recibido" : anyReceived ? "parcial" : "pendiente";
+      const patch: Record<string, unknown> = { estado: pedidoEstado };
+      if (pedidoEstado === "recibido") patch.received_at = new Date().toISOString();
+      const { error: pedidoErr } = await supabase()
+        .from("pedidos")
+        .update(patch)
+        .eq("id", sel.id)
+        .eq("establecimiento_id", activeEstablishmentId);
+      if (pedidoErr) throw pedidoErr;
+
+      await queryClient.invalidateQueries({ queryKey: ["productos", activeEstablishmentId] });
+      await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", activeEstablishmentId] });
+      await refresh();
+      router.refresh();
+      setOkMsg("Stock actualizado.");
+    } catch (e) {
+      setErr(supabaseErrToString(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function cerrarPedidoDescartando() {
     if (!activeEstablishmentId || !sel) return;
     if (!canAdmin) {
@@ -624,6 +723,9 @@ export default function RecepcionPedidosPage() {
                           if (!it || !it.producto_id) return;
                           const raw = readEvtValue(e);
                           setDraft((prev) => ({ ...prev, [it.producto_id]: digitsOnly(raw) }));
+                        }}
+                        onBlur={() => {
+                          void aplicarLinea(it);
                         }}
                         disabled={saving}
                         aria-label={`Cantidad que llega hoy para ${it.articulo}`}

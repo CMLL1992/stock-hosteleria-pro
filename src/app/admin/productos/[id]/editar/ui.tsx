@@ -160,13 +160,7 @@ export function EditarProductoClient({ id }: { id: string }) {
       setErr("No hay establecimiento activo.");
       return;
     }
-    // Regla: si el producto es de tipo envase (por unidad), el vínculo a catálogo debe existir (1:1).
-    const unidadKey = String(unidadVal ?? "").trim().toLowerCase();
-    const requiresEnvase = unidadKey === "caja" || unidadKey === "barril" || unidadKey === "gas";
-    if (requiresEnvase && !String(envaseId ?? "").trim()) {
-      setEnvaseErr("Este producto requiere un envase vinculado (Caja/Barril/Gas).");
-      return;
-    }
+    // Permitimos guardar aunque no haya envase vinculado (flujo operativo).
     setErr(null);
     setOk(null);
     setEnvaseErr(null);
