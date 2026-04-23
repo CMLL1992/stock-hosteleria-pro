@@ -174,6 +174,9 @@ export default function RecepcionPedidosPage() {
         throw new Error(`establecimiento_id inválido (no es UUID): "${String(activeEstablishmentId)}"`);
       }
       const uid = await requireUserId();
+      if (!uuidRe.test(String(uid).trim())) {
+        throw new Error(`usuario_id inválido (no es UUID): "${String(uid)}"`);
+      }
       const nowIso = new Date().toISOString();
 
       const receivedByProd = items.map((it) => ({
@@ -192,18 +195,29 @@ export default function RecepcionPedidosPage() {
           return { ...x, delta };
         })
         .filter((x) => x.delta > 0)
-        .map((x) => ({
-          producto_id: x.producto_id,
-          establecimiento_id: activeEstablishmentId,
-          tipo: "entrada" as const,
-          cantidad: Number(x.delta),
-          usuario_id: uid,
+        .map((x) => {
+          const clean = {
+            producto_id: x.producto_id,
+            cantidad: Number(x.delta),
+            tipo: "entrada" as const,
+            usuario_id: uid,
+            establecimiento_id: activeEstablishmentId
+          };
+          if (!uuidRe.test(String(clean.producto_id ?? "").trim())) {
+            throw new Error(`producto_id inválido (no es UUID): "${String(clean.producto_id)}"`);
+          }
+          if (!Number.isFinite(clean.cantidad) || clean.cantidad <= 0) {
+            throw new Error(`cantidad inválida para movimientos: "${String((clean as { cantidad?: unknown }).cantidad)}"`);
+          }
+          return clean;
           // No enviamos columnas opcionales (timestamp/proveedor_id/client_uuid/motivo) para evitar 400 por schema.
-        }));
+        });
 
       if (movimientos.length) {
         // eslint-disable-next-line no-console
         console.log("Datos que voy a insertar en movimientos:", movimientos);
+        // eslint-disable-next-line no-console
+        console.log("Payload movimientos (keys):", Object.keys(movimientos[0] ?? {}));
         const ins = await supabase().from("movimientos").insert(movimientos as unknown as Record<string, unknown>[]);
         if (ins.error) {
           // Log detallado para diagnosticar 400/403 en producción
