@@ -15,6 +15,7 @@ import { requireUserId } from "@/lib/session";
 import { enqueueMovimiento, newClientUuid } from "@/lib/offlineQueue";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { Search } from "lucide-react";
+import Link from "next/link";
 
 type ProveedorRow = {
   id: string;
@@ -28,6 +29,13 @@ type ProductoPedido = {
   unidad: string | null;
   proveedor_id: string | null;
   categoria: string | null;
+};
+
+type LegacyPedidoRow = {
+  proveedor_id: string;
+  proveedor_nombre: string;
+  lineas: number;
+  last_ts: string;
 };
 
 function parseQty(raw: string): number {
@@ -129,6 +137,7 @@ function readEvtValue(
 
 export default function PedidosPage() {
   const [role, setRole] = useState<AppRole | null>(null);
+  const canAccessRecepcion = hasPermission(role, "staff");
   const canAccessPedidosAdmin = hasPermission(role, "admin");
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -146,11 +155,13 @@ export default function PedidosPage() {
 
   const { activeEstablishmentId, activeEstablishmentName } = useActiveEstablishment();
   const nombreLocal = activeEstablishmentName?.trim() || "Piqui Blinders";
+  const [legacy, setLegacy] = useState<LegacyPedidoRow[]>([]);
 
   const refresh = useCallback(async () => {
     if (!activeEstablishmentId) {
       setProveedores([]);
       setProductos([]);
+      setLegacy([]);
       return;
     }
     setLoadingData(true);
@@ -166,6 +177,50 @@ export default function PedidosPage() {
         }
         return next;
       });
+
+      // Pedidos legacy (sin tabla pedidos/pedido_items): agrupamos movimientos tipo 'pedido' por proveedor.
+      try {
+        const mv = await supabase()
+          .from("movimientos")
+          .select("proveedor_id,producto_id,cantidad,timestamp,proveedor:proveedores(nombre)")
+          .eq("establecimiento_id", activeEstablishmentId)
+          .eq("tipo", "pedido")
+          .order("timestamp", { ascending: false })
+          .limit(300);
+        if (!mv.error) {
+          const list = (mv.data ?? []) as unknown as Record<string, unknown>[];
+          const byProv = new Map<string, { proveedor_nombre: string; lineas: Set<string>; last_ts: string }>();
+          for (const r of list) {
+            const proveedor_id = String(r.proveedor_id ?? "").trim();
+            if (!proveedor_id) continue;
+            const ts = String(r.timestamp ?? new Date().toISOString());
+            const provRaw = r.proveedor as { nombre?: unknown } | { nombre?: unknown }[] | null | undefined;
+            const prov = Array.isArray(provRaw) ? provRaw[0] ?? null : provRaw;
+            const proveedor_nombre = String(prov?.nombre ?? "Proveedor").trim() || "Proveedor";
+            const producto_id = String(r.producto_id ?? "").trim();
+
+            let g = byProv.get(proveedor_id);
+            if (!g) {
+              g = { proveedor_nombre, lineas: new Set<string>(), last_ts: ts };
+              byProv.set(proveedor_id, g);
+            }
+            if (producto_id) g.lineas.add(producto_id);
+            if (ts > g.last_ts) g.last_ts = ts;
+          }
+          const out: LegacyPedidoRow[] = Array.from(byProv.entries()).map(([proveedor_id, g]) => ({
+            proveedor_id,
+            proveedor_nombre: g.proveedor_nombre,
+            lineas: g.lineas.size,
+            last_ts: g.last_ts
+          }));
+          out.sort((a, b) => b.last_ts.localeCompare(a.last_ts));
+          setLegacy(out);
+        } else {
+          setLegacy([]);
+        }
+      } catch {
+        setLegacy([]);
+      }
     } catch (e) {
       setErr(supabaseErrToString(e));
     } finally {
@@ -193,9 +248,9 @@ export default function PedidosPage() {
   }, []);
 
   useEffect(() => {
-    if (!canAccessPedidosAdmin) return;
+    if (!canAccessRecepcion && !canAccessPedidosAdmin) return;
     refresh();
-  }, [canAccessPedidosAdmin, refresh]);
+  }, [canAccessPedidosAdmin, canAccessRecepcion, refresh]);
 
   const sinProveedor = useMemo(
     () => productos.filter((p) => !p.proveedor_id || !proveedores.some((pr) => pr.id === p.proveedor_id)),
@@ -285,7 +340,7 @@ export default function PedidosPage() {
   }
 
   if (loading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
-  if (!canAccessPedidosAdmin) {
+  if (!canAccessRecepcion && !canAccessPedidosAdmin) {
     return (
       <main className="mx-auto max-w-md p-4">
         <h1 className="text-xl font-semibold">Pedidos</h1>
@@ -296,13 +351,18 @@ export default function PedidosPage() {
 
   return (
     <div className="min-h-dvh bg-slate-50">
-      <MobileHeader title="Pedidos por proveedor" showBack backHref="/admin" />
+      <MobileHeader title="Pedidos" showBack backHref="/admin" />
       <main className="mx-auto max-w-3xl p-4 pb-28 text-slate-900">
-        <div className="mb-4">
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <h1 className="text-xl font-semibold">Pedidos</h1>
-          <p className="mt-1 text-sm text-slate-600">
-            Despliega un proveedor, escribe cantidades y envía el pedido por WhatsApp.
-          </p>
+          {canAccessRecepcion ? (
+            <Link
+              href="/admin/pedidos/recepcion"
+              className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-black px-4 text-sm font-semibold text-white hover:bg-slate-900"
+            >
+              Gestión de Recepción
+            </Link>
+          ) : null}
         </div>
 
         {err ? (
@@ -310,15 +370,48 @@ export default function PedidosPage() {
         ) : null}
         {loadingData ? <p className="text-sm text-slate-500">Cargando catálogo…</p> : null}
 
-        {!loadingData && productos.length === 0 && !err ? (
+        {canAccessRecepcion && legacy.length > 0 ? (
+          <section className="mb-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-sm font-semibold text-slate-900">Pedidos legacy (pendientes de limpiar)</p>
+            <p className="mt-1 text-sm text-slate-600">
+              Detectados desde movimientos tipo <span className="font-mono">pedido</span>. Abre “Gestión de Recepción” para recepcionar y limpiar.
+            </p>
+            <ul className="mt-3 space-y-2">
+              {legacy.slice(0, 6).map((p) => (
+                <li key={p.proveedor_id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-slate-900">{p.proveedor_nombre}</p>
+                    <p className="text-xs text-slate-600">
+                      Líneas: <span className="font-mono font-semibold">{p.lineas}</span>
+                    </p>
+                  </div>
+                  <Link
+                    href="/admin/pedidos/recepcion"
+                    className="min-h-10 shrink-0 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-900 hover:bg-slate-50"
+                  >
+                    Recepcionar
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
+        {!canAccessPedidosAdmin ? (
+          <p className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
+            Preparación y envío por WhatsApp: solo Admin/Superadmin.
+          </p>
+        ) : null}
+
+        {canAccessPedidosAdmin && !loadingData && productos.length === 0 && !err ? (
           <p className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600">
             No hay productos en este establecimiento.
           </p>
-        ) : !loadingData && grupos.length === 0 && !err ? (
+        ) : canAccessPedidosAdmin && !loadingData && grupos.length === 0 && !err ? (
           <p className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600">
             No hay productos agrupables por proveedor. Asigna un proveedor a cada artículo.
           </p>
-        ) : (
+        ) : canAccessPedidosAdmin ? (
           <ul className="flex flex-col gap-3">
             {grupos.map((g) => {
               const key = g.id;
@@ -455,7 +548,7 @@ export default function PedidosPage() {
               );
             })}
           </ul>
-        )}
+        ) : null}
       </main>
 
       {confirm ? (

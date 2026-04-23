@@ -154,24 +154,6 @@ export function DashboardClient() {
     return total;
   }, [escandallosPrecioQuery.data, rows]);
 
-  const envasePreciosQuery = useQuery({
-    queryKey: ["config", "precios-envases", establecimientoId],
-    enabled: !!establecimientoId,
-    queryFn: async () => {
-      const { data, error } = await supabase()
-        .from("config_precios_envases")
-        .select("tipo,precio")
-        .eq("establecimiento_id", establecimientoId as string);
-      if (error) throw error;
-      const rows = (data ?? []) as unknown as Array<{ tipo: string; precio: unknown }>;
-      const map = new Map<string, number>();
-      for (const r of rows) map.set(String(r.tipo), Number(r.precio ?? 0) || 0);
-      return map;
-    },
-    staleTime: 30_000,
-    retry: 1
-  });
-
   const envasesCatalogoQuery = useQuery({
     queryKey: ["catalogo", "envases", establecimientoId],
     enabled: !!establecimientoId,
@@ -195,26 +177,19 @@ export function DashboardClient() {
   });
 
   const valorEnvases = useMemo(() => {
-    const map = envasePreciosQuery.data ?? new Map<string, number>();
     const catalogo = envasesCatalogoQuery.data ?? new Map<string, number>();
     let total = 0;
     for (const p of rows) {
-      // Preferimos coste específico por envase (si el producto está vinculado a un ID del catálogo).
       const envaseKey = (p.envase_catalogo_id ?? "").trim();
-      const precioPorEnvase =
-        envaseKey && catalogo.has(envaseKey)
-          ? Math.max(0, catalogo.get(envaseKey) ?? 0)
-          : (() => {
-              const b = bucketUnidad(p);
-              if (!b) return 0;
-              return Math.max(0, map.get(b) ?? 0);
-            })();
+      // Sin vínculo al catálogo: no inventamos valor (sin fallback al sistema antiguo).
+      if (!envaseKey) continue;
+      const precioPorEnvase = Math.max(0, catalogo.get(envaseKey) ?? 0);
       if (precioPorEnvase <= 0) continue;
       const qty = Math.max(0, Number(p.stock_actual ?? 0) || 0) + Math.max(0, Number(p.stock_vacios ?? 0) || 0);
       total += qty * precioPorEnvase;
     }
     return total;
-  }, [envasePreciosQuery.data, envasesCatalogoQuery.data, rows]);
+  }, [envasesCatalogoQuery.data, rows]);
 
   const barrasResumen = useMemo(() => {
     return [
@@ -379,7 +354,7 @@ export function DashboardClient() {
           </ResponsiveContainer>
         </div>
         <p className="mt-2 text-xs text-slate-500">
-          Configura precios de envases en <span className="font-semibold">Panel → Precios de envases</span>.
+          Configura envases en <span className="font-semibold">Panel → Catálogo de envases</span>.
         </p>
       </section>
 

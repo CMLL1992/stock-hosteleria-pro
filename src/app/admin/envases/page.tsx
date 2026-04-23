@@ -8,6 +8,7 @@ import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { useMyRole } from "@/lib/useMyRole";
 import { getEffectiveRole, hasPermission } from "@/lib/permissions";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
+import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 
 type EnvaseRow = {
   id: string;
@@ -33,7 +34,6 @@ export default function CatalogoEnvasesPage() {
   const [rows, setRows] = useState<EnvaseRow[]>([]);
   const [productos, setProductos] = useState<ProductoOpt[]>([]);
 
-  const [nombre, setNombre] = useState("");
   const [coste, setCoste] = useState("0");
   const [productoId, setProductoId] = useState<string>("");
   const [saving, setSaving] = useState(false);
@@ -73,16 +73,18 @@ export default function CatalogoEnvasesPage() {
     let cancelled = false;
     (async () => {
       try {
+        const col = await resolveProductoTituloColumn(activeEstablishmentId);
+        const t = tituloColSql(col);
         const { data, error } = await supabase()
           .from("productos")
-          .select("id,articulo,nombre")
+          .select(`id,${t}` as "*")
           .eq("establecimiento_id", activeEstablishmentId)
-          .order("articulo", { ascending: true });
+          .order(t, { ascending: true });
         if (cancelled) return;
         if (error) throw error;
         const list = ((data ?? []) as unknown as Record<string, unknown>[]).map((r) => ({
           id: String(r.id ?? ""),
-          articulo: String(r.articulo ?? r.nombre ?? "—").trim() || "—"
+          articulo: String(r[t] ?? r.articulo ?? r.nombre ?? "—").trim() || "—"
         }));
         setProductos(list);
       } catch {
@@ -94,23 +96,25 @@ export default function CatalogoEnvasesPage() {
     };
   }, [activeEstablishmentId, canManage]);
 
-  const disabled = useMemo(() => !activeEstablishmentId || !nombre.trim() || saving, [activeEstablishmentId, nombre, saving]);
+  const disabled = useMemo(() => !activeEstablishmentId || !productoId || saving, [activeEstablishmentId, productoId, saving]);
 
   async function crear() {
     if (!activeEstablishmentId) return;
     setErr(null);
     setSaving(true);
     try {
+      const prod = productos.find((p) => p.id === productoId) ?? null;
+      if (!prod) throw new Error("Selecciona un producto válido.");
       const payload = {
         establecimiento_id: activeEstablishmentId,
-        nombre: nombre.trim(),
+        nombre: prod.articulo,
         coste: Math.max(0, toNum(coste))
       };
       const { data, error } = await supabase().from("envases_catalogo").insert(payload).select("id").maybeSingle();
       if (error) throw error;
       const envaseId = String((data as { id?: unknown } | null)?.id ?? "");
 
-      if (envaseId && productoId) {
+      if (envaseId) {
         const { error: updErr } = await supabase()
           .from("productos")
           .update({ envase_catalogo_id: envaseId })
@@ -118,7 +122,6 @@ export default function CatalogoEnvasesPage() {
           .eq("establecimiento_id", activeEstablishmentId);
         if (updErr) throw updErr;
       }
-      setNombre("");
       setCoste("0");
       setProductoId("");
       await refresh();
@@ -164,22 +167,29 @@ export default function CatalogoEnvasesPage() {
       <main className="mx-auto max-w-3xl p-4 pb-28 text-slate-900">
         <div className="mb-4">
           <h1 className="text-xl font-semibold">Catálogo de envases</h1>
-          <p className="mt-1 text-sm text-slate-600">Crea envases con coste real y asígnalos a productos.</p>
+          <p className="mt-1 text-sm text-slate-600">Selecciona un producto y define su coste de envase (1:1).</p>
         </div>
 
         {err ? <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{err}</p> : null}
 
         <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-sm font-semibold text-slate-900">Nuevo envase</p>
+          <p className="text-sm font-semibold text-slate-900">Nuevo envase (vinculado a producto)</p>
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <label className="sm:col-span-2">
-              <span className="block text-xs font-bold uppercase tracking-wide text-slate-600">Nombre</span>
-              <input
+              <span className="block text-xs font-bold uppercase tracking-wide text-slate-600">Producto (obligatorio)</span>
+              <select
                 className="mt-1 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900"
-                value={nombre}
-                onChange={(e) => setNombre(e.currentTarget.value)}
-                placeholder="Caja cerveza, Barril 30L, Botella vidrio…"
-              />
+                value={productoId}
+                onChange={(e) => setProductoId(e.currentTarget.value)}
+              >
+                <option value="">(Selecciona…)</option>
+                {productos.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.articulo}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-slate-600">El nombre del envase será el del producto.</p>
             </label>
             <label>
               <span className="block text-xs font-bold uppercase tracking-wide text-slate-600">Coste (€)</span>
@@ -190,24 +200,6 @@ export default function CatalogoEnvasesPage() {
                 inputMode="decimal"
               />
             </label>
-          </div>
-          <div className="mt-3">
-            <label className="block">
-              <span className="block text-xs font-bold uppercase tracking-wide text-slate-600">Vincular a producto (opcional)</span>
-              <select
-                className="mt-1 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900"
-                value={productoId}
-                onChange={(e) => setProductoId(e.currentTarget.value)}
-              >
-                <option value="">(Sin vincular)</option>
-                {productos.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.articulo}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <p className="mt-1 text-xs text-slate-600">Al crear el envase, se asignará automáticamente al producto seleccionado.</p>
           </div>
           <div className="mt-3">
             <Button onClick={crear} disabled={disabled}>
