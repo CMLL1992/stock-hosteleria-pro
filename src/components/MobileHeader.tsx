@@ -35,7 +35,6 @@ export function MobileHeader({
   const [perfilOk, setPerfilOk] = useState<string | null>(null);
 
   const effectiveRole = getEffectiveRole(me);
-  const canEditPerfilNombre = effectiveRole === "superadmin";
 
   useEffect(() => {
     if (!perfilOpen) return;
@@ -159,59 +158,81 @@ export function MobileHeader({
       </div>
 
       {perfilOpen ? (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          {/* Este es el contenedor blanco del modal */}
-          <div className="flex w-full max-w-md flex-col overflow-hidden rounded-xl bg-white shadow-2xl dark:bg-slate-900">
-            {/* Cabecera del modal */}
-            <div className="border-b border-slate-200 p-6 dark:border-slate-800">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Nombre</h3>
-                </div>
-                <button
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
-                  type="button"
-                  onClick={() => setPerfilOpen(false)}
-                  disabled={perfilSaving}
-                >
-                  Cerrar
-                </button>
-              </div>
-            </div>
-
-            {/* Cuerpo del modal (donde está el input) */}
-            <div className="p-6">
-              <input
-                type="text"
-                value={perfilNombre}
-                onChange={(e) => setPerfilNombre(e.currentTarget.value)}
-                className="w-full rounded-lg border border-slate-300 px-4 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800"
-                placeholder="Tu nombre completo"
-                disabled={!canEditPerfilNombre || perfilSaving}
-              />
-              {perfilErr ? (
-                <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{perfilErr}</p>
-              ) : null}
-              {perfilOk ? (
-                <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
-                  {perfilOk}
-                </p>
-              ) : null}
-            </div>
-
-            {/* Pie del modal con los botones */}
-            <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 p-6 dark:border-slate-800 dark:bg-slate-800/50">
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-fadeIn"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Mi perfil"
+          onClick={() => setPerfilOpen(false)}
+        >
+          {/* 2. Contenedor blanco del Modal: Centrado, responsivo, sombra */}
+          <div
+            className="w-full max-w-md rounded-2xl bg-white shadow-xl dark:bg-slate-900 flex flex-col overflow-hidden animate-scaleIn"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 3. Cabecera (Siempre visible) */}
+            <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white">Mi Perfil</h3>
               <button
-                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
                 type="button"
                 onClick={() => setPerfilOpen(false)}
                 disabled={perfilSaving}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:bg-slate-700 dark:text-slate-200 dark:border-slate-600 dark:hover:bg-slate-600 transition"
+                aria-label="Cerrar"
+                title="Cerrar"
               >
-                Cancelar
+                ✕
               </button>
-              {canEditPerfilNombre ? (
+            </div>
+
+            {/* 4. Cuerpo (Donde está el formulario) */}
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Nombre Completo</label>
+
+                {effectiveRole !== "superadmin" ? (
+                  <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-medium border border-slate-200 dark:border-slate-700">
+                    {perfilNombre || "Sin Nombre"}
+                    <span className="ml-2 text-xs text-slate-500">(Solo lectura)</span>
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    value={perfilNombre}
+                    onChange={(e) => setPerfilNombre(e.currentTarget.value)}
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                    placeholder="Ej: Carlos G."
+                    disabled={perfilSaving}
+                  />
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-500 mb-1">Rol</label>
+                <span className="capitalize font-semibold text-slate-600 dark:text-slate-400">{effectiveRole}</span>
+              </div>
+
+              {perfilErr ? (
+                <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{perfilErr}</p>
+              ) : null}
+              {perfilOk ? (
+                <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{perfilOk}</p>
+              ) : null}
+            </div>
+
+            {/* 5. Pie del Modal (Botones) */}
+            <div className="p-6 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-3 bg-slate-50 dark:bg-slate-800/50">
+              <button
+                onClick={() => setPerfilOpen(false)}
+                type="button"
+                disabled={perfilSaving}
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 dark:bg-slate-700 dark:text-slate-200 dark:border-slate-600 dark:hover:bg-slate-600 transition"
+              >
+                {effectiveRole === "superadmin" ? "Cancelar" : "Cerrar"}
+              </button>
+
+              {effectiveRole === "superadmin" ? (
                 <button
-                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                   type="button"
                   disabled={perfilSaving || !perfilNombre.trim()}
                   onClick={async () => {
@@ -238,6 +259,7 @@ export function MobileHeader({
                       setPerfilSaving(false);
                     }
                   }}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition disabled:opacity-60"
                 >
                   {perfilSaving ? "Guardando…" : "Guardar"}
                 </button>
