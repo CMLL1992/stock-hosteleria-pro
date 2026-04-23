@@ -21,6 +21,7 @@ import { resolveProductoTituloColumn, tituloColSql, tituloWritePayload } from "@
 import { updateProductoCategoriaCompat } from "@/lib/productoWriteCompat";
 import { enqueueMovimiento, newClientUuid } from "@/lib/offlineQueue";
 import { requireUserId } from "@/lib/session";
+import { useCambiosGlobalesRealtime } from "@/lib/useCambiosGlobalesRealtime";
 
 type ProveedorOpt = { id: string; nombre: string };
 
@@ -483,6 +484,14 @@ export default function AdminProductosPage() {
     setHasPrecioTarifa(true);
     setItems(base.map((p) => ({ ...p, precio_tarifa: priceById.get(p.id) ?? 0 })));
   }
+
+  // Realtime: cualquier cambio en tablas clave del establecimiento refresca la lista (Stock).
+  useCambiosGlobalesRealtime({
+    establecimientoId: activeEstablishmentId,
+    onChange: () => {
+      void refetch().catch(() => undefined);
+    }
+  });
 
   async function onSave(patch: Partial<ProductoRow>) {
     if (!editing || !activeEstablishmentId) return;

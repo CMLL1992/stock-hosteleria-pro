@@ -1,0 +1,69 @@
+import { useEffect } from "react";
+import type { QueryClient } from "@tanstack/react-query";
+import { supabase } from "@/lib/supabase";
+
+type RealtimeTable = "movimientos" | "productos" | "pedidos" | "usuarios";
+
+/**
+ * Suscripción Realtime "global" por establecimiento.
+ *
+ * Objetivo:
+ * - Escuchar INSERT/UPDATE/DELETE en tablas clave y disparar invalidaciones de React Query
+ * - o ejecutar un callback para pantallas que no usan React Query.
+ *
+ * Nota: Supabase Realtime filtra por columna (cuando existe) vía `filter`.
+ */
+export function useCambiosGlobalesRealtime(opts: {
+  establecimientoId: string | null | undefined;
+  /**
+   * Si se pasa, invalidará todas estas keys en cada evento Realtime.
+   * Usar las mismas keys que el resto de la app (por ejemplo: ["productos", estId]).
+   */
+  queryClient?: QueryClient;
+  queryKeys?: Array<unknown[]>;
+  /**
+   * Callback opcional para pantallas con state local (sin React Query).
+   */
+  onChange?: () => void | Promise<void>;
+  /**
+   * Tablas a escuchar. Por defecto, las 4 del "pipeline".
+   */
+  tables?: RealtimeTable[];
+}) {
+  const { establecimientoId, queryClient, queryKeys, onChange, tables } = opts;
+
+  useEffect(() => {
+    if (!establecimientoId) return;
+
+    const watchTables: RealtimeTable[] = tables ?? ["movimientos", "productos", "pedidos", "usuarios"];
+    const channel = supabase().channel(`cambios-globales:${establecimientoId}`);
+
+    for (const table of watchTables) {
+      channel.on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table,
+          filter: `establecimiento_id=eq.${establecimientoId}`
+        },
+        () => {
+          if (queryClient && queryKeys?.length) {
+            for (const k of queryKeys) {
+              void queryClient.invalidateQueries({ queryKey: k });
+            }
+          }
+          if (onChange) void onChange();
+        }
+      );
+    }
+
+    channel.subscribe();
+
+    return () => {
+      void supabase().removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [establecimientoId]);
+}
+

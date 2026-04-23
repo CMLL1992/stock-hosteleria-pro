@@ -9,6 +9,7 @@ import { useMyRole } from "@/lib/useMyRole";
 import { getEffectiveRole, hasPermission } from "@/lib/permissions";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
+import { useCambiosGlobalesRealtime } from "@/lib/useCambiosGlobalesRealtime";
 
 type ProdEmbed = { articulo?: string | null; nombre?: string | null };
 
@@ -219,6 +220,14 @@ export default function AdminMovimientosPage() {
   useEffect(() => {
     load().catch(() => undefined);
   }, [load]);
+
+  useCambiosGlobalesRealtime({
+    establecimientoId: activeEstablishmentId,
+    onChange: () => {
+      if (!activeEstablishmentId || !canAccessMovimientos) return;
+      void load();
+    }
+  });
 
   if (meLoading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
 

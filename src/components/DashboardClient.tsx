@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchDashboardProductos } from "@/lib/adminDashboardData";
-import { useProductosRealtime } from "@/lib/useProductosRealtime";
+import { useCambiosGlobalesRealtime } from "@/lib/useCambiosGlobalesRealtime";
 import { Drawer } from "@/components/ui/Drawer";
 import { requireUserId } from "@/lib/session";
 import { enqueueMovimiento, newClientUuid } from "@/lib/offlineQueue";
@@ -25,12 +25,17 @@ export function DashboardClient() {
   const [confirming, setConfirming] = useState(false);
   const [envasesErr, setEnvasesErr] = useState<string | null>(null);
 
-  useProductosRealtime({
-    establecimientoId,
+  useCambiosGlobalesRealtime({
+    establecimientoId: establecimientoId ?? null,
     queryClient,
     queryKeys: [
       ["dashboard", "productos", establecimientoId],
-      ["productos", establecimientoId]
+      ["productos", establecimientoId],
+      ["movimientos", establecimientoId],
+      // compatibilidad (algunas pantallas invalidan sin establecimiento)
+      ["productos"],
+      ["dashboard"],
+      ["movimientos"]
     ]
   });
 
