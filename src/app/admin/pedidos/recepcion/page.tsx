@@ -123,7 +123,6 @@ export default function RecepcionPedidosPage() {
     setUploadingAlbaran(true);
     setUploadPct(5);
     try {
-      const uid = await requireUserId();
       setUploadPct(15);
       const ext = (() => {
         const n = (file.name || "").toLowerCase();
@@ -152,11 +151,9 @@ export default function RecepcionPedidosPage() {
 
       setUploadPct(85);
       const ins = await supabase().from("albaranes").insert({
-        establecimiento_id: activeEstablishmentId,
-        proveedor_id: sel?.proveedor_id ?? null,
         imagen_url: publicUrl,
-        total_importe: null,
-        created_by: uid
+        proveedor_id: sel?.proveedor_id ?? null,
+        establecimiento_id: activeEstablishmentId
       } as unknown as Record<string, unknown>);
       if (ins.error) throw ins.error;
 
@@ -540,13 +537,13 @@ export default function RecepcionPedidosPage() {
       </main>
 
       {/* Botón flotante para capturar albarán (móvil) */}
-      <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+5.75rem)] right-4 z-20">
+      <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+6.75rem)] right-4 z-[90]">
         <label
           className={[
-            "flex min-h-12 items-center gap-2 rounded-2xl px-4 text-sm font-semibold shadow-lg ring-1 transition",
+            "flex min-h-14 items-center gap-2 rounded-full px-5 text-sm font-semibold shadow-2xl ring-1 transition",
             uploadingAlbaran
               ? "cursor-not-allowed bg-slate-200 text-slate-700 ring-slate-300"
-              : "cursor-pointer bg-slate-900 text-white ring-slate-900 hover:bg-slate-800"
+              : "cursor-pointer bg-blue-600 text-white ring-blue-700 hover:bg-blue-700"
           ].join(" ")}
           title="Escanear Albarán"
         >
