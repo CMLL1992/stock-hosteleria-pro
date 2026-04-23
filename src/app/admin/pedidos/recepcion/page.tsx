@@ -10,6 +10,8 @@ import { getEffectiveRole, hasPermission } from "@/lib/permissions";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { useQueryClient } from "@tanstack/react-query";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
+import { requireUserId } from "@/lib/session";
+import { newClientUuid } from "@/lib/offlineQueue";
 
 type PedidoEstado = "pendiente" | "parcial" | "recibido";
 
@@ -168,21 +170,84 @@ export default function RecepcionPedidosPage() {
     setOkMsg(null);
     setSaving(true);
     try {
-      const payload = items.map((it) => ({
+      const uid = await requireUserId();
+      const nowIso = new Date().toISOString();
+
+      const receivedByProd = items.map((it) => ({
         producto_id: it.producto_id,
-        recibido: Math.max(0, toInt(draft[it.producto_id] ?? ""))
+        recibido: Math.max(0, toInt(draft[it.producto_id] ?? "")),
+        pedido: Math.max(0, toInt(it.cantidad_pedida)),
+        previo: Math.max(0, toInt(it.cantidad_recibida))
       }));
-      const { data, error } = await supabase().rpc("confirm_pedido_recepcion", {
-        p_pedido_id: sel.id,
-        p_items: payload
-      });
-      if (error) throw error;
-      const ok = ((data ?? null) as { ok?: boolean } | null)?.ok ?? true;
-      if (!ok) throw new Error("No se pudo confirmar la recepción.");
+
+      // 1) Crear movimientos de entrada por el DELTA recibido (solo lo nuevo)
+      // Nota: si el pedido ya fue recepcionado parcialmente, evitamos duplicar stock.
+      const movimientos = receivedByProd
+        .map((x) => ({
+          ...x,
+          delta: Math.max(0, x.recibido - x.previo)
+        }))
+        .filter((x) => x.delta > 0)
+        .map((x) => ({
+          client_uuid: newClientUuid(),
+          producto_id: x.producto_id,
+          establecimiento_id: activeEstablishmentId,
+          tipo: "entrada" as const,
+          cantidad: x.delta,
+          usuario_id: uid,
+          timestamp: nowIso,
+          proveedor_id: sel.proveedor_id,
+          // Si existe la columna en BD, se guardará; si no, lo ignoramos con retry sin este campo.
+          motivo: `Recepcion Pedido #${sel.id}`
+        }));
+
+      if (movimientos.length) {
+        const ins1 = await supabase().from("movimientos").insert(movimientos as unknown as Record<string, unknown>[]);
+        if (ins1.error) {
+          // Fallback si la columna `motivo` no existe.
+          const msg = String((ins1.error as { message?: unknown })?.message ?? "").toLowerCase();
+          if (msg.includes("motivo") || msg.includes("column") || msg.includes("schema cache")) {
+            const stripped = movimientos.map(({ motivo: _m, ...rest }) => rest);
+            const ins2 = await supabase().from("movimientos").insert(stripped as unknown as Record<string, unknown>[]);
+            if (ins2.error) throw ins2.error;
+          } else {
+            throw ins1.error;
+          }
+        }
+      }
+
+      // 2) Actualizar pedido_items con cantidades recibidas ABSOLUTAS y estado.
+      for (const x of receivedByProd) {
+        if (!x.producto_id) continue;
+        const estado = x.recibido <= 0 ? "pendiente" : x.recibido < x.pedido ? "parcial" : "recibido";
+        const { error: upErr } = await supabase()
+          .from("pedido_items")
+          .update({ cantidad_recibida: x.recibido, estado })
+          .eq("pedido_id", sel.id)
+          .eq("producto_id", x.producto_id)
+          .eq("establecimiento_id", activeEstablishmentId);
+        if (upErr) throw upErr;
+      }
+
+      // 3) Estado del pedido
+      const allReceived = receivedByProd.every((x) => x.recibido >= x.pedido);
+      const anyReceived = receivedByProd.some((x) => x.recibido > 0);
+      const pedidoEstado = allReceived ? "recibido" : anyReceived ? "parcial" : "pendiente";
+      const patch: Record<string, unknown> = { estado: pedidoEstado };
+      if (pedidoEstado === "recibido") patch.received_at = nowIso;
+
+      const { error: pedidoErr } = await supabase()
+        .from("pedidos")
+        .update(patch)
+        .eq("id", sel.id)
+        .eq("establecimiento_id", activeEstablishmentId);
+      if (pedidoErr) throw pedidoErr;
+
       await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", activeEstablishmentId] });
       await queryClient.invalidateQueries({ queryKey: ["productos", activeEstablishmentId] });
       await queryClient.invalidateQueries({ queryKey: ["movimientos", activeEstablishmentId] });
       await refresh();
+      setOkMsg(pedidoEstado === "recibido" ? "Recepción completada." : "Recepción parcial guardada. El pedido seguirá pendiente.");
       setOpen(false);
       setSel(null);
       setItems([]);
@@ -297,6 +362,11 @@ export default function RecepcionPedidosPage() {
                           Pedido: <span className="font-mono font-semibold tabular-nums">{it.cantidad_pedida}</span>
                           {" · "}
                           {it.unidad ?? "—"}
+                          {" · "}
+                          Faltan:{" "}
+                          <span className="font-mono font-semibold tabular-nums">
+                            {Math.max(0, Math.max(0, toInt(it.cantidad_pedida)) - Math.max(0, toInt(it.cantidad_recibida)))}
+                          </span>
                         </p>
                       </div>
                       <input
