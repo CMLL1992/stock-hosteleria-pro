@@ -61,6 +61,7 @@ export default function RecepcionPedidosPage() {
   const queryClient = useQueryClient();
 
   const [err, setErr] = useState<string | null>(null);
+  const [okMsg, setOkMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [pedidos, setPedidos] = useState<PedidoRow[]>([]);
   const [legacy, setLegacy] = useState<LegacyPedidoRow[]>([]);
@@ -266,6 +267,7 @@ export default function RecepcionPedidosPage() {
   async function confirmar() {
     if (!activeEstablishmentId || !sel) return;
     setErr(null);
+    setOkMsg(null);
     setSaving(true);
     try {
       const payload = items.map((it) => ({
@@ -352,39 +354,26 @@ export default function RecepcionPedidosPage() {
   async function confirmarLegacy() {
     if (!activeEstablishmentId || !legacySel) return;
     setErr(null);
+    setOkMsg(null);
     setSaving(true);
     try {
-      const payload = legacyItems
-        .map((it) => ({ producto_id: it.producto_id, recibido: Math.max(0, toInt(legacyDraft[it.producto_id] ?? "")) }))
-        .filter((x) => x.recibido > 0);
-
-      // Usa el RPC existente de recepción por proveedor (sin depender de pedidos/pedido_items).
-      const { data, error } = await supabase().rpc("confirm_recepcion", {
-        p_proveedor_id: legacySel.proveedor_id,
-        p_items: payload
-      });
+      // Emergencia: NO generamos movimientos ni llamamos RPC.
+      // Solo archivamos el pedido legacy para que desaparezca de "pendientes".
+      const uid = await requireUserId();
+      const { error } = await supabase().from("pedidos").insert({
+        establecimiento_id: activeEstablishmentId,
+        proveedor_id: legacySel.proveedor_id,
+        creado_por: uid,
+        estado: "recibido",
+        received_at: new Date().toISOString()
+      } as unknown as Record<string, unknown>);
       if (error) throw error;
-      const ok = ((data ?? null) as { ok?: boolean } | null)?.ok ?? true;
-      if (!ok) throw new Error("No se pudo confirmar la recepción.");
-
-      // Cierre: crear un "pedido" recibido para marcarlo como limpio (sin items).
-      try {
-        const uid = await requireUserId();
-        await supabase().from("pedidos").insert({
-          establecimiento_id: activeEstablishmentId,
-          proveedor_id: legacySel.proveedor_id,
-          creado_por: uid,
-          estado: "recibido",
-          received_at: new Date().toISOString()
-        } as unknown as Record<string, unknown>);
-      } catch {
-        // ignore
-      }
 
       await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", activeEstablishmentId] });
       await queryClient.invalidateQueries({ queryKey: ["productos", activeEstablishmentId] });
       await queryClient.invalidateQueries({ queryKey: ["movimientos", activeEstablishmentId] });
       await refresh();
+      setOkMsg("Pedido archivado correctamente.");
       setLegacyOpen(false);
       setLegacySel(null);
       setLegacyItems([]);
@@ -427,6 +416,11 @@ export default function RecepcionPedidosPage() {
           </button>
         </div>
 
+        {okMsg ? (
+          <p className="mb-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-900">
+            {okMsg}
+          </p>
+        ) : null}
         {err ? <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{err}</p> : null}
 
         {!activeEstablishmentId ? (
