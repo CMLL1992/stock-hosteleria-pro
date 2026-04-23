@@ -1,5 +1,6 @@
 "use client";
 
+import type { ChangeEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { MobileHeader } from "@/components/MobileHeader";
@@ -46,6 +47,48 @@ function newId(): string {
   return (globalThis.crypto?.randomUUID?.() as string | undefined) ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+const ING_DEFAULT: Omit<IngredienteDraft, "id"> = {
+  nombre_ingrediente: "",
+  cantidad_gramos_ml: "0",
+  precio_compra_sin_iva: "0",
+  porcentaje_merma: "0",
+  iva_ingrediente: "10"
+};
+
+function newIngredienteRow(): IngredienteDraft {
+  return { ...ING_DEFAULT, id: newId() };
+}
+
+/** Evita TypeError si `currentTarget` es null (p. ej. eventos sintéticos / desmontaje). */
+function readInputOrSelectValue(ev: ChangeEvent<HTMLInputElement | HTMLSelectElement>): string {
+  const el = ev.currentTarget ?? (ev.target as HTMLInputElement | HTMLSelectElement | null);
+  if (el && typeof (el as HTMLInputElement).value === "string") return (el as HTMLInputElement).value;
+  return "";
+}
+
+/** Garantiza un objeto de fila válido para map / cálculos (nunca null ni campos undefined). */
+function coerceIngredienteDraft(x: unknown, index: number): IngredienteDraft {
+  const fallbackId = `ing-row-${index}`;
+  if (x && typeof x === "object") {
+    const o = x as Record<string, unknown>;
+    const id = typeof o.id === "string" && o.id.trim() ? o.id : fallbackId;
+    return {
+      id,
+      nombre_ingrediente: String(o.nombre_ingrediente ?? ""),
+      cantidad_gramos_ml: String(o.cantidad_gramos_ml ?? "0"),
+      precio_compra_sin_iva: String(o.precio_compra_sin_iva ?? "0"),
+      porcentaje_merma: String(o.porcentaje_merma ?? "0"),
+      iva_ingrediente: String(o.iva_ingrediente ?? "10")
+    };
+  }
+  return { ...ING_DEFAULT, id: fallbackId };
+}
+
+function normalizeIngredientesList(arr: unknown): IngredienteDraft[] {
+  if (!Array.isArray(arr) || arr.length === 0) return [newIngredienteRow()];
+  return arr.map((x, i) => coerceIngredienteDraft(x, i));
+}
+
 export default function NuevoEscandalloCocinaPage() {
   const { data: me, isLoading: meLoading } = useMyRole();
   const role = getEffectiveRole(me ?? null);
@@ -65,16 +108,7 @@ export default function NuevoEscandalloCocinaPage() {
   const [multiplicador, setMultiplicador] = useState("3,5");
   const [ivaFinal, setIvaFinal] = useState("10");
 
-  const [ingredientes, setIngredientes] = useState<IngredienteDraft[]>([
-    {
-      id: newId(),
-      nombre_ingrediente: "",
-      cantidad_gramos_ml: "0",
-      precio_compra_sin_iva: "0",
-      porcentaje_merma: "0",
-      iva_ingrediente: "10"
-    }
-  ]);
+  const [ingredientes, setIngredientes] = useState<IngredienteDraft[]>(() => [newIngredienteRow()]);
 
   useEffect(() => {
     if (!canEdit) return;
@@ -133,12 +167,14 @@ export default function NuevoEscandalloCocinaPage() {
     );
   }, [platos, qPlato]);
 
+  const ingredientesRows = useMemo(() => normalizeIngredientesList(ingredientes), [ingredientes]);
+
   const calc = useMemo(() => {
     const raciones = Math.max(1e-6, clampNonNeg(toNum(racionesLote)));
     const mult = Math.max(0, clampNonNeg(toNum(multiplicador)));
     const iva = clampNonNeg(toNum(ivaFinal));
 
-    const lines = ingredientes
+    const lines = ingredientesRows
       .map((it) => {
         const qty = clampNonNeg(toNum(it.cantidad_gramos_ml));
         const precio = clampNonNeg(toNum(it.precio_compra_sin_iva));
@@ -167,7 +203,7 @@ export default function NuevoEscandalloCocinaPage() {
       margenContribEur,
       margenContribPct
     };
-  }, [ingredientes, ivaFinal, multiplicador, racionesLote]);
+  }, [ingredientesRows, ivaFinal, multiplicador, racionesLote]);
 
   function formatEUR(n: number): string {
     return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(Number(n) || 0);
@@ -282,7 +318,7 @@ export default function NuevoEscandalloCocinaPage() {
                 <input
                   className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
                   value={qPlato}
-                  onChange={(e) => setQPlato(e.currentTarget.value)}
+                  onChange={(e) => setQPlato(readInputOrSelectValue(e))}
                   placeholder="Escribe para filtrar…"
                 />
               </label>
@@ -291,7 +327,7 @@ export default function NuevoEscandalloCocinaPage() {
                 <select
                   className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
                   value={platoId}
-                  onChange={(e) => setPlatoId(e.currentTarget.value)}
+                  onChange={(e) => setPlatoId(readInputOrSelectValue(e))}
                   disabled={!activeEstablishmentId || loading}
                 >
                   <option value="">{loading ? "Cargando…" : "(Selecciona…)"}</option>
@@ -321,7 +357,7 @@ export default function NuevoEscandalloCocinaPage() {
                   className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
                   inputMode="decimal"
                   value={racionesLote}
-                  onChange={(e) => setRacionesLote(e.currentTarget.value)}
+                  onChange={(e) => setRacionesLote(readInputOrSelectValue(e))}
                 />
               </label>
               <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
@@ -330,7 +366,7 @@ export default function NuevoEscandalloCocinaPage() {
                   className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
                   inputMode="decimal"
                   value={multiplicador}
-                  onChange={(e) => setMultiplicador(e.currentTarget.value)}
+                  onChange={(e) => setMultiplicador(readInputOrSelectValue(e))}
                 />
               </label>
               <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
@@ -339,7 +375,7 @@ export default function NuevoEscandalloCocinaPage() {
                   className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
                   inputMode="numeric"
                   value={ivaFinal}
-                  onChange={(e) => setIvaFinal(e.currentTarget.value)}
+                  onChange={(e) => setIvaFinal(readInputOrSelectValue(e))}
                 />
               </label>
             </div>
@@ -352,17 +388,7 @@ export default function NuevoEscandalloCocinaPage() {
                 type="button"
                 className="min-h-11"
                 onClick={() =>
-                  setIngredientes((prev) => [
-                    ...prev,
-                    {
-                      id: newId(),
-                      nombre_ingrediente: "",
-                      cantidad_gramos_ml: "0",
-                      precio_compra_sin_iva: "0",
-                      porcentaje_merma: "0",
-                      iva_ingrediente: "10"
-                    }
-                  ])
+                  setIngredientes((prev) => [...normalizeIngredientesList(prev), newIngredienteRow()])
                 }
               >
                 Añadir ingrediente
@@ -383,7 +409,7 @@ export default function NuevoEscandalloCocinaPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {ingredientes.map((it) => {
+                  {ingredientesRows.map((it) => {
                     const qty = clampNonNeg(toNum(it.cantidad_gramos_ml));
                     const precio = clampNonNeg(toNum(it.precio_compra_sin_iva));
                     const merma = clampNonNeg(toNum(it.porcentaje_merma));
@@ -394,9 +420,12 @@ export default function NuevoEscandalloCocinaPage() {
                           <input
                             className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
                             value={it.nombre_ingrediente}
-                            onChange={(e) =>
-                              setIngredientes((prev) => prev.map((x) => (x.id === it.id ? { ...x, nombre_ingrediente: e.currentTarget.value } : x)))
-                            }
+                            onChange={(e) => {
+                              const v = readInputOrSelectValue(e);
+                              setIngredientes((prev) =>
+                                normalizeIngredientesList(prev).map((x) => (x.id === it.id ? { ...x, nombre_ingrediente: v } : x))
+                              );
+                            }}
                             placeholder="Ej: Tomate"
                           />
                         </td>
@@ -405,9 +434,12 @@ export default function NuevoEscandalloCocinaPage() {
                             className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-right text-sm text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-black/10"
                             inputMode="decimal"
                             value={it.cantidad_gramos_ml}
-                            onChange={(e) =>
-                              setIngredientes((prev) => prev.map((x) => (x.id === it.id ? { ...x, cantidad_gramos_ml: e.currentTarget.value } : x)))
-                            }
+                            onChange={(e) => {
+                              const v = readInputOrSelectValue(e);
+                              setIngredientes((prev) =>
+                                normalizeIngredientesList(prev).map((x) => (x.id === it.id ? { ...x, cantidad_gramos_ml: v } : x))
+                              );
+                            }}
                           />
                         </td>
                         <td className="px-2 py-2 align-top">
@@ -415,9 +447,12 @@ export default function NuevoEscandalloCocinaPage() {
                             className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-right text-sm text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-black/10"
                             inputMode="decimal"
                             value={it.precio_compra_sin_iva}
-                            onChange={(e) =>
-                              setIngredientes((prev) => prev.map((x) => (x.id === it.id ? { ...x, precio_compra_sin_iva: e.currentTarget.value } : x)))
-                            }
+                            onChange={(e) => {
+                              const v = readInputOrSelectValue(e);
+                              setIngredientes((prev) =>
+                                normalizeIngredientesList(prev).map((x) => (x.id === it.id ? { ...x, precio_compra_sin_iva: v } : x))
+                              );
+                            }}
                           />
                         </td>
                         <td className="px-2 py-2 align-top">
@@ -425,9 +460,12 @@ export default function NuevoEscandalloCocinaPage() {
                             className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-right text-sm text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-black/10"
                             inputMode="decimal"
                             value={it.porcentaje_merma}
-                            onChange={(e) =>
-                              setIngredientes((prev) => prev.map((x) => (x.id === it.id ? { ...x, porcentaje_merma: e.currentTarget.value } : x)))
-                            }
+                            onChange={(e) => {
+                              const v = readInputOrSelectValue(e);
+                              setIngredientes((prev) =>
+                                normalizeIngredientesList(prev).map((x) => (x.id === it.id ? { ...x, porcentaje_merma: v } : x))
+                              );
+                            }}
                           />
                         </td>
                         <td className="px-2 py-2 align-top">
@@ -435,9 +473,12 @@ export default function NuevoEscandalloCocinaPage() {
                             className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-right text-sm text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-black/10"
                             inputMode="numeric"
                             value={it.iva_ingrediente}
-                            onChange={(e) =>
-                              setIngredientes((prev) => prev.map((x) => (x.id === it.id ? { ...x, iva_ingrediente: e.currentTarget.value } : x)))
-                            }
+                            onChange={(e) => {
+                              const v = readInputOrSelectValue(e);
+                              setIngredientes((prev) =>
+                                normalizeIngredientesList(prev).map((x) => (x.id === it.id ? { ...x, iva_ingrediente: v } : x))
+                              );
+                            }}
                           />
                         </td>
                         <td className="px-2 py-2 align-top text-right text-sm font-semibold tabular-nums text-slate-900">
@@ -447,9 +488,14 @@ export default function NuevoEscandalloCocinaPage() {
                           <button
                             type="button"
                             className="min-h-11 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                            onClick={() => setIngredientes((prev) => prev.filter((x) => x.id !== it.id))}
-                            disabled={ingredientes.length <= 1}
-                            title={ingredientes.length <= 1 ? "Debe existir al menos 1 fila" : "Eliminar"}
+                            onClick={() =>
+                              setIngredientes((prev) => {
+                                const base = normalizeIngredientesList(prev).filter((x) => x.id !== it.id);
+                                return base.length ? base : [newIngredienteRow()];
+                              })
+                            }
+                            disabled={ingredientesRows.length <= 1}
+                            title={ingredientesRows.length <= 1 ? "Debe existir al menos 1 fila" : "Eliminar"}
                           >
                             Quitar
                           </button>
