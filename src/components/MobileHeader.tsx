@@ -34,6 +34,9 @@ export function MobileHeader({
   const [perfilErr, setPerfilErr] = useState<string | null>(null);
   const [perfilOk, setPerfilOk] = useState<string | null>(null);
 
+  const effectiveRole = getEffectiveRole(me);
+  const canEditPerfilNombre = effectiveRole === "superadmin";
+
   useEffect(() => {
     if (!perfilOpen) return;
     let cancelled = false;
@@ -156,16 +159,17 @@ export function MobileHeader({
       </div>
 
       {perfilOpen ? (
-        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/40 p-4 sm:items-center">
-          <div className="w-[90%] max-w-md rounded-2xl bg-white shadow-xl">
-            <div className="flex max-h-[85vh] flex-col overflow-hidden rounded-2xl">
-              <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          {/* Este es el contenedor blanco del modal */}
+          <div className="flex w-full max-w-md flex-col overflow-hidden rounded-xl bg-white shadow-2xl dark:bg-slate-900">
+            {/* Cabecera del modal */}
+            <div className="border-b border-slate-200 p-6 dark:border-slate-800">
+              <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-sm font-semibold text-slate-900">Mi perfil</p>
-                  <p className="mt-0.5 text-xs text-slate-500">Edita tu nombre (tabla `usuarios`).</p>
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Nombre</h3>
                 </div>
                 <button
-                  className="min-h-10 rounded-xl px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
                   type="button"
                   onClick={() => setPerfilOpen(false)}
                   disabled={perfilSaving}
@@ -173,41 +177,41 @@ export function MobileHeader({
                   Cerrar
                 </button>
               </div>
+            </div>
 
-              <div className="flex-1 overflow-y-auto p-4 pb-6">
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-slate-900" htmlFor="mi-nombre">
-                    Nombre
-                  </label>
-                  <input
-                    id="mi-nombre"
-                    className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-                    value={perfilNombre}
-                    onChange={(e) => setPerfilNombre(e.currentTarget.value)}
-                    placeholder="Tu nombre completo"
-                  />
-                  {perfilErr ? (
-                    <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{perfilErr}</p>
-                  ) : null}
-                  {perfilOk ? (
-                    <p className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
-                      {perfilOk}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
+            {/* Cuerpo del modal (donde está el input) */}
+            <div className="p-6">
+              <input
+                type="text"
+                value={perfilNombre}
+                onChange={(e) => setPerfilNombre(e.currentTarget.value)}
+                className="w-full rounded-lg border border-slate-300 px-4 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800"
+                placeholder="Tu nombre completo"
+                disabled={!canEditPerfilNombre || perfilSaving}
+              />
+              {perfilErr ? (
+                <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{perfilErr}</p>
+              ) : null}
+              {perfilOk ? (
+                <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                  {perfilOk}
+                </p>
+              ) : null}
+            </div>
 
-              <div className="flex items-center justify-end gap-2 border-t border-slate-100 p-4">
+            {/* Pie del modal con los botones */}
+            <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 p-6 dark:border-slate-800 dark:bg-slate-800/50">
+              <button
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
+                type="button"
+                onClick={() => setPerfilOpen(false)}
+                disabled={perfilSaving}
+              >
+                Cancelar
+              </button>
+              {canEditPerfilNombre ? (
                 <button
-                  className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                  type="button"
-                  onClick={() => setPerfilOpen(false)}
-                  disabled={perfilSaving}
-                >
-                  Cancelar
-                </button>
-                <button
-                  className="min-h-12 rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                   type="button"
                   disabled={perfilSaving || !perfilNombre.trim()}
                   onClick={async () => {
@@ -219,18 +223,12 @@ export function MobileHeader({
                       const uid = auth?.user?.id;
                       if (!uid) throw new Error("No se pudo obtener el usuario autenticado.");
 
-                      // Preferimos RPC para limitar el update a nombre_completo.
-                      const rpc = await supabase().rpc("update_my_nombre_completo", {
-                        p_nombre_completo: perfilNombre.trim()
+                      const { error } = await supabase().rpc("update_user_name_admin", {
+                        p_user_id: uid,
+                        p_new_name: perfilNombre.trim()
                       });
-                      if (rpc.error) {
-                        // Fallback: update directo (requiere policy adecuada)
-                        const up = await supabase()
-                          .from("usuarios")
-                          .update({ nombre_completo: perfilNombre.trim() })
-                          .eq("id", uid);
-                        if (up.error) throw up.error;
-                      }
+                      if (error) throw error;
+
                       setPerfilOk("Nombre actualizado.");
                       router.refresh();
                       setPerfilOpen(false);
@@ -243,7 +241,7 @@ export function MobileHeader({
                 >
                   {perfilSaving ? "Guardando…" : "Guardar"}
                 </button>
-              </div>
+              ) : null}
             </div>
           </div>
         </div>

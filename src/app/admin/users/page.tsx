@@ -37,6 +37,7 @@ export default function AdminUsersPage() {
   const [editEstId, setEditEstId] = useState<string>("");
 
   const allowed = !!me?.isSuperadmin && me.profileReady;
+  const canEditNames = !!me?.isSuperadmin;
 
   const estNombreById = useMemo(() => {
     const m = new Map<string, string>();
@@ -118,6 +119,7 @@ export default function AdminUsersPage() {
 
   async function guardarEdicion() {
     if (!editUser) return;
+    if (!canEditNames) return;
     if (!editNombre.trim()) {
       setErr("El nombre no puede estar vacío.");
       return;
@@ -234,6 +236,7 @@ export default function AdminUsersPage() {
                   className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
                   value={editNombre}
                   onChange={(e) => setEditNombre(e.currentTarget.value)}
+                  disabled={!canEditNames || busy}
                 />
               </div>
               <div className="space-y-1">
@@ -264,9 +267,11 @@ export default function AdminUsersPage() {
               </div>
             </div>
             <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-              <Button onClick={guardarEdicion} disabled={busy || !editNombre.trim() || !editEstId}>
-                {busy ? "Guardando…" : "Guardar cambios"}
-              </Button>
+              {canEditNames ? (
+                <Button onClick={guardarEdicion} disabled={busy || !editNombre.trim() || !editEstId}>
+                  {busy ? "Guardando…" : "Guardar cambios"}
+                </Button>
+              ) : null}
               <button
                 type="button"
                 className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 hover:bg-slate-50 disabled:opacity-50"
