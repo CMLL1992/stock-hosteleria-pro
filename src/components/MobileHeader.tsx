@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, LogOut, User } from "lucide-react";
+import { ArrowLeft, Lock, LogOut, User } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
@@ -159,7 +159,7 @@ export function MobileHeader({
 
       {perfilOpen ? (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-fadeIn"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
           role="dialog"
           aria-modal="true"
           aria-label="Mi perfil"
@@ -167,17 +167,17 @@ export function MobileHeader({
         >
           {/* 2. Contenedor blanco del Modal: Centrado, responsivo, sombra */}
           <div
-            className="w-full max-w-md rounded-2xl bg-white shadow-xl dark:bg-slate-900 flex flex-col overflow-hidden animate-scaleIn"
+            className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             {/* 3. Cabecera (Siempre visible) */}
-            <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-              <h3 className="text-xl font-bold text-slate-900 dark:text-white">Mi Perfil</h3>
+            <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/80 dark:bg-slate-900/40">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Mi Perfil</h3>
               <button
                 type="button"
                 onClick={() => setPerfilOpen(false)}
                 disabled={perfilSaving}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:bg-slate-700 dark:text-slate-200 dark:border-slate-600 dark:hover:bg-slate-600 transition"
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700 dark:hover:bg-slate-700 transition"
                 aria-label="Cerrar"
                 title="Cerrar"
               >
@@ -186,21 +186,26 @@ export function MobileHeader({
             </div>
 
             {/* 4. Cuerpo (Donde está el formulario) */}
-            <div className="p-6 space-y-4">
+            <div className="p-5 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Nombre Completo</label>
 
                 {effectiveRole !== "superadmin" ? (
-                  <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-medium border border-slate-200 dark:border-slate-700">
-                    {perfilNombre || "Sin Nombre"}
-                    <span className="ml-2 text-xs text-slate-500">(Solo lectura)</span>
+                  <div className="flex items-start gap-3 p-3 bg-slate-100 dark:bg-slate-800 rounded-xl text-slate-800 dark:text-slate-100 font-medium border border-slate-200 dark:border-slate-700">
+                    <div className="mt-0.5 grid h-8 w-8 place-items-center rounded-xl bg-white/70 text-slate-600 border border-slate-200 dark:bg-slate-900/50 dark:border-slate-700 dark:text-slate-300">
+                      <Lock className="h-4 w-4" aria-hidden />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate">{perfilNombre || "Sin Nombre"}</p>
+                      <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">(Solo lectura)</p>
+                    </div>
                   </div>
                 ) : (
                   <input
                     type="text"
                     value={perfilNombre}
                     onChange={(e) => setPerfilNombre(e.currentTarget.value)}
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
                     placeholder="Ej: Carlos G."
                     disabled={perfilSaving}
                   />
@@ -221,12 +226,12 @@ export function MobileHeader({
             </div>
 
             {/* 5. Pie del Modal (Botones) */}
-            <div className="p-6 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-3 bg-slate-50 dark:bg-slate-800/50">
+            <div className="p-5 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-3 bg-slate-50 dark:bg-slate-800/50">
               <button
                 onClick={() => setPerfilOpen(false)}
                 type="button"
                 disabled={perfilSaving}
-                className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 dark:bg-slate-700 dark:text-slate-200 dark:border-slate-600 dark:hover:bg-slate-600 transition"
+                className="px-4 py-2.5 text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700 dark:hover:bg-slate-700 transition"
               >
                 {effectiveRole === "superadmin" ? "Cancelar" : "Cerrar"}
               </button>
@@ -259,7 +264,7 @@ export function MobileHeader({
                       setPerfilSaving(false);
                     }
                   }}
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition disabled:opacity-60"
+                  className="px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 rounded-xl hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition disabled:opacity-60"
                 >
                   {perfilSaving ? "Guardando…" : "Guardar"}
                 </button>
