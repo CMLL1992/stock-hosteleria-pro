@@ -117,50 +117,90 @@ export default function AdminMovimientosPage() {
         if (!ids.length) {
           setUsuariosById(new Map());
         } else {
-          // Multitenant: el lookup de usuarios debe estar acotado al establecimiento.
-          // Fallback: si `nombre_completo` aún no existe en BD, reintentamos sin esa columna.
-          const baseQ = supabase()
-            .from("usuarios")
-            .select("id,email,nombre_completo,establecimiento_id")
-            .eq("establecimiento_id", activeEstablishmentId)
-            .in("id", ids)
-            .limit(200);
+          const lowerMsg = (e: unknown) => String((e as { message?: unknown })?.message ?? "").toLowerCase();
+          const isMissingColumn = (msg: string, col: string) => msg.includes("column") && msg.includes(col.toLowerCase());
 
-          const { data: uData, error: uErr } = await baseQ;
-          if (uErr) {
-            const msg = String((uErr as { message?: unknown })?.message ?? "").toLowerCase();
-            const looksLikeMissingCol = msg.includes("nombre_completo") || (msg.includes("column") && msg.includes("nombre"));
-            if (!looksLikeMissingCol) throw uErr;
-            const fb = await supabase()
+          async function fetchUsersWithTenantScope(): Promise<Map<string, UsuarioMini>> {
+            // Intento 1 (SaaS): usuarios con establecimiento_id + nombre_completo
+            const r1 = await supabase()
               .from("usuarios")
-              .select("id,email,establecimiento_id")
+              .select("id,email,nombre_completo,establecimiento_id")
               .eq("establecimiento_id", activeEstablishmentId)
               .in("id", ids)
               .limit(200);
-            if (fb.error) throw fb.error;
-            const m = new Map<string, UsuarioMini>();
-            for (const r of ((fb.data ?? []) as unknown as Array<Record<string, unknown>>)) {
-              const id = String(r.id ?? "").trim();
-              if (!id) continue;
-              m.set(id, {
-                id,
-                email: r.email != null ? String(r.email) : null,
-                nombre_completo: null
-              });
+            if (!r1.error) {
+              const m = new Map<string, UsuarioMini>();
+              for (const r of ((r1.data ?? []) as unknown as Array<Record<string, unknown>>)) {
+                const id = String(r.id ?? "").trim();
+                if (!id) continue;
+                m.set(id, {
+                  id,
+                  email: r.email != null ? String(r.email) : null,
+                  nombre_completo: r.nombre_completo != null ? String(r.nombre_completo) : null
+                });
+              }
+              return m;
             }
-            setUsuariosById(m);
-            return;
+
+            const msg = lowerMsg(r1.error);
+            // Si falla por columna inexistente, degradamos.
+            if (isMissingColumn(msg, "nombre_completo")) {
+              const r2 = await supabase()
+                .from("usuarios")
+                .select("id,email,establecimiento_id")
+                .eq("establecimiento_id", activeEstablishmentId)
+                .in("id", ids)
+                .limit(200);
+              if (r2.error) throw r2.error;
+              const m = new Map<string, UsuarioMini>();
+              for (const r of ((r2.data ?? []) as unknown as Array<Record<string, unknown>>)) {
+                const id = String(r.id ?? "").trim();
+                if (!id) continue;
+                m.set(id, { id, email: r.email != null ? String(r.email) : null, nombre_completo: null });
+              }
+              return m;
+            }
+
+            if (isMissingColumn(msg, "establecimiento_id")) {
+              // Esquema legacy (single-tenant): no existe establecimiento_id en usuarios.
+              // Reintentamos sin scope de establecimiento (no hay manera de aislar por local).
+              const r3 = await supabase()
+                .from("usuarios")
+                .select("id,email,nombre_completo")
+                .in("id", ids)
+                .limit(200);
+              if (!r3.error) {
+                const m = new Map<string, UsuarioMini>();
+                for (const r of ((r3.data ?? []) as unknown as Array<Record<string, unknown>>)) {
+                  const id = String(r.id ?? "").trim();
+                  if (!id) continue;
+                  m.set(id, {
+                    id,
+                    email: r.email != null ? String(r.email) : null,
+                    nombre_completo: r.nombre_completo != null ? String(r.nombre_completo) : null
+                  });
+                }
+                return m;
+              }
+              const msg3 = lowerMsg(r3.error);
+              if (isMissingColumn(msg3, "nombre_completo")) {
+                const r4 = await supabase().from("usuarios").select("id,email").in("id", ids).limit(200);
+                if (r4.error) throw r4.error;
+                const m = new Map<string, UsuarioMini>();
+                for (const r of ((r4.data ?? []) as unknown as Array<Record<string, unknown>>)) {
+                  const id = String(r.id ?? "").trim();
+                  if (!id) continue;
+                  m.set(id, { id, email: r.email != null ? String(r.email) : null, nombre_completo: null });
+                }
+                return m;
+              }
+              throw r3.error;
+            }
+
+            throw r1.error;
           }
-          const m = new Map<string, UsuarioMini>();
-          for (const r of ((uData ?? []) as unknown as Array<Record<string, unknown>>)) {
-            const id = String(r.id ?? "").trim();
-            if (!id) continue;
-            m.set(id, {
-              id,
-              email: r.email != null ? String(r.email) : null,
-              nombre_completo: r.nombre_completo != null ? String(r.nombre_completo) : null
-            });
-          }
+
+          const m = await fetchUsersWithTenantScope();
           setUsuariosById(m);
         }
       } catch {

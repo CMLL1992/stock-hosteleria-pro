@@ -191,7 +191,6 @@ export default function RecepcionPedidosPage() {
         .map((x) => ({
           client_uuid: newClientUuid(),
           producto_id: x.producto_id,
-          establecimiento_id: activeEstablishmentId,
           tipo: "entrada" as const,
           cantidad: x.delta,
           usuario_id: uid,
@@ -200,8 +199,23 @@ export default function RecepcionPedidosPage() {
         }));
 
       if (movimientos.length) {
-        const ins = await supabase().from("movimientos").insert(movimientos as unknown as Record<string, unknown>[]);
-        if (ins.error) throw ins.error;
+        // Insert robusto: algunos esquemas legacy no tienen columnas SaaS (proveedor_id, timestamp, etc).
+        const first = await supabase().from("movimientos").insert(movimientos as unknown as Record<string, unknown>[]);
+        if (first.error) {
+          const msg = String((first.error as { message?: unknown })?.message ?? "").toLowerCase();
+          const looksLikeUnknownColumn = msg.includes("column") || msg.includes("schema cache") || msg.includes("does not exist");
+          if (!looksLikeUnknownColumn) throw first.error;
+          // Fallback mínimo para garantizar subida de stock (trigger apply_stock_movement).
+          const minimal = movimientos.map((m) => ({
+            producto_id: m.producto_id,
+            tipo: m.tipo,
+            cantidad: m.cantidad,
+            usuario_id: m.usuario_id,
+            timestamp: m.timestamp
+          }));
+          const second = await supabase().from("movimientos").insert(minimal as unknown as Record<string, unknown>[]);
+          if (second.error) throw second.error;
+        }
       }
 
       // 2) Actualizar pedido_items sumando lo recibido hoy.
