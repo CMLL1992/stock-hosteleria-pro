@@ -15,6 +15,8 @@ type EnvaseRow = {
   coste: number;
 };
 
+type ProductoOpt = { id: string; articulo: string };
+
 function toNum(v: string): number {
   const n = Number(String(v ?? "").replace(",", "."));
   return Number.isFinite(n) ? n : 0;
@@ -29,9 +31,11 @@ export default function CatalogoEnvasesPage() {
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<EnvaseRow[]>([]);
+  const [productos, setProductos] = useState<ProductoOpt[]>([]);
 
   const [nombre, setNombre] = useState("");
   const [coste, setCoste] = useState("0");
+  const [productoId, setProductoId] = useState<string>("");
   const [saving, setSaving] = useState(false);
 
   async function refresh() {
@@ -63,6 +67,33 @@ export default function CatalogoEnvasesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canManage, activeEstablishmentId]);
 
+  useEffect(() => {
+    if (!canManage) return;
+    if (!activeEstablishmentId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase()
+          .from("productos")
+          .select("id,articulo,nombre")
+          .eq("establecimiento_id", activeEstablishmentId)
+          .order("articulo", { ascending: true });
+        if (cancelled) return;
+        if (error) throw error;
+        const list = ((data ?? []) as unknown as Record<string, unknown>[]).map((r) => ({
+          id: String(r.id ?? ""),
+          articulo: String(r.articulo ?? r.nombre ?? "—").trim() || "—"
+        }));
+        setProductos(list);
+      } catch {
+        if (!cancelled) setProductos([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeEstablishmentId, canManage]);
+
   const disabled = useMemo(() => !activeEstablishmentId || !nombre.trim() || saving, [activeEstablishmentId, nombre, saving]);
 
   async function crear() {
@@ -75,10 +106,38 @@ export default function CatalogoEnvasesPage() {
         nombre: nombre.trim(),
         coste: Math.max(0, toNum(coste))
       };
-      const { error } = await supabase().from("envases_catalogo").insert(payload);
+      const { data, error } = await supabase().from("envases_catalogo").insert(payload).select("id").maybeSingle();
       if (error) throw error;
+      const envaseId = String((data as { id?: unknown } | null)?.id ?? "");
+
+      if (envaseId && productoId) {
+        const { error: updErr } = await supabase()
+          .from("productos")
+          .update({ envase_catalogo_id: envaseId })
+          .eq("id", productoId)
+          .eq("establecimiento_id", activeEstablishmentId);
+        if (updErr) throw updErr;
+      }
       setNombre("");
       setCoste("0");
+      setProductoId("");
+      await refresh();
+    } catch (e) {
+      setErr(supabaseErrToString(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function eliminarEnvase(id: string, nombre: string) {
+    if (!activeEstablishmentId) return;
+    const ok = window.confirm(`¿Eliminar envase "${nombre}"? Se desvinculará de los productos (envase_catalogo_id = null).`);
+    if (!ok) return;
+    setErr(null);
+    setSaving(true);
+    try {
+      const { error } = await supabase().from("envases_catalogo").delete().eq("id", id).eq("establecimiento_id", activeEstablishmentId);
+      if (error) throw error;
       await refresh();
     } catch (e) {
       setErr(supabaseErrToString(e));
@@ -133,6 +192,24 @@ export default function CatalogoEnvasesPage() {
             </label>
           </div>
           <div className="mt-3">
+            <label className="block">
+              <span className="block text-xs font-bold uppercase tracking-wide text-slate-600">Vincular a producto (opcional)</span>
+              <select
+                className="mt-1 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900"
+                value={productoId}
+                onChange={(e) => setProductoId(e.currentTarget.value)}
+              >
+                <option value="">(Sin vincular)</option>
+                {productos.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.articulo}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="mt-1 text-xs text-slate-600">Al crear el envase, se asignará automáticamente al producto seleccionado.</p>
+          </div>
+          <div className="mt-3">
             <Button onClick={crear} disabled={disabled}>
               {saving ? "Creando…" : "Crear envase"}
             </Button>
@@ -158,9 +235,19 @@ export default function CatalogoEnvasesPage() {
               {rows.map((r) => (
                 <li key={r.id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                   <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">{r.nombre}</span>
-                  <span className="shrink-0 font-mono text-sm font-bold tabular-nums text-slate-900">
-                    {(Number(r.coste ?? 0) || 0).toFixed(2)} €
-                  </span>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className="font-mono text-sm font-bold tabular-nums text-slate-900">
+                      {(Number(r.coste ?? 0) || 0).toFixed(2)} €
+                    </span>
+                    <button
+                      type="button"
+                      className="min-h-10 rounded-xl border border-red-200 bg-white px-3 text-xs font-bold text-red-700 hover:bg-red-50 disabled:opacity-50"
+                      onClick={() => void eliminarEnvase(r.id, r.nombre)}
+                      disabled={saving}
+                    >
+                      Eliminar
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>

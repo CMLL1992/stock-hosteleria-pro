@@ -200,8 +200,7 @@ export function DashboardClient() {
     let total = 0;
     for (const p of rows) {
       // Preferimos coste específico por envase (si el producto está vinculado a un ID del catálogo).
-      const envaseId = (p as unknown as { envase_catalogo_id?: unknown }).envase_catalogo_id;
-      const envaseKey = envaseId != null ? String(envaseId).trim() : "";
+      const envaseKey = (p.envase_catalogo_id ?? "").trim();
       const precioPorEnvase =
         envaseKey && catalogo.has(envaseKey)
           ? Math.max(0, catalogo.get(envaseKey) ?? 0)

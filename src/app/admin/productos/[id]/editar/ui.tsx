@@ -58,6 +58,7 @@ export function EditarProductoClient({ id }: { id: string }) {
   const [proveedorId, setProveedorId] = useState<string>("");
   const [envaseId, setEnvaseId] = useState<string>("");
   const [unidadesPorCaja, setUnidadesPorCaja] = useState<string>("1");
+  const [envaseErr, setEnvaseErr] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -159,8 +160,16 @@ export function EditarProductoClient({ id }: { id: string }) {
       setErr("No hay establecimiento activo.");
       return;
     }
+    // Regla: si el producto es de tipo envase (por unidad), el vínculo a catálogo debe existir (1:1).
+    const unidadKey = String(unidadVal ?? "").trim().toLowerCase();
+    const requiresEnvase = unidadKey === "caja" || unidadKey === "barril" || unidadKey === "gas";
+    if (requiresEnvase && !String(envaseId ?? "").trim()) {
+      setEnvaseErr("Este producto requiere un envase vinculado (Caja/Barril/Gas).");
+      return;
+    }
     setErr(null);
     setOk(null);
+    setEnvaseErr(null);
 
     const col = await resolveProductoTituloColumn(activeEstablishmentId);
 
@@ -201,6 +210,9 @@ export function EditarProductoClient({ id }: { id: string }) {
         {loading ? <p className="text-sm text-gray-600">Cargando…</p> : null}
         {err ? (
           <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{err}</p>
+        ) : null}
+        {envaseErr ? (
+          <p className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{envaseErr}</p>
         ) : null}
         {ok ? (
           <p className="mb-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-3 text-sm font-medium text-emerald-900">{ok}</p>
