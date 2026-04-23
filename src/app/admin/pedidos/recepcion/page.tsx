@@ -12,6 +12,7 @@ import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { useQueryClient } from "@tanstack/react-query";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 import { requireUserId } from "@/lib/session";
+import { Camera } from "lucide-react";
 
 type PedidoEstado = "pendiente" | "parcial" | "recibido";
 
@@ -72,6 +73,10 @@ export default function RecepcionPedidosPage() {
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
+  const [uploadingAlbaran, setUploadingAlbaran] = useState(false);
+  const [uploadPct, setUploadPct] = useState(0);
+  const [albaranOk, setAlbaranOk] = useState<string | null>(null);
+
   const refresh = useCallback(async () => {
     if (!activeEstablishmentId) {
       setPedidos([]);
@@ -106,6 +111,67 @@ export default function RecepcionPedidosPage() {
       setLoading(false);
     }
   }, [activeEstablishmentId]);
+
+  async function onCaptureAlbaran(file: File | null) {
+    if (!file) return;
+    if (!activeEstablishmentId) {
+      setErr("Selecciona un establecimiento antes de guardar albaranes.");
+      return;
+    }
+    setErr(null);
+    setAlbaranOk(null);
+    setUploadingAlbaran(true);
+    setUploadPct(5);
+    try {
+      const uid = await requireUserId();
+      setUploadPct(15);
+      const ext = (() => {
+        const n = (file.name || "").toLowerCase();
+        const m = n.match(/\.([a-z0-9]+)$/);
+        if (m?.[1]) return m[1];
+        const type = (file.type || "").toLowerCase();
+        if (type.includes("png")) return "png";
+        if (type.includes("webp")) return "webp";
+        return "jpg";
+      })();
+      const safeName = `${Date.now()}-${(globalThis.crypto?.randomUUID?.() ?? Math.random().toString(16).slice(2))}.${ext}`;
+      const path = `${activeEstablishmentId}/${safeName}`;
+      setUploadPct(35);
+
+      const up = await supabase().storage.from("albaranes").upload(path, file, {
+        upsert: false,
+        contentType: file.type || undefined,
+        cacheControl: "3600"
+      });
+      if (up.error) throw up.error;
+      setUploadPct(70);
+
+      const { data } = supabase().storage.from("albaranes").getPublicUrl(path);
+      const publicUrl = data?.publicUrl ?? "";
+      if (!publicUrl) throw new Error("No se pudo obtener la URL pública del albarán.");
+
+      setUploadPct(85);
+      const ins = await supabase().from("albaranes").insert({
+        establecimiento_id: activeEstablishmentId,
+        proveedor_id: sel?.proveedor_id ?? null,
+        imagen_url: publicUrl,
+        total_importe: null,
+        created_by: uid
+      } as unknown as Record<string, unknown>);
+      if (ins.error) throw ins.error;
+
+      setUploadPct(100);
+      setAlbaranOk("Albarán guardado para auditoría ✅");
+      // refresco suave por si la vista de auditoría está abierta en otra pestaña (Realtime se encargará si está activado)
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    } catch (e) {
+      setErr(supabaseErrToString(e));
+    } finally {
+      setUploadingAlbaran(false);
+      setTimeout(() => setUploadPct(0), 600);
+      setTimeout(() => setAlbaranOk(null), 2500);
+    }
+  }
 
   useEffect(() => {
     if (!canReceive) return;
@@ -431,6 +497,11 @@ export default function RecepcionPedidosPage() {
             {okMsg}
           </p>
         ) : null}
+        {albaranOk ? (
+          <p className="mb-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-900">
+            {albaranOk}
+          </p>
+        ) : null}
         {err ? <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{err}</p> : null}
 
         {!activeEstablishmentId ? (
@@ -467,6 +538,44 @@ export default function RecepcionPedidosPage() {
           </div>
         )}
       </main>
+
+      {/* Botón flotante para capturar albarán (móvil) */}
+      <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+5.75rem)] right-4 z-20">
+        <label
+          className={[
+            "flex min-h-12 items-center gap-2 rounded-2xl px-4 text-sm font-semibold shadow-lg ring-1 transition",
+            uploadingAlbaran
+              ? "cursor-not-allowed bg-slate-200 text-slate-700 ring-slate-300"
+              : "cursor-pointer bg-slate-900 text-white ring-slate-900 hover:bg-slate-800"
+          ].join(" ")}
+          title="Escanear Albarán"
+        >
+          <Camera className="h-5 w-5" aria-hidden />
+          <span>{uploadingAlbaran ? "Subiendo…" : "Escanear Albarán"}</span>
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            disabled={uploadingAlbaran}
+            onChange={(e) => {
+              const f = e.currentTarget.files?.[0] ?? null;
+              e.currentTarget.value = "";
+              void onCaptureAlbaran(f);
+            }}
+          />
+        </label>
+        {uploadingAlbaran ? (
+          <div className="mt-2 w-[240px] overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+            <div className="px-3 py-2">
+              <p className="text-xs font-semibold text-slate-700">Subiendo albarán…</p>
+              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                <div className="h-full bg-blue-600 transition-[width]" style={{ width: `${Math.max(0, Math.min(100, uploadPct))}%` }} />
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
 
       <Drawer
         open={open}
