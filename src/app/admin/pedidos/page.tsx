@@ -248,6 +248,40 @@ export default function PedidosPage() {
         await enqueueMovimiento(payload);
       }
     }
+
+    // Seguimiento de pedido (cabecera + líneas) - aditivo.
+    // Si la tabla no existe aún en Supabase, no interrumpimos el flujo actual.
+    try {
+      const { data: pedido, error: pErr } = await supabase()
+        .from("pedidos")
+        .insert({
+          establecimiento_id: activeEstablishmentId,
+          proveedor_id: proveedor.id,
+          creado_por: usuario_id,
+          estado: "pendiente"
+        })
+        .select("id")
+        .maybeSingle();
+      if (pErr) throw pErr;
+      const pedidoId = String((pedido as { id?: unknown } | null)?.id ?? "");
+      if (!pedidoId) return;
+      const itemsPayload = lineas
+        .filter((l) => l.cantidad > 0)
+        .map((l) => ({
+          pedido_id: pedidoId,
+          establecimiento_id: activeEstablishmentId,
+          producto_id: l.producto_id,
+          cantidad_pedida: Math.max(0, Math.trunc(l.cantidad)),
+          cantidad_recibida: 0,
+          estado: "pendiente"
+        }));
+      if (itemsPayload.length) {
+        const { error: iErr } = await supabase().from("pedido_items").insert(itemsPayload);
+        if (iErr) throw iErr;
+      }
+    } catch {
+      // ignore
+    }
   }
 
   if (loading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;

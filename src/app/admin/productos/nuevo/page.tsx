@@ -21,6 +21,7 @@ import { resolveProductoTituloColumn, tituloWritePayload } from "@/lib/productos
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 
 type Proveedor = { id: string; nombre: string; telefono_whatsapp: string | null };
+type EnvaseOpt = { id: string; nombre: string; coste: number };
 
 function newUid() {
   return crypto.randomUUID().replaceAll("-", "");
@@ -38,6 +39,7 @@ export default function NuevoProductoPage() {
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
+  const [envases, setEnvases] = useState<EnvaseOpt[]>([]);
   const { activeEstablishmentId } = useActiveEstablishment();
 
   const [articulo, setArticulo] = useState("");
@@ -46,6 +48,7 @@ export default function NuevoProductoPage() {
   const [stockActual, setStockActual] = useState<string>("0");
   const [stockMinimo, setStockMinimo] = useState<string>("0");
   const [proveedorId, setProveedorId] = useState<string>("");
+  const [envaseId, setEnvaseId] = useState<string>("");
   const [unidadesPorCaja, setUnidadesPorCaja] = useState<string>("1");
 
   useEffect(() => {
@@ -83,6 +86,15 @@ export default function NuevoProductoPage() {
         if (cancelled) return;
         if (error) throw error;
         setProveedores((data as unknown as Proveedor[]) ?? []);
+
+        const env = await supabase()
+          .from("envases_catalogo")
+          .select("id,nombre,coste")
+          .eq("establecimiento_id", activeEstablishmentId)
+          .order("nombre", { ascending: true });
+        if (!cancelled && !env.error) {
+          setEnvases((env.data as unknown as EnvaseOpt[]) ?? []);
+        }
       } catch (e) {
         if (cancelled) return;
         setErr(supabaseErrToString(e));
@@ -115,6 +127,7 @@ export default function NuevoProductoPage() {
       stock_actual: sa,
       stock_minimo: sm,
       proveedor_id: proveedorId || null,
+      envase_catalogo_id: envaseId || null,
       unidades_por_caja: Math.max(1, Math.trunc(parseStockField(unidadesPorCaja)) || 1),
       qr_code_uid: uid,
       establecimiento_id: activeEstablishmentId
@@ -251,6 +264,21 @@ export default function NuevoProductoPage() {
                 </option>
               ))}
             </select>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-sm font-semibold text-slate-900">Envase (coste real)</label>
+            <select className={FORM_CONTROL_CLASS} value={envaseId} onChange={(e) => setEnvaseId(e.currentTarget.value)}>
+              <option value="">(Sin envase)</option>
+              {envases.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.nombre} · {(Number(e.coste ?? 0) || 0).toFixed(2)} €
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-slate-600">
+              Si asignas un envase, el Dashboard valorará envases con este coste (en vez de precio global por tipo).
+            </p>
           </div>
 
           <Button onClick={crear} disabled={!articulo.trim()}>

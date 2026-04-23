@@ -125,6 +125,7 @@ const TAB_ORDER = [
   { key: "todos", label: "Todos" },
   { key: "cerveza", label: "Cervezas" },
   { key: "licor", label: "Licores" },
+  { key: "comida", label: "Comida" },
   { key: "refresco", label: "Refrescos" },
   { key: "vino", label: "Vinos" },
   { key: "agua", label: "Aguas" },

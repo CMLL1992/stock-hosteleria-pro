@@ -172,18 +172,50 @@ export function DashboardClient() {
     retry: 1
   });
 
+  const envasesCatalogoQuery = useQuery({
+    queryKey: ["catalogo", "envases", establecimientoId],
+    enabled: !!establecimientoId,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("envases_catalogo")
+        .select("id,coste")
+        .eq("establecimiento_id", establecimientoId as string);
+      if (error) throw error;
+      const map = new Map<string, number>();
+      for (const r of ((data ?? []) as unknown as Array<Record<string, unknown>>)) {
+        const id = String(r.id ?? "").trim();
+        if (!id) continue;
+        const c = Number(r.coste ?? 0);
+        map.set(id, Number.isFinite(c) ? c : 0);
+      }
+      return map;
+    },
+    staleTime: 30_000,
+    retry: 1
+  });
+
   const valorEnvases = useMemo(() => {
     const map = envasePreciosQuery.data ?? new Map<string, number>();
+    const catalogo = envasesCatalogoQuery.data ?? new Map<string, number>();
     let total = 0;
     for (const p of rows) {
-      const b = bucketUnidad(p);
-      if (!b) continue;
-      const precioEnvase = Math.max(0, map.get(b) ?? 0);
+      // Preferimos coste específico por envase (si el producto está vinculado a un ID del catálogo).
+      const envaseId = (p as unknown as { envase_catalogo_id?: unknown }).envase_catalogo_id;
+      const envaseKey = envaseId != null ? String(envaseId).trim() : "";
+      const precioPorEnvase =
+        envaseKey && catalogo.has(envaseKey)
+          ? Math.max(0, catalogo.get(envaseKey) ?? 0)
+          : (() => {
+              const b = bucketUnidad(p);
+              if (!b) return 0;
+              return Math.max(0, map.get(b) ?? 0);
+            })();
+      if (precioPorEnvase <= 0) continue;
       const qty = Math.max(0, Number(p.stock_actual ?? 0) || 0) + Math.max(0, Number(p.stock_vacios ?? 0) || 0);
-      total += qty * precioEnvase;
+      total += qty * precioPorEnvase;
     }
     return total;
-  }, [envasePreciosQuery.data, rows]);
+  }, [envasePreciosQuery.data, envasesCatalogoQuery.data, rows]);
 
   const barrasResumen = useMemo(() => {
     return [

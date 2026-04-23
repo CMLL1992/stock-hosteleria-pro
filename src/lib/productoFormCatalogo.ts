@@ -3,10 +3,10 @@
  * Valores persistidos en minúsculas, sin emoji en la BD.
  */
 
-export const CATEGORIA_PRODUCTO = ["vino", "cerveza", "agua", "refresco", "licor", "otros"] as const;
+export const CATEGORIA_PRODUCTO = ["vino", "cerveza", "agua", "refresco", "licor", "comida", "otros"] as const;
 export type CategoriaProductoValor = (typeof CATEGORIA_PRODUCTO)[number];
 
-export const UNIDAD_PRODUCTO = ["caja", "barril", "gas", "botella"] as const;
+export const UNIDAD_PRODUCTO = ["caja", "barril", "gas", "botella", "bolsa"] as const;
 export type UnidadProductoValor = (typeof UNIDAD_PRODUCTO)[number];
 
 export const CATEGORIA_OPTIONS: ReadonlyArray<{
@@ -18,6 +18,7 @@ export const CATEGORIA_OPTIONS: ReadonlyArray<{
   { value: "agua", label: "Agua" },
   { value: "refresco", label: "Refresco" },
   { value: "licor", label: "Licor" },
+  { value: "comida", label: "Comida" },
   { value: "otros", label: "Otros" }
 ];
 
@@ -28,7 +29,8 @@ export const UNIDAD_OPTIONS: ReadonlyArray<{
   { value: "caja", label: "Caja" },
   { value: "barril", label: "Barril" },
   { value: "gas", label: "Gas" },
-  { value: "botella", label: "Botella" }
+  { value: "botella", label: "Botella" },
+  { value: "bolsa", label: "Bolsa" }
 ];
 
 /** Clase Tailwind: ≥48px de alto y 16px de fuente (evita zoom en iOS). */
@@ -56,6 +58,7 @@ export function mapCategoriaDbToValor(raw: string | null | undefined): Categoria
   if (n.includes("agua") || n === "water") return "agua";
   if (n.includes("refresco") || n.includes("refrescos") || n.includes("soft")) return "refresco";
   if (n.includes("licor") || n.includes("spirit") || n.includes("whisky") || n.includes("ron")) return "licor";
+  if (n.includes("comida") || n.includes("food")) return "comida";
 
   if (
     CATEGORIA_PRODUCTO.includes(n as CategoriaProductoValor)
@@ -77,6 +80,7 @@ export function mapUnidadDbToValor(raw: string | null | undefined): UnidadProduc
   if (n === "barril" || n.includes("barril") || n.includes("keg")) return "barril";
   if (n === "gas" || n.includes("gas")) return "gas";
   if (n === "botella" || n.includes("botella") || n === "lata" || n.includes("lata")) return "botella";
+  if (n === "bolsa" || n.includes("bolsa") || n.includes("bag")) return "bolsa";
 
   if (UNIDAD_PRODUCTO.includes(n as UnidadProductoValor)) {
     return n as UnidadProductoValor;

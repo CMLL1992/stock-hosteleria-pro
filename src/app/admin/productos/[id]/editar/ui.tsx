@@ -24,6 +24,7 @@ import Link from "next/link";
 import { hasPermission } from "@/lib/permissions";
 
 type Proveedor = { id: string; nombre: string };
+type EnvaseOpt = { id: string; nombre: string; coste: number };
 
 type Producto = {
   id: string;
@@ -33,6 +34,7 @@ type Producto = {
   tipo: string | null;
   stock_minimo: number | null;
   proveedor_id: string | null;
+  envase_catalogo_id?: string | null;
   unidades_por_caja: number | null;
 };
 
@@ -46,6 +48,7 @@ export function EditarProductoClient({ id }: { id: string }) {
   const [ok, setOk] = useState<string | null>(null);
 
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
+  const [envases, setEnvases] = useState<EnvaseOpt[]>([]);
   const [producto, setProducto] = useState<Producto | null>(null);
 
   const [articulo, setArticulo] = useState("");
@@ -53,6 +56,7 @@ export function EditarProductoClient({ id }: { id: string }) {
   const [unidadVal, setUnidadVal] = useState<UnidadProductoValor>("botella");
   const [stockMinimo, setStockMinimo] = useState<string>("0");
   const [proveedorId, setProveedorId] = useState<string>("");
+  const [envaseId, setEnvaseId] = useState<string>("");
   const [unidadesPorCaja, setUnidadesPorCaja] = useState<string>("1");
 
   useEffect(() => {
@@ -89,7 +93,7 @@ export function EditarProductoClient({ id }: { id: string }) {
         const t = tituloColSql(col);
         const { data: p, error: pErr } = await supabase()
           .from("productos")
-          .select(`id,${t},unidad,categoria,tipo,stock_minimo,proveedor_id,unidades_por_caja` as "*")
+          .select(`id,${t},unidad,categoria,tipo,stock_minimo,proveedor_id,envase_catalogo_id,unidades_por_caja` as "*")
           .eq("id", id)
           .eq("establecimiento_id", activeEstablishmentId)
           .maybeSingle();
@@ -109,6 +113,7 @@ export function EditarProductoClient({ id }: { id: string }) {
           tipo: raw.tipo != null ? String(raw.tipo) : null,
           stock_minimo: raw.stock_minimo != null ? Number(raw.stock_minimo) : null,
           proveedor_id: raw.proveedor_id != null ? String(raw.proveedor_id) : null,
+          envase_catalogo_id: raw.envase_catalogo_id != null ? String(raw.envase_catalogo_id) : null,
           unidades_por_caja: raw.unidades_por_caja != null ? Number(raw.unidades_por_caja) : null
         };
         setProducto(prod);
@@ -118,6 +123,7 @@ export function EditarProductoClient({ id }: { id: string }) {
         setUnidadVal(mapUnidadDbToValor(prod.unidad));
         setStockMinimo(String(typeof prod.stock_minimo === "number" ? prod.stock_minimo : 0));
         setProveedorId(prod.proveedor_id ?? "");
+        setEnvaseId(prod.envase_catalogo_id ?? "");
         setUnidadesPorCaja(String(Math.max(1, Math.trunc(Number(prod.unidades_por_caja ?? 1) || 1))));
 
         const { data: provs, error: provErr } = await supabase()
@@ -128,6 +134,15 @@ export function EditarProductoClient({ id }: { id: string }) {
         if (provErr) throw provErr;
         if (cancelled) return;
         setProveedores((provs as unknown as Proveedor[]) ?? []);
+
+        const env = await supabase()
+          .from("envases_catalogo")
+          .select("id,nombre,coste")
+          .eq("establecimiento_id", activeEstablishmentId)
+          .order("nombre", { ascending: true });
+        if (!cancelled && !env.error) {
+          setEnvases((env.data as unknown as EnvaseOpt[]) ?? []);
+        }
       } catch (e) {
         if (cancelled) return;
         setErr(supabaseErrToString(e));
@@ -155,6 +170,7 @@ export function EditarProductoClient({ id }: { id: string }) {
       categoria: categoriaVal,
       stock_minimo: Math.max(0, Math.trunc(Number(String(stockMinimo).replace(",", ".")) || 0)),
       proveedor_id: proveedorId || null,
+      envase_catalogo_id: envaseId || null,
       unidades_por_caja: Math.max(1, Math.trunc(Number(String(unidadesPorCaja).replace(",", ".")) || 1))
     };
 
@@ -297,6 +313,19 @@ export function EditarProductoClient({ id }: { id: string }) {
                       </option>
                     ))}
                   </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-gray-900">Envase (coste real)</label>
+                  <select className={FORM_CONTROL_CLASS_GRAY} value={envaseId} onChange={(e) => setEnvaseId(e.currentTarget.value)}>
+                    <option value="">(Sin envase)</option>
+                    {envases.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.nombre} · {(Number(e.coste ?? 0) || 0).toFixed(2)} €
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-600">Solo Admin/Superadmin pueden editar este vínculo.</p>
                 </div>
 
                 <Button onClick={guardar} disabled={!articulo.trim() || !producto}>

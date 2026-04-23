@@ -68,6 +68,12 @@ const SECTIONS: AdminSection[] = [
         subtitle: "Define coste/fianza por caja, barril o gas."
       },
       {
+        id: "catalogo-envases",
+        href: "/admin/envases",
+        title: "Catálogo de envases",
+        subtitle: "Maestro de envases y coste real (por ID)."
+      },
+      {
         id: "importar-csv",
         href: "/admin/importar-csv",
         title: "Importar CSV",
