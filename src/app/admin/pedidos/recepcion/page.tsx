@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { MobileHeader } from "@/components/MobileHeader";
 import { Drawer } from "@/components/ui/Drawer";
 import { supabase } from "@/lib/supabase";
@@ -52,6 +53,7 @@ function readEvtValue(
 }
 
 export default function RecepcionPedidosPage() {
+  const router = useRouter();
   const { data: me, isLoading: meLoading } = useMyRole();
   const role = getEffectiveRole(me ?? null);
   const canReceive = hasPermission(role, "staff");
@@ -146,9 +148,10 @@ export default function RecepcionPedidosPage() {
         } satisfies PedidoItemRow;
       });
       setItems(rows);
-      setDraft((prev) => {
-        const next = { ...prev };
-        for (const it of rows) next[it.producto_id] = String(it.cantidad_recibida ?? 0);
+      // UX: el input representa "lo que llega hoy", no el total acumulado.
+      setDraft(() => {
+        const next: Record<string, string> = {};
+        for (const it of rows) next[it.producto_id] = "";
         return next;
       });
     } catch (e) {
@@ -157,11 +160,7 @@ export default function RecepcionPedidosPage() {
   }
 
   const anyChange = useMemo(() => {
-    for (const it of items) {
-      const n = Math.max(0, toInt(draft[it.producto_id] ?? ""));
-      if (n !== Math.max(0, toInt(it.cantidad_recibida))) return true;
-    }
-    return false;
+    return items.some((it) => Math.max(0, toInt(draft[it.producto_id] ?? "")) > 0);
   }, [draft, items]);
 
   async function confirmar() {
@@ -175,18 +174,19 @@ export default function RecepcionPedidosPage() {
 
       const receivedByProd = items.map((it) => ({
         producto_id: it.producto_id,
-        recibido: Math.max(0, toInt(draft[it.producto_id] ?? "")),
+        recibido_hoy: Math.max(0, toInt(draft[it.producto_id] ?? "")),
         pedido: Math.max(0, toInt(it.cantidad_pedida)),
         previo: Math.max(0, toInt(it.cantidad_recibida))
       }));
 
-      // 1) Crear movimientos de entrada por el DELTA recibido (solo lo nuevo)
-      // Nota: si el pedido ya fue recepcionado parcialmente, evitamos duplicar stock.
+      // 1) Crear movimientos de entrada SOLO por lo que llega hoy.
+      // Nota: capamos por faltante para no exceder la cantidad pedida.
       const movimientos = receivedByProd
-        .map((x) => ({
-          ...x,
-          delta: Math.max(0, x.recibido - x.previo)
-        }))
+        .map((x) => {
+          const faltan = Math.max(0, x.pedido - x.previo);
+          const delta = Math.min(faltan, Math.max(0, x.recibido_hoy));
+          return { ...x, delta };
+        })
         .filter((x) => x.delta > 0)
         .map((x) => ({
           client_uuid: newClientUuid(),
@@ -219,13 +219,16 @@ export default function RecepcionPedidosPage() {
         }
       }
 
-      // 2) Actualizar pedido_items con cantidades recibidas ABSOLUTAS y estado.
+      // 2) Actualizar pedido_items sumando lo recibido hoy.
       for (const x of receivedByProd) {
         if (!x.producto_id) continue;
-        const estado = x.recibido <= 0 ? "pendiente" : x.recibido < x.pedido ? "parcial" : "recibido";
+        const faltan = Math.max(0, x.pedido - x.previo);
+        const delta = Math.min(faltan, Math.max(0, x.recibido_hoy));
+        const nuevoTotal = Math.max(0, x.previo + delta);
+        const estado = nuevoTotal <= 0 ? "pendiente" : nuevoTotal < x.pedido ? "parcial" : "recibido";
         const { error: upErr } = await supabase()
           .from("pedido_items")
-          .update({ cantidad_recibida: x.recibido, estado })
+          .update({ cantidad_recibida: nuevoTotal, estado })
           .eq("pedido_id", sel.id)
           .eq("producto_id", x.producto_id)
           .eq("establecimiento_id", activeEstablishmentId);
@@ -233,8 +236,12 @@ export default function RecepcionPedidosPage() {
       }
 
       // 3) Estado del pedido
-      const allReceived = receivedByProd.every((x) => x.recibido >= x.pedido);
-      const anyReceived = receivedByProd.some((x) => x.recibido > 0);
+      const allReceived = receivedByProd.every((x) => {
+        const faltan = Math.max(0, x.pedido - x.previo);
+        const delta = Math.min(faltan, Math.max(0, x.recibido_hoy));
+        return x.previo + delta >= x.pedido;
+      });
+      const anyReceived = receivedByProd.some((x) => Math.max(0, x.recibido_hoy) > 0);
       const pedidoEstado = allReceived ? "recibido" : anyReceived ? "parcial" : "pendiente";
       const patch: Record<string, unknown> = { estado: pedidoEstado };
       if (pedidoEstado === "recibido") patch.received_at = nowIso;
@@ -250,7 +257,77 @@ export default function RecepcionPedidosPage() {
       await queryClient.invalidateQueries({ queryKey: ["productos", activeEstablishmentId] });
       await queryClient.invalidateQueries({ queryKey: ["movimientos", activeEstablishmentId] });
       await refresh();
+      router.refresh();
       setOkMsg(pedidoEstado === "recibido" ? "Recepción completada." : "Recepción parcial guardada. El pedido seguirá pendiente.");
+      setOpen(false);
+      setSel(null);
+      setItems([]);
+      setDraft({});
+    } catch (e) {
+      setErr(supabaseErrToString(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function cerrarPedidoDescartando() {
+    if (!activeEstablishmentId || !sel) return;
+    const ok = window.confirm(
+      "¿Cerrar pedido y descartar faltantes?\n\nEl pedido se marcará como RECIBIDO y desaparecerá de pendientes, aunque falten unidades."
+    );
+    if (!ok) return;
+    setErr(null);
+    setOkMsg(null);
+    setSaving(true);
+    try {
+      const nowIso = new Date().toISOString();
+      const { error: pedidoErr } = await supabase()
+        .from("pedidos")
+        .update({ estado: "recibido", received_at: nowIso })
+        .eq("id", sel.id)
+        .eq("establecimiento_id", activeEstablishmentId);
+      if (pedidoErr) throw pedidoErr;
+
+      await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", activeEstablishmentId] });
+      await queryClient.invalidateQueries({ queryKey: ["productos", activeEstablishmentId] });
+      await queryClient.invalidateQueries({ queryKey: ["movimientos", activeEstablishmentId] });
+      await refresh();
+      router.refresh();
+      setOkMsg("Pedido cerrado (faltantes descartados).");
+      setOpen(false);
+      setSel(null);
+      setItems([]);
+      setDraft({});
+    } catch (e) {
+      setErr(supabaseErrToString(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function eliminarPedido() {
+    if (!activeEstablishmentId || !sel) return;
+    const ok = window.confirm(
+      "¿Eliminar pedido?\n\nSe borrará el pedido y sus líneas. Esta acción no se puede deshacer."
+    );
+    if (!ok) return;
+    setErr(null);
+    setOkMsg(null);
+    setSaving(true);
+    try {
+      const { error: delErr } = await supabase()
+        .from("pedidos")
+        .delete()
+        .eq("id", sel.id)
+        .eq("establecimiento_id", activeEstablishmentId);
+      if (delErr) throw delErr;
+
+      await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", activeEstablishmentId] });
+      await queryClient.invalidateQueries({ queryKey: ["productos", activeEstablishmentId] });
+      await queryClient.invalidateQueries({ queryKey: ["movimientos", activeEstablishmentId] });
+      await refresh();
+      router.refresh();
+      setOkMsg("Pedido eliminado.");
       setOpen(false);
       setSel(null);
       setItems([]);
@@ -364,12 +441,14 @@ export default function RecepcionPedidosPage() {
                         <p className="mt-0.5 text-xs text-slate-600">
                           Pedido: <span className="font-mono font-semibold tabular-nums">{it.cantidad_pedida}</span>
                           {" · "}
-                          {it.unidad ?? "—"}
+                          Ya recibido: <span className="font-mono font-semibold tabular-nums">{it.cantidad_recibida}</span>
                           {" · "}
                           Faltan:{" "}
                           <span className="font-mono font-semibold tabular-nums">
                             {Math.max(0, Math.max(0, toInt(it.cantidad_pedida)) - Math.max(0, toInt(it.cantidad_recibida)))}
                           </span>
+                          {" · "}
+                          {it.unidad ?? "—"}
                         </p>
                       </div>
                       <input
@@ -384,7 +463,7 @@ export default function RecepcionPedidosPage() {
                           setDraft((prev) => ({ ...prev, [it.producto_id]: digitsOnly(raw) }));
                         }}
                         disabled={saving}
-                        aria-label={`Cantidad recibida para ${it.articulo}`}
+                        aria-label={`Cantidad que llega hoy para ${it.articulo}`}
                       />
                     </div>
                   </li>
@@ -399,8 +478,28 @@ export default function RecepcionPedidosPage() {
               >
                 {saving ? "Confirmando…" : "Confirmar recepción"}
               </button>
+              {sel?.estado === "parcial" ? (
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => void cerrarPedidoDescartando()}
+                    disabled={saving || !sel}
+                    className="min-h-12 w-full rounded-3xl border border-amber-200 bg-amber-50 px-4 text-sm font-extrabold text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                  >
+                    Cerrar pedido (descartar)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void eliminarPedido()}
+                    disabled={saving || !sel}
+                    className="min-h-12 w-full rounded-3xl border border-red-200 bg-red-50 px-4 text-sm font-extrabold text-red-800 hover:bg-red-100 disabled:opacity-50"
+                  >
+                    Eliminar pedido
+                  </button>
+                </div>
+              ) : null}
               <p className="text-center text-xs text-slate-500">
-                Se generan movimientos <span className="font-mono">entrada_compra</span> solo por cantidades &gt; 0.
+                Se generan movimientos <span className="font-mono">entrada</span> solo por cantidades &gt; 0 (lo que llega hoy).
               </p>
             </>
           )}
