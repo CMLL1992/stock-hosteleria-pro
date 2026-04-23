@@ -83,19 +83,20 @@ export async function POST(req: Request) {
     }
 
     const genAI = new GoogleGenerativeAI(googleApiKey);
-    // El SDK usa v1beta por defecto; algunos modelos ya no responden ahí (404). API estable: v1.
-    const model = genAI.getGenerativeModel(
-      {
-        model: "gemini-1.5-flash-latest",
-        systemInstruction: SYSTEM
-      },
-      { apiVersion: "v1" }
-    );
+    // El SDK usa v1beta por defecto; API estable: v1. Las reglas van en el primer turno (user), no en systemInstruction (no válido en v1 para este flujo).
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" }, { apiVersion: "v1" });
 
-    const contents = turnos.map((m) => ({
-      role: m.role === "assistant" ? ("model" as const) : ("user" as const),
-      parts: [{ text: m.content }]
-    }));
+    const primeraPregunta = turnos[0].content;
+    const contents = [
+      {
+        role: "user" as const,
+        parts: [{ text: `${SYSTEM}\n\nUsuario dice: ${primeraPregunta}` }]
+      },
+      ...turnos.slice(1).map((m) => ({
+        role: m.role === "assistant" ? ("model" as const) : ("user" as const),
+        parts: [{ text: m.content }]
+      }))
+    ];
 
     const result = await model.generateContent({
       contents,
