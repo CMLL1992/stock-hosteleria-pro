@@ -48,7 +48,10 @@ export async function upsertProductosFilaPorFila(
         .eq("establecimiento_id", establecimientoId);
       if (uErr) throw uErr;
     } else {
-      const { error: iErr } = await supabase().from("productos").insert(row);
+      // Forzamos `establecimiento_id` para evitar inserciones fuera de tenant (especialmente en contexto superadmin).
+      const { error: iErr } = await supabase()
+        .from("productos")
+        .insert({ ...row, establecimiento_id: establecimientoId });
       if (iErr) throw iErr;
     }
   }
