@@ -9,6 +9,7 @@ import { useMyRole } from "@/lib/useMyRole";
 import { getEffectiveRole, hasPermission } from "@/lib/permissions";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { useQueryClient } from "@tanstack/react-query";
+import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 
 type PedidoEstado = "pendiente" | "parcial" | "recibido";
 
@@ -104,23 +105,29 @@ export default function RecepcionPedidosPage() {
     setItems([]);
     setDraft({});
     try {
+      const col = await resolveProductoTituloColumn(activeEstablishmentId);
+      const t = tituloColSql(col);
       const { data, error } = await supabase()
         .from("pedido_items")
-        .select("producto_id,cantidad_pedida,cantidad_recibida,productos:productos(articulo,nombre,unidad)")
+        .select(`producto_id,cantidad_pedida,cantidad_recibida,productos:productos(${t},unidad)` as "*")
         .eq("pedido_id", p.id)
         .eq("establecimiento_id", activeEstablishmentId);
       if (error) throw error;
       const rows = ((data ?? []) as unknown as Record<string, unknown>[]).map((r) => {
         const prodRaw = r.productos as
-          | { articulo?: unknown; nombre?: unknown; unidad?: unknown }
-          | { articulo?: unknown; nombre?: unknown; unidad?: unknown }[]
+          | Record<string, unknown>
+          | Record<string, unknown>[]
           | null
           | undefined;
         const prod = Array.isArray(prodRaw) ? prodRaw[0] ?? null : prodRaw;
+        const title = (prod?.[t] ?? prod?.articulo ?? prod?.nombre ?? "") as unknown;
+        const articuloEtiqueta = String(title ?? "").trim() || "Producto no encontrado";
+        const unidadRaw = (prod as Record<string, unknown> | null)?.unidad;
+        const unidad = unidadRaw != null ? String(unidadRaw) : null;
         return {
           producto_id: String(r.producto_id ?? ""),
-          articulo: String(prod?.articulo ?? prod?.nombre ?? "—").trim() || "—",
-          unidad: prod?.unidad != null ? String(prod.unidad) : null,
+          articulo: articuloEtiqueta,
+          unidad,
           cantidad_pedida: Math.max(0, toInt(r.cantidad_pedida)),
           cantidad_recibida: Math.max(0, toInt(r.cantidad_recibida))
         } satisfies PedidoItemRow;
