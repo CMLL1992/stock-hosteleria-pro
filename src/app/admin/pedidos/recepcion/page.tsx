@@ -237,13 +237,6 @@ export default function RecepcionPedidosPage() {
     }
   }
 
-  function isMissingTable(e: unknown): boolean {
-    const anyErr = e as { code?: unknown; message?: unknown };
-    const code = typeof anyErr?.code === "string" ? anyErr.code : "";
-    const msg = typeof anyErr?.message === "string" ? anyErr.message : "";
-    return code === "PGRST205" || /could not find the table/i.test(msg);
-  }
-
   async function cargarLineaStock(it: PedidoItemRow) {
     if (!activeEstablishmentId || !sel) return;
     if (!it?.producto_id) return;
@@ -302,7 +295,7 @@ export default function RecepcionPedidosPage() {
         .eq("establecimiento_id", activeEstablishmentId);
       if (upErr) throw upErr;
 
-      // 3) movimiento (preferimos stock_movimientos si existe; fallback a movimientos)
+      // 3) movimiento (best-effort). Si falla, NO bloquea stock ni pedido_items.
       try {
         const sm = await supabase().from("stock_movimientos").insert({
           producto_id: it.producto_id,
@@ -313,18 +306,21 @@ export default function RecepcionPedidosPage() {
         } as unknown as Record<string, unknown>);
         if (sm.error) throw sm.error;
       } catch (e) {
-        if (!isMissingTable(e)) {
+        // eslint-disable-next-line no-console
+        console.error("No se pudo insertar en stock_movimientos (se continúa):", e);
+        try {
+          const mv = await supabase().from("movimientos").insert({
+            producto_id: it.producto_id,
+            cantidad: delta,
+            tipo: "entrada",
+            establecimiento_id: activeEstablishmentId,
+            usuario_id: uid
+          } as unknown as Record<string, unknown>);
+          if (mv.error) throw mv.error;
+        } catch (e2) {
           // eslint-disable-next-line no-console
-          console.error("Fallo insert stock_movimientos, fallback a movimientos:", e);
+          console.error("No se pudo insertar movimiento fallback (se continúa):", e2);
         }
-        const mv = await supabase().from("movimientos").insert({
-          producto_id: it.producto_id,
-          cantidad: delta,
-          tipo: "entrada",
-          establecimiento_id: activeEstablishmentId,
-          usuario_id: uid
-        } as unknown as Record<string, unknown>);
-        if (mv.error) throw mv.error;
       }
 
       // 4) estado pedido (consecuencia)
@@ -343,7 +339,7 @@ export default function RecepcionPedidosPage() {
         .eq("establecimiento_id", activeEstablishmentId);
       if (pedidoErr) throw pedidoErr;
 
-      // UI local: reflejar total recibido y marcar como cargado
+      // UI local: reflejar total recibido y marcar como cargado (solo si stock OK)
       setItems((prev) => prev.map((x) => (x.producto_id === it.producto_id ? { ...x, cantidad_recibida: cappedTotal } : x)));
       setRowDone((prev) => ({ ...prev, [it.producto_id]: true }));
       setSel((prev) => (prev ? { ...prev, estado: pedidoEstado } : prev));
