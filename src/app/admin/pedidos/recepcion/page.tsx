@@ -207,7 +207,10 @@ export default function RecepcionPedidosPage() {
           // Fallback si la columna `motivo` no existe.
           const msg = String((ins1.error as { message?: unknown })?.message ?? "").toLowerCase();
           if (msg.includes("motivo") || msg.includes("column") || msg.includes("schema cache")) {
-            const stripped = movimientos.map(({ motivo: _m, ...rest }) => rest);
+            const stripped = movimientos.map(({ motivo, ...rest }) => {
+              void motivo;
+              return rest;
+            });
             const ins2 = await supabase().from("movimientos").insert(stripped as unknown as Record<string, unknown>[]);
             if (ins2.error) throw ins2.error;
           } else {
