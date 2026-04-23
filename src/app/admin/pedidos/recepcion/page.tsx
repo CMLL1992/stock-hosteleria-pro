@@ -232,6 +232,32 @@ export default function RecepcionPedidosPage() {
           });
           throw ins.error;
         }
+
+        // Importante: si el entorno no tiene trigger que derive stock desde movimientos,
+        // actualizamos stock_actual aquí para que la página de Stock refleje el valor al recargar.
+        const deltaByProd = new Map<string, number>();
+        for (const m of movimientos) {
+          const pid = String(m.producto_id ?? "").trim();
+          const add = Number((m as { cantidad?: unknown }).cantidad ?? 0) || 0;
+          if (!pid || add <= 0) continue;
+          deltaByProd.set(pid, (deltaByProd.get(pid) ?? 0) + add);
+        }
+        for (const [pid, add] of deltaByProd.entries()) {
+          const { data: prodRow, error: prodSelErr } = await supabase()
+            .from("productos")
+            .select("id,stock_actual")
+            .eq("id", pid)
+            .eq("establecimiento_id", activeEstablishmentId)
+            .maybeSingle();
+          if (prodSelErr) throw prodSelErr;
+          const curr = Number((prodRow as { stock_actual?: unknown } | null)?.stock_actual ?? 0) || 0;
+          const { error: prodUpErr } = await supabase()
+            .from("productos")
+            .update({ stock_actual: curr + add })
+            .eq("id", pid)
+            .eq("establecimiento_id", activeEstablishmentId);
+          if (prodUpErr) throw prodUpErr;
+        }
       }
 
       // 2) Actualizar pedido_items sumando lo recibido hoy.
