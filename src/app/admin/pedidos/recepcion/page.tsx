@@ -57,6 +57,7 @@ export default function RecepcionPedidosPage() {
   const { data: me, isLoading: meLoading } = useMyRole();
   const role = getEffectiveRole(me ?? null);
   const canReceive = hasPermission(role, "staff");
+  const canAdmin = hasPermission(role, "admin");
 
   const { activeEstablishmentId } = useActiveEstablishment();
   const queryClient = useQueryClient();
@@ -271,6 +272,10 @@ export default function RecepcionPedidosPage() {
 
   async function cerrarPedidoDescartando() {
     if (!activeEstablishmentId || !sel) return;
+    if (!canAdmin) {
+      setErr("Solo Admin/Superadmin puede cerrar pedidos descartando faltantes.");
+      return;
+    }
     const ok = window.confirm(
       "¿Cerrar pedido y descartar faltantes?\n\nEl pedido se marcará como RECIBIDO y desaparecerá de pendientes, aunque falten unidades."
     );
@@ -306,6 +311,10 @@ export default function RecepcionPedidosPage() {
 
   async function eliminarPedido() {
     if (!activeEstablishmentId || !sel) return;
+    if (!canAdmin) {
+      setErr("Solo Admin/Superadmin puede eliminar pedidos.");
+      return;
+    }
     const ok = window.confirm(
       "¿Eliminar pedido?\n\nSe borrará el pedido y sus líneas. Esta acción no se puede deshacer."
     );
@@ -477,7 +486,7 @@ export default function RecepcionPedidosPage() {
               >
                 {saving ? "Confirmando…" : "Confirmar recepción"}
               </button>
-              {sel?.estado === "parcial" ? (
+              {sel?.estado === "parcial" && canAdmin ? (
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <button
                     type="button"
