@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 
@@ -31,12 +31,20 @@ export function useCambiosGlobalesRealtime(opts: {
   tables?: RealtimeTable[];
 }) {
   const { establecimientoId, queryClient, queryKeys, onChange, tables } = opts;
+  const instanceIdRef = useRef<string | null>(null);
+
+  if (instanceIdRef.current === null) {
+    // Evita colisiones: Supabase reutiliza channels por nombre; si dos componentes usan el mismo nombre,
+    // el segundo intentará registrar callbacks después de subscribe() y puede crashear.
+    instanceIdRef.current =
+      (globalThis.crypto?.randomUUID?.() as string | undefined) ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
 
   useEffect(() => {
     if (!establecimientoId) return;
 
     const watchTables: RealtimeTable[] = tables ?? ["movimientos", "productos", "pedidos", "usuarios"];
-    const channel = supabase().channel(`cambios-globales:${establecimientoId}`);
+    const channel = supabase().channel(`cambios-globales:${establecimientoId}:${instanceIdRef.current}`);
 
     for (const table of watchTables) {
       channel.on(
