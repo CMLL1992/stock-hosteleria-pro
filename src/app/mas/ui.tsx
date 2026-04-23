@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useMyRole } from "@/lib/useMyRole";
@@ -32,6 +33,21 @@ export function MoreClient() {
           {toast}
         </div>
       ) : null}
+      <div className="grid gap-2 sm:grid-cols-2">
+        <Link
+          href="/checklist"
+          className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-black px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-900"
+        >
+          Checklist operativo
+        </Link>
+        <Link
+          href="/ayuda"
+          className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50"
+        >
+          Ayuda
+        </Link>
+      </div>
+
       <div>
         <p className="text-sm font-semibold text-gray-900">Perfil</p>
         <p className="mt-1 text-sm text-gray-600">

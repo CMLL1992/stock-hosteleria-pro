@@ -2,6 +2,7 @@
 
 import { ArrowLeft, Lock, LogOut, User } from "lucide-react";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { supabase } from "@/lib/supabase";
@@ -135,6 +136,14 @@ export function MobileHeader({
           ) : null}
         </div>
         <div className="flex items-center gap-2">
+          <Link
+            href="/ayuda"
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-slate-200 bg-white text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50"
+            aria-label="Ayuda y documentación"
+            title="Ayuda"
+          >
+            ?
+          </Link>
           {getEffectiveRole(me) === "superadmin" ? (
             <button
               className="grid h-10 w-10 place-items-center rounded-full border border-slate-200 bg-white shadow-sm hover:bg-slate-50"
