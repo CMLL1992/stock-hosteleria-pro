@@ -11,7 +11,7 @@
     "typecheck": "tsc -p tsconfig.typecheck.json --noEmit"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.21.0",
+    "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.49.1",
     "@tanstack/react-query": "^5.83.0",
     "@tanstack/react-query-persist-client": "^5.99.2",

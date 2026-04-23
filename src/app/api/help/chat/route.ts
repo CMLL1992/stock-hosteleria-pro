@@ -83,10 +83,14 @@ export async function POST(req: Request) {
     }
 
     const genAI = new GoogleGenerativeAI(googleApiKey);
-    const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
-      systemInstruction: SYSTEM
-    });
+    // El SDK usa v1beta por defecto; algunos modelos ya no responden ahí (404). API estable: v1.
+    const model = genAI.getGenerativeModel(
+      {
+        model: "gemini-1.5-flash-latest",
+        systemInstruction: SYSTEM
+      },
+      { apiVersion: "v1" }
+    );
 
     const contents = turnos.map((m) => ({
       role: m.role === "assistant" ? ("model" as const) : ("user" as const),
