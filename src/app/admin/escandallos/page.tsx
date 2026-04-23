@@ -3,9 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
-import type { AppRole } from "@/lib/session";
-import { fetchMyRole } from "@/lib/session";
-import { hasPermission } from "@/lib/permissions";
+import { hasPermission, getEffectiveRole } from "@/lib/permissions";
 import { supabase } from "@/lib/supabase";
 import { costeNeto, formatEUR, margenBeneficioPct, margenBrutoEUR, ventaNetaSinIva } from "@/lib/finance";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
@@ -13,6 +11,7 @@ import { MobileHeader } from "@/components/MobileHeader";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { useCambiosGlobalesRealtime } from "@/lib/useCambiosGlobalesRealtime";
+import { useMyRole } from "@/lib/useMyRole";
 
 type ProductoRow = {
   id: string;
@@ -200,9 +199,9 @@ function clampNonNeg(x: number): number {
 }
 
 export default function EscandallosPage() {
-  const [role, setRole] = useState<AppRole | null>(null);
+  const { data: me, isLoading: meLoading } = useMyRole();
+  const role = getEffectiveRole(me ?? null);
   const canSeeFinance = hasPermission(role, "admin");
-  const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -248,28 +247,6 @@ export default function EscandallosPage() {
       return "";
     }
   }
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setErr(null);
-    fetchMyRole()
-      .then((r) => {
-        if (cancelled) return;
-        setRole(r);
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setErr(supabaseErrToString(e));
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   async function load() {
     setErr(null);
@@ -569,7 +546,7 @@ export default function EscandallosPage() {
     setEditIvaVenta(String(verRow.p.iva_venta ?? 10));
   }, [verId, verRow?.p.id]);
 
-  if (loading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
+  if (meLoading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
   if (!canSeeFinance) {
     return (
       <main className="mx-auto max-w-md p-4">
