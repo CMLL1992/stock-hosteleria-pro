@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import type { AppRole } from "@/lib/session";
 import { fetchMyRole } from "@/lib/session";
@@ -589,6 +590,12 @@ export default function EscandallosPage() {
         </div>
         <div className="flex items-center gap-2">
           {saved ? <span className="text-sm font-semibold text-emerald-700">Guardado ✓</span> : null}
+          <Link
+            href="/admin/escandallos/nuevo"
+            className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-black px-4 text-sm font-semibold text-white hover:bg-slate-900"
+          >
+            Nuevo (Cocina)
+          </Link>
           {isSuperadmin ? (
             <Button
               type="button"
