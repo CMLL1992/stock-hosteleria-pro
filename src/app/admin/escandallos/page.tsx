@@ -532,20 +532,24 @@ export default function EscandallosPage() {
   return (
     <div className="min-h-dvh">
       <MobileHeader title="Escandallos" showBack backHref="/admin" />
-      <main className="mx-auto max-w-5xl bg-slate-50 p-4 pb-28 text-slate-900">
-      <div className="mb-3 flex items-end justify-between gap-3">
-        <div>
+      <main className="mx-auto max-w-5xl bg-slate-50 px-4 pb-28 pt-4 text-slate-900 sm:px-5">
+      <div className="mb-4 flex flex-col gap-4 sm:mb-3 lg:flex-row lg:items-end lg:justify-between lg:gap-3">
+        <div className="min-w-0">
           <h1 className="text-xl font-semibold">Escandallos</h1>
           <p className="text-sm text-slate-600">Edita precios y márgenes por producto (vista tarjetas).</p>
         </div>
-        <div className="flex items-center gap-2">
-          {saved ? <span className="text-sm font-semibold text-emerald-700">Guardado ✓</span> : null}
+        <div className="flex w-full min-w-0 flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+          {saved ? (
+            <span className="text-center text-sm font-semibold text-emerald-700 sm:text-left">Guardado ✓</span>
+          ) : null}
           <Link
             href="/admin/escandallos/nuevo"
-            className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-black px-4 text-sm font-semibold text-white hover:bg-slate-900"
+            className="order-first inline-flex min-h-11 w-full shrink-0 items-center justify-center rounded-2xl bg-black px-4 text-sm font-semibold text-white shadow-md ring-2 ring-black/15 ring-offset-2 ring-offset-slate-50 hover:bg-slate-900 sm:order-none sm:w-auto"
           >
-            Nuevo (Cocina)
+            <span className="sm:hidden">Nuevo · Cocina</span>
+            <span className="hidden sm:inline">Nuevo (Cocina)</span>
           </Link>
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-1 sm:justify-end sm:gap-2">
           <input
             ref={fileRef}
             type="file"
@@ -637,7 +641,7 @@ export default function EscandallosPage() {
           />
           <Button
             type="button"
-            className="min-h-11"
+            className="!min-h-11 w-full !border !border-slate-300 !bg-white !text-slate-900 hover:!bg-slate-50 active:!bg-slate-100"
             onClick={() => {
               if (!items.length) return;
               const rowsOut = items.map((p) => ({
@@ -665,16 +669,19 @@ export default function EscandallosPage() {
             }}
             disabled={!items.length || importing}
           >
-            Descargar Plantilla CSV
+            <span className="sm:hidden">Plantilla CSV</span>
+            <span className="hidden sm:inline">Descargar Plantilla CSV</span>
           </Button>
           <Button
             type="button"
-            className="min-h-11"
+            className="!min-h-11 w-full !border !border-slate-300 !bg-white !text-slate-900 hover:!bg-slate-50 active:!bg-slate-100"
             onClick={() => fileRef.current?.click()}
             disabled={importing}
           >
-            {importing ? "Importando…" : "Importar Escandallos CSV"}
+            <span className="sm:hidden">{importing ? "…" : "Importar CSV"}</span>
+            <span className="hidden sm:inline">{importing ? "Importando…" : "Importar Escandallos CSV"}</span>
           </Button>
+          </div>
         </div>
       </div>
 
