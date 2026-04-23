@@ -169,6 +169,10 @@ export default function RecepcionPedidosPage() {
     setOkMsg(null);
     setSaving(true);
     try {
+      const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (!uuidRe.test(String(activeEstablishmentId).trim())) {
+        throw new Error(`establecimiento_id inválido (no es UUID): "${String(activeEstablishmentId)}"`);
+      }
       const uid = await requireUserId();
       const nowIso = new Date().toISOString();
 
@@ -205,25 +209,15 @@ export default function RecepcionPedidosPage() {
           // Log detallado para diagnosticar 400/403 en producción
           // eslint-disable-next-line no-console
           console.error("Error detallado de Supabase (insert movimientos):", ins.error);
+          // eslint-disable-next-line no-console
+          console.error("Error Supabase (insert movimientos) campos:", {
+            message: (ins.error as unknown as { message?: unknown })?.message,
+            details: (ins.error as unknown as { details?: unknown })?.details,
+            hint: (ins.error as unknown as { hint?: unknown })?.hint,
+            code: (ins.error as unknown as { code?: unknown })?.code
+          });
           throw ins.error;
         }
-
-        // Optimistic: actualiza caches de productos/dashboard para que la gráfica suba al instante.
-        const applyDelta = (prevList: Array<{ id: string; stock_actual?: number }>) =>
-          prevList.map((p) => {
-            const add = movimientos
-              .filter((m) => String(m.producto_id) === String(p.id))
-              .reduce((sum, m) => sum + (Number((m as { cantidad?: unknown }).cantidad ?? 0) || 0), 0);
-            if (add <= 0) return p;
-            const curr = Number(p.stock_actual ?? 0) || 0;
-            return { ...p, stock_actual: curr + add };
-          });
-        queryClient.setQueryData(["productos", activeEstablishmentId], (old) =>
-          applyDelta(((old as Array<{ id: string; stock_actual?: number }> | undefined) ?? []) as Array<{ id: string; stock_actual?: number }>)
-        );
-        queryClient.setQueryData(["dashboard", "productos", activeEstablishmentId], (old) =>
-          applyDelta(((old as Array<{ id: string; stock_actual?: number }> | undefined) ?? []) as Array<{ id: string; stock_actual?: number }>)
-        );
       }
 
       // 2) Actualizar pedido_items sumando lo recibido hoy.
