@@ -30,6 +30,7 @@ export function DashboardClient() {
     queryClient,
     queryKeys: [
       ["dashboard", "productos", establecimientoId],
+      ["dashboard", "escandallos-precio", establecimientoId],
       ["productos", establecimientoId],
       ["movimientos", establecimientoId],
       // compatibilidad (algunas pantallas invalidan sin establecimiento)

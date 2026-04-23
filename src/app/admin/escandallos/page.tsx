@@ -11,6 +11,7 @@ import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { MobileHeader } from "@/components/MobileHeader";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
+import { useCambiosGlobalesRealtime } from "@/lib/useCambiosGlobalesRealtime";
 
 type ProductoRow = {
   id: string;
@@ -366,6 +367,16 @@ export default function EscandallosPage() {
     load().catch((e) => setErr(supabaseErrToString(e)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeEstablishmentId, canSeeFinance]);
+
+  // Realtime: si otro admin/superadmin toca escandallos en este establecimiento, recarga.
+  useCambiosGlobalesRealtime({
+    establecimientoId: activeEstablishmentId,
+    tables: ["productos", "escandallos"],
+    onChange: () => {
+      if (!canSeeFinance) return;
+      void load();
+    }
+  });
 
   async function fixEscandallosSinEstablecimiento() {
     if (!isSuperadmin) return;
