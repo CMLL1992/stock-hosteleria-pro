@@ -23,6 +23,7 @@ import { enqueueMovimiento, newClientUuid } from "@/lib/offlineQueue";
 import { requireUserId } from "@/lib/session";
 import { useCambiosGlobalesRealtime } from "@/lib/useCambiosGlobalesRealtime";
 import { DangerConfirmModal } from "@/components/ui/DangerConfirmModal";
+import { fetchEscandallosPrecioMapByProductIds } from "@/lib/fetchEscandallosPrecioMap";
 
 type ProveedorOpt = { id: string; nombre: string };
 
@@ -350,16 +351,10 @@ export default function AdminProductosPage() {
 
         const priceById = new Map<string, number>();
         try {
-          const esc = await supabase()
-            .from("escandallos")
-            .select("producto_id,precio_tarifa")
-            .eq("establecimiento_id", activeEstablishmentId);
-          if (esc.error) throw esc.error;
-          for (const r of (esc.data as unknown as Record<string, unknown>[]) ?? []) {
-            const pid = String(r.producto_id ?? "").trim();
-            if (!pid) continue;
-            const n = Number(r.precio_tarifa ?? 0);
-            priceById.set(pid, Number.isFinite(n) ? n : 0);
+          const escMap = await fetchEscandallosPrecioMapByProductIds(base.map((p) => p.id));
+          for (const p of base) {
+            const row = escMap.get(p.id);
+            priceById.set(p.id, row?.precio_tarifa ?? 0);
           }
         } catch (e) {
           if (!isMissingEscandallosTable(e)) throw e;
@@ -471,16 +466,10 @@ export default function AdminProductosPage() {
       const base = ((lite.data ?? []) as unknown as Record<string, unknown>[]).map((r) => mapProductoQueryRow(r, t));
       const priceById = new Map<string, number>();
       try {
-        const esc = await supabase()
-          .from("escandallos")
-          .select("producto_id,precio_tarifa")
-          .eq("establecimiento_id", activeEstablishmentId);
-        if (esc.error) throw esc.error;
-        for (const r of (esc.data as unknown as Record<string, unknown>[]) ?? []) {
-          const pid = String(r.producto_id ?? "").trim();
-          if (!pid) continue;
-          const n = Number(r.precio_tarifa ?? 0);
-          priceById.set(pid, Number.isFinite(n) ? n : 0);
+        const escMap = await fetchEscandallosPrecioMapByProductIds(base.map((p) => p.id));
+        for (const p of base) {
+          const row = escMap.get(p.id);
+          priceById.set(p.id, row?.precio_tarifa ?? 0);
         }
       } catch (e) {
         if (!isMissingEscandallosTable(e)) throw e;

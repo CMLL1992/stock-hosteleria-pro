@@ -12,6 +12,7 @@ import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTitulo
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { useCambiosGlobalesRealtime } from "@/lib/useCambiosGlobalesRealtime";
 import { useMyRole } from "@/lib/useMyRole";
+import { fetchEscandallosFinanceMapByProductIds } from "@/lib/fetchEscandallosPrecioMap";
 
 type ProductoRow = {
   id: string;
@@ -263,28 +264,26 @@ export default function EscandallosPage() {
         .order(t, { ascending: true });
       if (resProd.error) throw resProd.error;
 
-      const resEsc = await supabase()
-        .from("escandallos")
-        .select("producto_id,establecimiento_id,precio_tarifa,uds_caja,descuento_valor,descuento_tipo,rappel_valor,iva_compra,pvp,iva_venta")
-        .eq("establecimiento_id", activeEstablishmentId);
-      if (resEsc.error) throw resEsc.error;
+      const prodRows = ((resProd.data ?? []) as unknown as Record<string, unknown>[]) ?? [];
+      const prodIds = prodRows.map((r) => String(r.id ?? "").trim()).filter(Boolean);
+
+      const escFinMap = await fetchEscandallosFinanceMapByProductIds(prodIds);
 
       const escByProd = new Map<string, EscandalloRow>();
-      for (const r of (resEsc.data as unknown as Record<string, unknown>[]) ?? []) {
-        const pid = String(r.producto_id ?? "").trim();
-        if (!pid) continue;
-        const udsCaja = Math.max(1, Math.trunc(clampNonNeg(Number(r.uds_caja ?? 1) || 1)));
+      for (const pid of prodIds) {
+        const fin = escFinMap.get(pid) ?? null;
+        if (!fin) continue;
         escByProd.set(pid, {
           producto_id: pid,
-          establecimiento_id: String(r.establecimiento_id ?? activeEstablishmentId),
-          precio_tarifa: Number(r.precio_tarifa ?? 0) || 0,
-          uds_caja: udsCaja,
-          descuento_valor: Number(r.descuento_valor ?? 0) || 0,
-          descuento_tipo: normalizeDescTipo(r.descuento_tipo),
-          rappel_valor: Number(r.rappel_valor ?? 0) || 0,
-          iva_compra: normalizeIva(Number(r.iva_compra ?? 10)),
-          pvp: Number(r.pvp ?? 0) || 0,
-          iva_venta: normalizeIva(Number(r.iva_venta ?? 10))
+          establecimiento_id: String(fin.establecimiento_id || activeEstablishmentId),
+          precio_tarifa: fin.precio_tarifa,
+          uds_caja: fin.uds_caja,
+          descuento_valor: fin.descuento_valor,
+          descuento_tipo: normalizeDescTipo(fin.descuento_tipo),
+          rappel_valor: fin.rappel_valor,
+          iva_compra: normalizeIva(fin.iva_compra),
+          pvp: fin.pvp,
+          iva_venta: normalizeIva(fin.iva_venta)
         });
       }
 

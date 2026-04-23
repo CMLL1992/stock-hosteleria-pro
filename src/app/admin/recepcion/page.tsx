@@ -370,7 +370,6 @@ export default function RecepcionPage() {
                         .from("escandallos")
                         .select("producto_id,precio_tarifa,productos:productos(articulo,nombre)")
                         .eq("producto_id", pid)
-                        .eq("establecimiento_id", activeEstablishmentId)
                         .maybeSingle();
                       if (error) throw error;
                       const row = (data ?? null) as

@@ -12,6 +12,7 @@ import { enqueueMovimiento, newClientUuid } from "@/lib/offlineQueue";
 import { getEffectiveRole, hasPermission } from "@/lib/permissions";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
+import { fetchEscandallosPrecioMapByProductIds, type EscandalloPrecioRow } from "@/lib/fetchEscandallosPrecioMap";
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 export function DashboardClient() {
@@ -50,40 +51,12 @@ export function DashboardClient() {
 
   const rows = useMemo(() => productosQuery.data ?? [], [productosQuery.data]);
 
-  type EscandalloPrecioRow = {
-    producto_id: string;
-    precio_tarifa: number;
-    descuento_valor: number;
-    descuento_tipo: "%" | "€";
-    rappel_valor: number;
-  };
-
   const escandallosPrecioQuery = useQuery({
-    queryKey: ["dashboard", "escandallos-precio", establecimientoId],
-    enabled: !!establecimientoId && canSeePrices,
+    queryKey: ["dashboard", "escandallos-precio", establecimientoId, productosQuery.data],
+    enabled: !!establecimientoId && canSeePrices && !!productosQuery.data?.length,
     queryFn: async () => {
-      const { data, error } = await supabase()
-        .from("escandallos")
-        .select("producto_id,precio_tarifa,descuento_valor,descuento_tipo,rappel_valor")
-        .eq("establecimiento_id", establecimientoId as string);
-      if (error) throw error;
-      const map = new Map<string, EscandalloPrecioRow>();
-      for (const r of ((data ?? []) as unknown as Array<Record<string, unknown>>)) {
-        const pid = String(r.producto_id ?? "").trim();
-        if (!pid) continue;
-        const precio = Number(r.precio_tarifa ?? 0);
-        const descVal = Number(r.descuento_valor ?? 0);
-        const rappel = Number(r.rappel_valor ?? 0);
-        const descTipo = String(r.descuento_tipo ?? "%") === "€" ? "€" : "%";
-        map.set(pid, {
-          producto_id: pid,
-          precio_tarifa: Number.isFinite(precio) ? precio : 0,
-          descuento_valor: Number.isFinite(descVal) ? descVal : 0,
-          descuento_tipo: descTipo,
-          rappel_valor: Number.isFinite(rappel) ? rappel : 0
-        });
-      }
-      return map;
+      const ids = (productosQuery.data ?? []).map((p) => p.id).filter(Boolean);
+      return await fetchEscandallosPrecioMapByProductIds(ids);
     },
     staleTime: 30_000,
     retry: 1
