@@ -1,7 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+/** Node: las variables de entorno del proyecto (p. ej. GOOGLE_API_KEY) se resuelven de forma fiable aquí; Edge a veces no ve env nuevas hasta redeploy. */
+export const runtime = "nodejs";
 
 function json(data: unknown, status = 200) {
   return NextResponse.json(data, { status });
@@ -27,6 +29,8 @@ ${OFF_TOPIC_REPLY}
 
 type ChatMsg = { role?: unknown; content?: unknown };
 
+type RoleMsg = { role: "user" | "assistant"; content: string };
+
 export async function POST(req: Request) {
   try {
     const { supabaseUrl, anonKey } = getEnv();
@@ -45,7 +49,7 @@ export async function POST(req: Request) {
 
     const body = (await req.json()) as { messages?: ChatMsg[] };
     const raw = Array.isArray(body?.messages) ? body.messages : [];
-    const messages = raw
+    const messages: RoleMsg[] = raw
       .slice(-12)
       .map((m) => ({
         role: m.role === "assistant" ? ("assistant" as const) : ("user" as const),
@@ -57,33 +61,53 @@ export async function POST(req: Request) {
       return json({ ok: false, error: "Invalid messages" }, 400);
     }
 
-    if (!OPENAI_API_KEY) {
-      return json({
-        ok: true,
-        reply:
-          "La ayuda con IA no está configurada (falta OPENAI_API_KEY en el servidor). Mientras tanto, lee las secciones de documentación en esta misma página."
-      });
+    const googleApiKey = String(process.env.GOOGLE_API_KEY ?? "").trim();
+    if (!googleApiKey) {
+      return json(
+        {
+          ok: false,
+          error:
+            "Error de Configuración: falta GOOGLE_API_KEY en el servidor. En Vercel ve a Project → Settings → Environment Variables, crea GOOGLE_API_KEY con tu clave de Google AI, márcala para Production (y Preview si aplica) y vuelve a desplegar para que el runtime Node la cargue."
+        },
+        503
+      );
     }
 
-    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${OPENAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: "gpt-4.1-mini",
-        temperature: 0.3,
-        messages: [{ role: "system", content: SYSTEM }, ...messages]
-      })
+    // Gemini exige que el historial empiece por "user"; quitamos saludos iniciales del asistente si los hay.
+    let turnos = [...messages];
+    while (turnos.length > 0 && turnos[0].role === "assistant") {
+      turnos = turnos.slice(1);
+    }
+    if (!turnos.length || turnos[turnos.length - 1].role !== "user") {
+      return json({ ok: false, error: "Invalid messages" }, 400);
+    }
+
+    const genAI = new GoogleGenerativeAI(googleApiKey);
+    const model = genAI.getGenerativeModel({
+      model: "gemini-1.5-flash",
+      systemInstruction: SYSTEM
     });
 
-    if (!resp.ok) {
-      const t = await resp.text();
-      return json({ ok: false, error: t.slice(0, 500) || "OpenAI error" }, 502);
+    const contents = turnos.map((m) => ({
+      role: m.role === "assistant" ? ("model" as const) : ("user" as const),
+      parts: [{ text: m.content }]
+    }));
+
+    const result = await model.generateContent({
+      contents,
+      generationConfig: {
+        temperature: 0.3,
+        maxOutputTokens: 1024
+      }
+    });
+
+    let reply = OFF_TOPIC_REPLY;
+    try {
+      reply = String(result.response.text() ?? "").trim() || OFF_TOPIC_REPLY;
+    } catch {
+      reply = OFF_TOPIC_REPLY;
     }
-    const data = (await resp.json()) as { choices?: Array<{ message?: { content?: string } }> };
-    const reply = String(data.choices?.[0]?.message?.content ?? "").trim() || OFF_TOPIC_REPLY;
+
     return json({ ok: true, reply });
   } catch (e) {
     return json({ ok: false, error: e instanceof Error ? e.message : "Error" }, 500);
