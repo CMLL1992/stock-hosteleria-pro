@@ -117,12 +117,40 @@ export default function AdminMovimientosPage() {
         if (!ids.length) {
           setUsuariosById(new Map());
         } else {
-          const { data: uData, error: uErr } = await supabase()
+          // Multitenant: el lookup de usuarios debe estar acotado al establecimiento.
+          // Fallback: si `nombre_completo` aún no existe en BD, reintentamos sin esa columna.
+          const baseQ = supabase()
             .from("usuarios")
-            .select("id,email,nombre_completo")
+            .select("id,email,nombre_completo,establecimiento_id")
+            .eq("establecimiento_id", activeEstablishmentId)
             .in("id", ids)
             .limit(200);
-          if (uErr) throw uErr;
+
+          const { data: uData, error: uErr } = await baseQ;
+          if (uErr) {
+            const msg = String((uErr as { message?: unknown })?.message ?? "").toLowerCase();
+            const looksLikeMissingCol = msg.includes("nombre_completo") || (msg.includes("column") && msg.includes("nombre"));
+            if (!looksLikeMissingCol) throw uErr;
+            const fb = await supabase()
+              .from("usuarios")
+              .select("id,email,establecimiento_id")
+              .eq("establecimiento_id", activeEstablishmentId)
+              .in("id", ids)
+              .limit(200);
+            if (fb.error) throw fb.error;
+            const m = new Map<string, UsuarioMini>();
+            for (const r of ((fb.data ?? []) as unknown as Array<Record<string, unknown>>)) {
+              const id = String(r.id ?? "").trim();
+              if (!id) continue;
+              m.set(id, {
+                id,
+                email: r.email != null ? String(r.email) : null,
+                nombre_completo: null
+              });
+            }
+            setUsuariosById(m);
+            return;
+          }
           const m = new Map<string, UsuarioMini>();
           for (const r of ((uData ?? []) as unknown as Array<Record<string, unknown>>)) {
             const id = String(r.id ?? "").trim();
