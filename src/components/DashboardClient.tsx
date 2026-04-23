@@ -156,7 +156,7 @@ export function DashboardClient() {
 
   const envasesCatalogoQuery = useQuery({
     queryKey: ["catalogo", "envases", establecimientoId],
-    enabled: !!establecimientoId,
+    enabled: !!establecimientoId && rows.some((p) => !!(p.envase_catalogo_id ?? "").trim() && (p.envase_coste ?? null) == null),
     queryFn: async () => {
       const { data, error } = await supabase()
         .from("envases_catalogo")
@@ -183,10 +183,12 @@ export function DashboardClient() {
       const envaseKey = (p.envase_catalogo_id ?? "").trim();
       // Sin vínculo al catálogo: no inventamos valor (sin fallback al sistema antiguo).
       if (!envaseKey) continue;
-      const precioPorEnvase = Math.max(0, catalogo.get(envaseKey) ?? 0);
+      const costeDirecto = typeof p.envase_coste === "number" && Number.isFinite(p.envase_coste) ? p.envase_coste : null;
+      const precioPorEnvase = Math.max(0, costeDirecto ?? (catalogo.get(envaseKey) ?? 0));
       if (precioPorEnvase <= 0) continue;
-      const qty = Math.max(0, Number(p.stock_actual ?? 0) || 0) + Math.max(0, Number(p.stock_vacios ?? 0) || 0);
-      total += qty * precioPorEnvase;
+      const vacios = Math.max(0, Number(p.stock_vacios ?? 0) || 0);
+      if (vacios <= 0) continue;
+      total += vacios * precioPorEnvase;
     }
     return total;
   }, [envasesCatalogoQuery.data, rows]);

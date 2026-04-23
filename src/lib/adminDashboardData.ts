@@ -10,6 +10,8 @@ export type DashboardProducto = {
   categoria: string | null;
   /** Catálogo de envases: referencia (opcional) al envase asociado al producto. */
   envase_catalogo_id?: string | null;
+  /** Coste del envase unido desde `envases_catalogo` (si disponible). */
+  envase_coste?: number | null;
   stock_actual: number;
   stock_minimo: number;
   stock_vacios: number;
@@ -40,11 +42,15 @@ export function normalizeProductoRow(raw: Record<string, unknown>, tituloKey?: s
     tituloKey ? raw[tituloKey] ?? raw.articulo ?? raw.nombre : raw.articulo ?? raw.nombre
   )
     .trim() || "—";
+  const envRaw = raw.envase as { coste?: unknown } | { coste?: unknown }[] | null | undefined;
+  const env = Array.isArray(envRaw) ? envRaw[0] ?? null : envRaw;
+  const coste = env?.coste != null ? Number(env.coste) : null;
   return {
     id: String(raw.id ?? ""),
     articulo,
     categoria: raw.categoria != null && String(raw.categoria).trim() !== "" ? String(raw.categoria).trim() : null,
     envase_catalogo_id: raw.envase_catalogo_id != null ? String(raw.envase_catalogo_id).trim() : null,
+    envase_coste: Number.isFinite(coste as number) ? (coste as number) : null,
     stock_actual: toIntStock(raw.stock_actual, 0),
     stock_minimo: toIntStock(raw.stock_minimo, 0),
     stock_vacios: toIntStock(raw.stock_vacios, 0),
@@ -62,7 +68,11 @@ export function normalizeProductoRow(raw: Record<string, unknown>, tituloKey?: s
 export async function fetchDashboardProductos(establecimientoId: string): Promise<DashboardProducto[]> {
   const col = await resolveProductoTituloColumn(establecimientoId);
   const t = tituloColSql(col);
-  const full = `id,${t},categoria,envase_catalogo_id,stock_actual,stock_minimo,stock_vacios,unidad,unidades_por_caja,proveedor:proveedores(nombre,telefono_whatsapp)`;
+  const full =
+    `id,${t},categoria,envase_catalogo_id,` +
+    `envase:envases_catalogo(coste),` +
+    `stock_actual,stock_minimo,stock_vacios,unidad,unidades_por_caja,` +
+    `proveedor:proveedores(nombre,telefono_whatsapp)`;
   const { data, error } = await supabase()
     .from("productos")
     .select(full as "*")
@@ -86,7 +96,7 @@ export async function fetchDashboardProductos(establecimientoId: string): Promis
 
   const lite = await supabase()
     .from("productos")
-    .select(`id,${t},categoria,envase_catalogo_id,stock_actual,stock_minimo,stock_vacios,unidades_por_caja` as "*")
+    .select(`id,${t},categoria,envase_catalogo_id,envase:envases_catalogo(coste),stock_actual,stock_minimo,stock_vacios,unidades_por_caja` as "*")
     .eq("establecimiento_id", establecimientoId)
     .order(t, { ascending: true });
   if (lite.error) throw lite.error;
