@@ -301,7 +301,8 @@ export default function RecepcionPedidosPage() {
         const deltaByProd = new Map<string, number>();
         for (const m of movimientos) {
           const pid = String(m.producto_id ?? "").trim();
-          const add = Number((m as { cantidad?: unknown }).cantidad ?? 0) || 0;
+          const addRaw = Number((m as { cantidad?: unknown }).cantidad ?? 0) || 0;
+          const add = Math.max(0, addRaw);
           if (!pid || add <= 0) continue;
           deltaByProd.set(pid, (deltaByProd.get(pid) ?? 0) + add);
         }
