@@ -38,6 +38,17 @@ function digitsOnly(raw: string): string {
   return String(raw ?? "").replace(/[^\d]/g, "");
 }
 
+function readEvtValue(
+  e: { currentTarget?: { value?: unknown }; target?: { value?: unknown } } | null | undefined
+): string {
+  try {
+    const v = e?.currentTarget?.value ?? e?.target?.value;
+    return typeof v === "string" ? v : String(v ?? "");
+  } catch {
+    return "";
+  }
+}
+
 export default function RecepcionPedidosPage() {
   const { data: me, isLoading: meLoading } = useMyRole();
   const role = getEffectiveRole(me ?? null);
@@ -294,7 +305,11 @@ export default function RecepcionPedidosPage() {
                         pattern="[0-9]*"
                         className="h-14 w-24 rounded-2xl border-2 border-slate-800 bg-white px-2 text-center text-2xl font-black tabular-nums text-slate-900 shadow-inner focus:outline-none focus:ring-4 focus:ring-slate-300"
                         value={draft[it.producto_id] ?? ""}
-                        onChange={(e) => setDraft((prev) => ({ ...prev, [it.producto_id]: digitsOnly(e.currentTarget.value) }))}
+                        onChange={(e) => {
+                          if (!it || !it.producto_id) return;
+                          const raw = readEvtValue(e);
+                          setDraft((prev) => ({ ...prev, [it.producto_id]: digitsOnly(raw) }));
+                        }}
                         disabled={saving}
                         aria-label={`Cantidad recibida para ${it.articulo}`}
                       />
