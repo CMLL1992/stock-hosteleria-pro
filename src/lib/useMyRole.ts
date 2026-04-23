@@ -42,19 +42,46 @@ async function fetchMyRoleRobust(): Promise<MyRoleResult> {
   ];
 
   for (const t of tryTables) {
-    const selectCols = t.table === "usuarios" ? `${t.column},establecimiento_id` : t.column;
+    // En entornos antiguos `perfiles` puede no tener `establecimiento_id`.
+    // Intentamos leerlo y si falla por columna inexistente, reintentamos con solo `rol`.
+    const selectCols = `${t.column},establecimiento_id`;
     const res = await supabase().from(t.table).select(selectCols).eq("id", user.id).maybeSingle();
-    if (!res.error && res.data) {
+    const missingEstCol = (() => {
+      const msg = String((res.error as { message?: unknown } | null)?.message ?? "").toLowerCase();
+      return msg.includes("establecimiento_id") && msg.includes("could not find");
+    })();
+    const res2 =
+      res.error && missingEstCol
+        ? await supabase().from(t.table).select(t.column).eq("id", user.id).maybeSingle()
+        : res;
+
+    if (!res2.error && res2.data) {
       // @ts-expect-error: lectura dinámica por nombre de columna
-      const raw = String(res.data?.[t.column] ?? "")
+      const raw = String(res2.data?.[t.column] ?? "")
         .trim()
         .toLowerCase() as string;
       const asRole = raw as AppRole;
       role = raw === "superadmin" || raw === "admin" || raw === "staff" ? asRole : "staff";
       // @ts-expect-error: columna opcional
-      establecimientoId = (res.data?.establecimiento_id as string | undefined) ?? null;
+      establecimientoId = (res2.data?.establecimiento_id as string | undefined) ?? null;
       break;
     }
+  }
+
+  // Si tenemos token, pedimos al servidor el establecimientoId (y rol si faltaba).
+  // Esto resuelve casos donde el rol se pudo leer desde una tabla legacy pero falta establecimiento_id en el select/RLS.
+  try {
+    const token = data.session?.access_token ?? "";
+    if (token) {
+      const res = await fetch("/api/me/role", { headers: { authorization: `Bearer ${token}` } });
+      const json = (await res.json()) as { ok?: boolean; role?: AppRole | null; establecimientoId?: string | null };
+      if (res.ok && json.ok) {
+        if (!role && json.role) role = json.role;
+        if (!establecimientoId && json.establecimientoId) establecimientoId = json.establecimientoId;
+      }
+    }
+  } catch {
+    // ignore
   }
 
   // Si no hemos podido leer el rol por RLS/tabla, no bloqueamos UI.
