@@ -94,6 +94,10 @@ export async function POST(req: Request) {
     const promptFinal = SYSTEM_PROMPT + "\n\nUsuario: " + mensajeUsuario;
 
     const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${process.env.GOOGLE_API_KEY}`;
+    console.log(
+      "DEBUG - Cuerpo enviado:",
+      JSON.stringify({ contents: [{ parts: [{ text: "Test" }] }] })
+    );
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -115,7 +119,8 @@ export async function POST(req: Request) {
     }
 
     if (!res.ok) {
-      console.log("[help/chat] Gemini error body:", rawTextRes);
+      console.error("DEBUG - Status:", res.status);
+      console.error("DEBUG - Texto:", rawTextRes);
       const googleMsg =
         typeof parsed?.error?.message === "string" && parsed.error.message.trim()
           ? parsed.error.message.trim()
