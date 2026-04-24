@@ -22,6 +22,7 @@ export function GlobalRealtimeSync() {
       ["productos"],
       // Dashboard
       ["dashboard", "productos", establecimientoId],
+      ["dashboard", "checklist-estado", establecimientoId],
       ["dashboard"],
       // Movimientos
       ["movimientos", establecimientoId],

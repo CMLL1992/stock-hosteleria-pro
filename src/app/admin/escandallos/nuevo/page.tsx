@@ -296,41 +296,9 @@ export default function NuevoEscandalloCocinaPage() {
         iva_final: ivaOk
       };
 
-      const { data: escRows, error: escErr } = await supabase()
-        .from("escandallos_cocina")
-        .upsert(payloadEsc, { onConflict: "establecimiento_id,nombre_plato" })
-        .select("id");
-      if (escErr) throw escErr;
-
-      let escId = "";
-      const first = Array.isArray(escRows) ? escRows[0] : escRows;
-      const rawId = first && typeof first === "object" ? (first as { id?: unknown }).id : null;
-      if (rawId != null && String(rawId).trim()) escId = String(rawId);
-      if (!escId) {
-        const { data: found, error: findErr } = await supabase()
-          .from("escandallos_cocina")
-          .select("id")
-          .eq("establecimiento_id", activeEstablishmentId)
-          .eq("nombre_plato", nombre)
-          .limit(1)
-          .maybeSingle();
-        if (findErr) throw findErr;
-        escId = String((found as { id?: unknown } | null)?.id ?? "");
-      }
-      if (!escId) throw new Error("No se pudo obtener el id del escandallo tras guardar.");
-
-      const { error: delErr } = await supabase()
-        .from("escandallo_ingredientes")
-        .delete()
-        .eq("escandallo_id", escId)
-        .eq("establecimiento_id", activeEstablishmentId);
-      if (delErr) throw delErr;
-
-      const ingRows = calc.lines
+      const ingredientesPayload = calc.lines
         .filter((x) => x.nombre_ingrediente.trim())
         .map((x) => ({
-          escandallo_id: escId,
-          establecimiento_id: activeEstablishmentId,
           nombre_ingrediente: x.nombre_ingrediente.trim(),
           cantidad_gramos_ml: clampNonNeg(x.qty),
           precio_compra_sin_iva: clampNonNeg(x.precio),
@@ -338,10 +306,15 @@ export default function NuevoEscandalloCocinaPage() {
           iva_ingrediente: clampIvaCocina(toNum(x.iva_ingrediente))
         }));
 
-      if (ingRows.length) {
-        const { error: insErr } = await supabase().from("escandallo_ingredientes").insert(ingRows);
-        if (insErr) throw insErr;
-      }
+      const { data: escId, error: rpcErr } = await supabase().rpc("save_escandallo_cocina", {
+        p_nombre_plato: nombre,
+        p_raciones_lote: clampNonNeg(toNum(racionesLote)) || 1,
+        p_multiplicador: clampNonNeg(toNum(multiplicador)) || 3.5,
+        p_iva_final: ivaOk,
+        p_ingredientes: ingredientesPayload
+      });
+      if (rpcErr) throw rpcErr;
+      if (!escId) throw new Error("No se pudo guardar el escandallo (sin id).");
 
       setOk("Escandallo guardado.");
       setTimeout(() => setOk(null), 2000);

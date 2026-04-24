@@ -35,6 +35,7 @@ export function DashboardClient() {
     queryClient,
     queryKeys: [
       ["dashboard", "productos", establecimientoId],
+      ["dashboard", "checklist-estado", establecimientoId],
       ["dashboard", "escandallos-precio", establecimientoId],
       ["productos", establecimientoId],
       ["movimientos", establecimientoId],
