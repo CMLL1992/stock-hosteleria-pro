@@ -35,6 +35,7 @@ export function BottomTabBar() {
   const { data } = useMyRole();
   const role = getEffectiveRole(data ?? null);
   const isAdmin = hasPermission(role, "admin");
+  const isStaff = hasPermission(role, "staff");
 
   const tabs: Tab[] = useMemo(() => {
     if (!isAdmin) {
@@ -42,6 +43,7 @@ export function BottomTabBar() {
         { href: "/", label: "INICIO" },
         { href: "/admin/scan", label: "ESCANEAR" },
         { href: "/stock", label: "STOCK" },
+        ...(isStaff ? [{ href: "/admin/checklists/tareas", label: "TAREAS" } as Tab] : []),
         { href: "/stock?vacios=1", label: "VACÍOS" }
       ];
     }
@@ -52,7 +54,7 @@ export function BottomTabBar() {
       { href: "/admin/pedidos", label: "PEDIDOS" },
       { href: "/admin", label: "PANEL" }
     ];
-  }, [isAdmin]);
+  }, [isAdmin, isStaff]);
 
   return (
     <nav

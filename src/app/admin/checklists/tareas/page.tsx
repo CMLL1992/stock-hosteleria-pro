@@ -31,7 +31,9 @@ function sortTareas(a: TareaRow, b: TareaRow): number {
 export default function ChecklistTareasAdminPage() {
   const { data: me, isLoading: meLoading } = useMyRole();
   const role = getEffectiveRole(me ?? null);
+  const canCreate = hasPermission(role, "staff");
   const canManage = hasPermission(role, "admin");
+  const backHref = canManage ? "/admin" : "/";
 
   const { activeEstablishmentId } = useActiveEstablishment();
 
@@ -49,7 +51,7 @@ export default function ChecklistTareasAdminPage() {
   const [deleting, setDeleting] = useState(false);
 
   const fetchTareas = useCallback(async () => {
-    if (!activeEstablishmentId || !canManage) {
+    if (!activeEstablishmentId || !canCreate) {
       setItems([]);
       setLoading(false);
       return;
@@ -78,7 +80,7 @@ export default function ChecklistTareasAdminPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeEstablishmentId, canManage]);
+  }, [activeEstablishmentId, canCreate]);
 
   useEffect(() => {
     void fetchTareas();
@@ -189,6 +191,7 @@ export default function ChecklistTareasAdminPage() {
 
   function fila(t: TareaRow) {
     const busy = savingId === t.id;
+    const readOnly = !canManage;
     return (
       <li
         key={t.id}
@@ -200,6 +203,7 @@ export default function ChecklistTareasAdminPage() {
             <input
               className="min-h-11 rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
               value={t.titulo}
+              disabled={readOnly}
               onChange={(e) => patchLocal(t.id, { titulo: e.currentTarget.value })}
             />
           </label>
@@ -209,6 +213,7 @@ export default function ChecklistTareasAdminPage() {
               inputMode="numeric"
               className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10 sm:w-24"
               value={String(t.orden)}
+              disabled={readOnly}
               onChange={(e) => patchLocal(t.id, { orden: Math.trunc(Number(e.currentTarget.value) || 0) })}
             />
           </label>
@@ -217,6 +222,7 @@ export default function ChecklistTareasAdminPage() {
             <select
               className="min-h-11 rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
               value={t.tipo}
+              disabled={readOnly}
               onChange={(e) => patchLocal(t.id, { tipo: e.currentTarget.value === "Cierre" ? "Cierre" : "Apertura" })}
             >
               <option value="Apertura">Apertura</option>
@@ -230,12 +236,14 @@ export default function ChecklistTareasAdminPage() {
               type="checkbox"
               className="h-5 w-5 rounded border-slate-300"
               checked={t.activo}
+              disabled={readOnly}
               onChange={(e) => {
                 const next = e.currentTarget.checked;
                 patchLocal(t.id, { activo: next });
                 // Persistencia inmediata (sin depender de pulsar Guardar)
                 void (async () => {
                   if (!activeEstablishmentId) return;
+                  if (readOnly) return;
                   setSavingId(t.id);
                   try {
                     const { error } = await supabase()
@@ -256,30 +264,32 @@ export default function ChecklistTareasAdminPage() {
             />
             Activa (visible en el móvil)
           </label>
-          <div className="ml-auto flex flex-wrap gap-2">
-            <Button type="button" className="!min-h-10 !px-3 !text-xs" disabled={busy} onClick={() => void guardarFila(t)}>
-              {busy ? "Guardando…" : "Guardar"}
-            </Button>
-            <button
-              type="button"
-              className="min-h-10 rounded-2xl border border-red-200 bg-white px-3 text-xs font-semibold text-red-700 hover:bg-red-50"
-              onClick={() => setDeleteId(t.id)}
-            >
-              Borrar
-            </button>
-          </div>
+          {canManage ? (
+            <div className="ml-auto flex flex-wrap gap-2">
+              <Button type="button" className="!min-h-10 !px-3 !text-xs" disabled={busy} onClick={() => void guardarFila(t)}>
+                {busy ? "Guardando…" : "Guardar"}
+              </Button>
+              <button
+                type="button"
+                className="min-h-10 rounded-2xl border border-red-200 bg-white px-3 text-xs font-semibold text-red-700 hover:bg-red-50"
+                onClick={() => setDeleteId(t.id)}
+              >
+                Borrar
+              </button>
+            </div>
+          ) : null}
         </div>
       </li>
     );
   }
 
   if (meLoading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
-  if (!canManage) {
+  if (!canCreate) {
     return (
       <div className="min-h-dvh bg-slate-50">
-        <MobileHeader title="Checklist · Tareas" showBack backHref="/admin" />
+        <MobileHeader title="Checklist · Tareas" showBack backHref={backHref} />
         <main className="mx-auto max-w-md p-4">
-          <p className="text-sm text-slate-600">Solo administradores pueden gestionar las tareas del checklist.</p>
+          <p className="text-sm text-slate-600">No tienes permisos para consultar o crear tareas del checklist.</p>
         </main>
       </div>
     );
@@ -287,7 +297,7 @@ export default function ChecklistTareasAdminPage() {
 
   return (
     <div className="min-h-dvh bg-slate-50">
-      <MobileHeader title="Checklist · Tareas" showBack backHref="/admin" />
+      <MobileHeader title="Checklist · Tareas" showBack backHref={backHref} />
       <main className="mx-auto max-w-2xl space-y-4 px-4 pb-28 pt-4 sm:px-5">
         <header className="space-y-1">
           <h1 className="text-xl font-semibold text-slate-900">Tareas del checklist</h1>

@@ -29,9 +29,7 @@ export function GlobalRealtimeSync() {
       // Pedidos / recepción (algunas vistas usan state local, pero esto mantiene caches coherentes)
       ["pedidos", establecimientoId],
       ["pedidos"],
-      // Activity log
-      ["dashboard", "activity", establecimientoId],
-      ["dashboard", "activity"]
+      // Activity log: no se invalida porque no se muestra en dashboard
     ]
   });
 
