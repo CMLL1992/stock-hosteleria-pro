@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 export const maxDuration = 30;
 
 /** Forzamos Frankfurt para reducir bloqueos/región. */
-export const preferredRegion = ["fra1"];
+export const preferredRegion = ["iad1"];
 
 function json(data: unknown, status = 200) {
   return NextResponse.json(data, { status });
@@ -93,7 +93,7 @@ export async function POST(req: Request) {
     const mensajeUsuario = messages[messages.length - 1].content;
     const promptFinal = SYSTEM_PROMPT + "\n\nUsuario: " + mensajeUsuario;
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${googleApiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${googleApiKey}`;
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
