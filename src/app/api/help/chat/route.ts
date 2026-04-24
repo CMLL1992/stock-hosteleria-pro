@@ -63,10 +63,8 @@ async function geminiGenerateContent(
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: `models/${modelId}`,
-      ...contentsPayload
-    })
+    /** El modelo va en la URL; el campo `model` en el cuerpo a veces confunde a v1beta. */
+    body: JSON.stringify(contentsPayload)
   });
   const rawText = await res.text();
   if (!rawText.trim()) {
@@ -89,10 +87,51 @@ async function geminiGenerateContent(
   }
 }
 
+type OpenAiChatResponse = {
+  choices?: Array<{ message?: { content?: string } }>;
+  error?: { message?: string };
+};
+
+async function openAiHelpReply(userContent: string, openaiKey: string): Promise<{ ok: true; reply: string } | { ok: false; error: string }> {
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${openaiKey}`
+    },
+    body: JSON.stringify({
+      model: "gpt-4.1-mini",
+      temperature: 0.3,
+      max_tokens: 1024,
+      messages: [
+        { role: "system", content: SYSTEM },
+        { role: "user", content: userContent }
+      ]
+    })
+  });
+  const rawText = await res.text();
+  let parsed: OpenAiChatResponse;
+  try {
+    parsed = JSON.parse(rawText) as OpenAiChatResponse;
+  } catch {
+    return {
+      ok: false,
+      error: `OpenAI: respuesta no es JSON. HTTP ${res.status} ${res.statusText}. Fragmento: ${rawText.slice(0, 800)}`
+    };
+  }
+  if (!res.ok) {
+    return { ok: false, error: `OpenAI (HTTP ${res.status}):\n${JSON.stringify(parsed, null, 2)}` };
+  }
+  const reply = String(parsed.choices?.[0]?.message?.content ?? "").trim();
+  if (!reply) return { ok: false, error: "OpenAI: respuesta vacía (sin choices[0].message.content)." };
+  return { ok: true, reply };
+}
+
 export async function POST(req: Request) {
   try {
     const googleApiKey = String(process.env.GOOGLE_API_KEY ?? "").trim();
-    console.log("API KEY EXISTE:", !!googleApiKey);
+    const openaiKey = String(process.env.OPENAI_API_KEY ?? "").trim();
+    console.log("API KEY EXISTE:", { google: !!googleApiKey, openai: !!openaiKey });
 
     const { supabaseUrl, anonKey } = getEnv();
     if (!supabaseUrl || !anonKey) return json({ ok: false, error: "Missing Supabase env" }, 500);
@@ -122,12 +161,12 @@ export async function POST(req: Request) {
       return json({ ok: false, error: "Invalid messages" }, 400);
     }
 
-    if (!googleApiKey) {
+    if (!googleApiKey && !openaiKey) {
       return json(
         {
           ok: false,
           error:
-            "Error de Configuración: falta GOOGLE_API_KEY en el servidor. En Vercel ve a Project → Settings → Environment Variables, crea GOOGLE_API_KEY con tu clave de Google AI, márcala para Production (y Preview si aplica) y vuelve a desplegar para que el runtime Node la cargue."
+            "Error de Configuración: falta GOOGLE_API_KEY y OPENAI_API_KEY. En Vercel → Settings → Environment Variables define al menos una (Google AI y/o OpenAI), redeploy."
         },
         503
       );
@@ -148,54 +187,67 @@ export async function POST(req: Request) {
     };
 
     /**
-     * Solo gemini-1.5-flash: gemini-2.0-flash en tier gratuito suele devolver 429 (cuota 0 / distinta) y confunde el diagnóstico.
-     * Tras 404 o 429 en v1, probamos v1beta con el mismo modelo.
+     * Gemini: solo 1.5-flash (v1 → v1beta). Si falla o no hay clave Google, respaldo con OpenAI (OPENAI_API_KEY).
      */
     const attempts: Array<{ api: "v1" | "v1beta"; model: string }> = [
       { api: "v1", model: "gemini-1.5-flash" },
       { api: "v1beta", model: "gemini-1.5-flash" }
     ];
 
-    let geminiRes!: Response;
-    let data!: GeminiGenerateResponse;
-    let bodyReadError: string | null = null;
+    let lastGeminiError: string | null = null;
 
-    for (let i = 0; i < attempts.length; i++) {
-      const { api, model } = attempts[i];
-      const r = await geminiGenerateContent(model, googleApiKey, contentsPayload, api);
-      geminiRes = r.res;
-      data = r.data;
-      bodyReadError = r.bodyReadError;
+    if (googleApiKey) {
+      let geminiRes!: Response;
+      let data!: GeminiGenerateResponse;
+      let bodyReadError: string | null = null;
 
-      if (bodyReadError) {
-        console.error("[help/chat] Gemini body parse:", bodyReadError);
-        return json({ ok: false, error: bodyReadError }, 502);
-      }
+      for (let i = 0; i < attempts.length; i++) {
+        const { api, model } = attempts[i];
+        const r = await geminiGenerateContent(model, googleApiKey, contentsPayload, api);
+        geminiRes = r.res;
+        data = r.data;
+        bodyReadError = r.bodyReadError;
 
-      if (geminiRes.ok) break;
+        if (bodyReadError) {
+          console.error("[help/chat] Gemini body parse:", bodyReadError);
+          lastGeminiError = bodyReadError;
+          break;
+        }
 
-      const hasMore = i < attempts.length - 1;
-      const tryNext = hasMore && (geminiRes.status === 404 || geminiRes.status === 429);
-      if (!tryNext) {
+        if (geminiRes.ok) {
+          const reply = replyFromGeminiBody(data) || OFF_TOPIC_REPLY;
+          return json({ ok: true, reply });
+        }
+
+        const hasMore = i < attempts.length - 1;
+        const tryNext = hasMore && (geminiRes.status === 404 || geminiRes.status === 429);
+        if (tryNext) continue;
+
         const fullGoogle = JSON.stringify(data, null, 2);
         console.error("[help/chat] Gemini HTTP", api, model, geminiRes.status, fullGoogle);
-        return json(
-          {
-            ok: false,
-            error: `Google API (${api} / ${model} — HTTP ${geminiRes.status}):\n${fullGoogle}`
-          },
-          geminiRes.status >= 400 && geminiRes.status < 600 ? geminiRes.status : 502
-        );
+        lastGeminiError = `Google API (${api} / ${model} — HTTP ${geminiRes.status}):\n${fullGoogle}`;
+        break;
       }
     }
 
-    if (!geminiRes.ok) {
-      const fullGoogle = JSON.stringify(data, null, 2);
-      return json({ ok: false, error: `Google API:\n${fullGoogle}` }, 502);
+    if (openaiKey) {
+      const oa = await openAiHelpReply(mensajeUsuario, openaiKey);
+      if (oa.ok) return json({ ok: true, reply: oa.reply });
+      const combined = lastGeminiError ? `${lastGeminiError}\n\n--- OpenAI ---\n${oa.error}` : oa.error;
+      return json({ ok: false, error: combined }, 502);
     }
 
-    const reply = replyFromGeminiBody(data) || OFF_TOPIC_REPLY;
-    return json({ ok: true, reply });
+    if (lastGeminiError) {
+      return json(
+        {
+          ok: false,
+          error: `${lastGeminiError}\n\n(OpenAI no configurado: añade OPENAI_API_KEY en Vercel como respaldo.)`
+        },
+        502
+      );
+    }
+
+    return json({ ok: false, error: "No se pudo contactar ningún proveedor de IA." }, 502);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     return json({ ok: false, error: message }, 500);
