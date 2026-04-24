@@ -1,7 +1,7 @@
 "use client";
 
 import type { ChangeEvent } from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { MobileHeader } from "@/components/MobileHeader";
 import { Button } from "@/components/ui/Button";
@@ -18,6 +18,30 @@ type IngredienteDraft = {
   precio_compra_sin_iva: string; // €/kg o €/L
   porcentaje_merma: string;
   iva_ingrediente: string;
+};
+
+type EscandalloGuardado = {
+  id: string;
+  establecimiento_id: string;
+  nombre_plato: string;
+  created_at: string; // ISO
+  raciones_lote: number;
+  multiplicador: number;
+  iva_final: number;
+  ingredientes: Array<{
+    nombre_ingrediente: string;
+    cantidad_gramos_ml: number;
+    precio_compra_sin_iva: number;
+    porcentaje_merma: number;
+    iva_ingrediente: number;
+    coste_real: number;
+  }>;
+  resumen: {
+    coste_lote: number;
+    coste_racion: number;
+    pvp_sin_iva: number;
+    pvp_con_iva: number;
+  };
 };
 
 function toNum(v: unknown): number {
@@ -48,6 +72,10 @@ function calcCosteRealIngrediente(pCompraKgL: number, qtyGml: number, mermaPct: 
 
 function newId(): string {
   return (globalThis.crypto?.randomUUID?.() as string | undefined) ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function lsKeyEscandallosCocina(establecimientoId: string): string {
+  return `ops:escandallos_cocina:v1:${establecimientoId}`;
 }
 
 const ING_DEFAULT: Omit<IngredienteDraft, "id"> = {
@@ -111,6 +139,36 @@ export default function NuevoEscandalloCocinaPage() {
 
   const [ingredientes, setIngredientes] = useState<IngredienteDraft[]>(() => [newIngredienteRow()]);
 
+  const [guardados, setGuardados] = useState<EscandalloGuardado[]>([]);
+
+  useEffect(() => {
+    if (!activeEstablishmentId) {
+      setGuardados([]);
+      return;
+    }
+    try {
+      const key = lsKeyEscandallosCocina(activeEstablishmentId);
+      const raw = localStorage.getItem(key);
+      if (!raw) {
+        setGuardados([]);
+        return;
+      }
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) {
+        setGuardados([]);
+        return;
+      }
+      const clean = parsed
+        .filter((x) => x && typeof x === "object")
+        .map((x) => x as EscandalloGuardado)
+        .filter((x) => typeof x?.nombre_plato === "string" && typeof x?.created_at === "string");
+      clean.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+      setGuardados(clean.slice(0, 50));
+    } catch {
+      setGuardados([]);
+    }
+  }, [activeEstablishmentId]);
+
   const ingredientesRows = useMemo(() => normalizeIngredientesList(ingredientes), [ingredientes]);
 
   const calc = useMemo(() => {
@@ -153,6 +211,21 @@ export default function NuevoEscandalloCocinaPage() {
     return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(Number(n) || 0);
   }
 
+  function persistGuardadoLocal(nextItem: EscandalloGuardado) {
+    if (!activeEstablishmentId) return;
+    try {
+      const key = lsKeyEscandallosCocina(activeEstablishmentId);
+      const prev = guardados ?? [];
+      // Upsert por nombre (misma UX que BD): el mismo plato sobrescribe.
+      const withoutSame = prev.filter((x) => x.nombre_plato.trim().toLowerCase() !== nextItem.nombre_plato.trim().toLowerCase());
+      const merged = [nextItem, ...withoutSame].slice(0, 50);
+      localStorage.setItem(key, JSON.stringify(merged));
+      setGuardados(merged);
+    } catch {
+      // ignore
+    }
+  }
+
   async function guardar() {
     if (!activeEstablishmentId) {
       setErr("Selecciona un establecimiento.");
@@ -169,6 +242,33 @@ export default function NuevoEscandalloCocinaPage() {
     try {
       const ivaF = Math.trunc(clampNonNeg(toNum(ivaFinal)) || 10);
       const ivaOk = [0, 4, 10, 21].includes(ivaF) ? ivaF : 10;
+
+      // Guardado local inmediato (resiliente) para no “perder” el escandallo aunque falle la BD.
+      persistGuardadoLocal({
+        id: newId(),
+        establecimiento_id: activeEstablishmentId,
+        nombre_plato: nombre,
+        created_at: new Date().toISOString(),
+        raciones_lote: clampNonNeg(toNum(racionesLote)) || 1,
+        multiplicador: clampNonNeg(toNum(multiplicador)) || 3.5,
+        iva_final: ivaOk,
+        ingredientes: calc.lines
+          .filter((x) => x.nombre_ingrediente.trim())
+          .map((x) => ({
+            nombre_ingrediente: x.nombre_ingrediente.trim(),
+            cantidad_gramos_ml: clampNonNeg(x.qty),
+            precio_compra_sin_iva: clampNonNeg(x.precio),
+            porcentaje_merma: clampNonNeg(x.merma),
+            iva_ingrediente: clampIvaCocina(toNum(x.iva_ingrediente)),
+            coste_real: clampNonNeg(x.coste)
+          })),
+        resumen: {
+          coste_lote: calc.costeLote,
+          coste_racion: calc.costeRacion,
+          pvp_sin_iva: calc.pvpSinIva,
+          pvp_con_iva: calc.pvpConIva
+        }
+      });
 
       const payloadEsc = {
         establecimiento_id: activeEstablishmentId,
@@ -495,6 +595,69 @@ export default function NuevoEscandalloCocinaPage() {
           </section>
         </aside>
       </main>
+
+      <section className="mx-auto w-full max-w-6xl px-4 pb-28 lg:px-4">
+        <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 className="text-base font-bold text-slate-900">Escandallos Guardados</h2>
+          <p className="mt-1 text-sm text-slate-600">Se guardan en este dispositivo (LocalStorage) para no perder trabajo.</p>
+
+          {guardados.length === 0 ? (
+            <p className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+              Aún no hay escandallos guardados.
+            </p>
+          ) : (
+            <div className="mt-3 space-y-2">
+              {guardados.map((g) => (
+                <details key={g.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <summary className="cursor-pointer select-none text-sm font-semibold text-slate-900">
+                    {g.nombre_plato}
+                    <span className="ml-2 text-xs font-normal text-slate-500">
+                      {new Date(g.created_at).toLocaleString("es-ES")}
+                    </span>
+                  </summary>
+                  <div className="mt-3 space-y-3">
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <div className="rounded-2xl bg-slate-50 p-3">
+                        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Coste lote</p>
+                        <p className="mt-1 font-semibold tabular-nums text-slate-900">{formatEUR(g.resumen.coste_lote)}</p>
+                      </div>
+                      <div className="rounded-2xl bg-slate-50 p-3">
+                        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Coste ración</p>
+                        <p className="mt-1 font-semibold tabular-nums text-slate-900">{formatEUR(g.resumen.coste_racion)}</p>
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto rounded-2xl border border-slate-100">
+                      <table className="w-full min-w-[640px] text-sm">
+                        <thead className="bg-slate-50 text-xs font-bold uppercase tracking-wide text-slate-500">
+                          <tr>
+                            <th className="px-3 py-2 text-left">Ingrediente</th>
+                            <th className="px-3 py-2 text-right">Cantidad</th>
+                            <th className="px-3 py-2 text-right">Precio</th>
+                            <th className="px-3 py-2 text-right">Merma</th>
+                            <th className="px-3 py-2 text-right">Coste real</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {g.ingredientes.map((it, idx) => (
+                            <tr key={`${g.id}-${idx}`} className="border-t border-slate-100">
+                              <td className="px-3 py-2">{it.nombre_ingrediente}</td>
+                              <td className="px-3 py-2 text-right tabular-nums">{it.cantidad_gramos_ml}</td>
+                              <td className="px-3 py-2 text-right tabular-nums">{formatEUR(it.precio_compra_sin_iva)}</td>
+                              <td className="px-3 py-2 text-right tabular-nums">{it.porcentaje_merma}%</td>
+                              <td className="px-3 py-2 text-right font-semibold tabular-nums">{formatEUR(it.coste_real)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </details>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
     </div>
   );
 }
