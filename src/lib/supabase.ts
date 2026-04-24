@@ -4,16 +4,30 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 let _client: SupabaseClient | null = null;
 
+const LS_URL = "ops_supabase_url";
+const LS_ANON = "ops_supabase_anon_key";
+
+function readLs(k: string): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return String(window.localStorage.getItem(k) ?? "").trim();
+  } catch {
+    return "";
+  }
+}
+
 export function supabase(): SupabaseClient {
   if (_client) return _client;
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+  const envUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim();
+  const envAnon = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "").trim();
+  const supabaseUrl = envUrl || readLs(LS_URL);
+  const supabaseAnonKey = envAnon || readLs(LS_ANON);
 
   if (typeof window !== "undefined") {
     if (!supabaseUrl || !supabaseAnonKey) {
       throw new Error(
-        "Falta NEXT_PUBLIC_SUPABASE_URL o NEXT_PUBLIC_SUPABASE_ANON_KEY. Copia .env.example a .env.local y rellénalo."
+        "Supabase no está configurado en este cliente. Recarga la app. Si persiste, borra caché/datos del sitio (PWA)."
       );
     }
   }

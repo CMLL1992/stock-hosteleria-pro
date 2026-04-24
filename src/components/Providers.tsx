@@ -16,6 +16,7 @@ import { SessionGuard } from "@/components/SessionGuard";
 import { GlobalRealtimeSync } from "@/components/GlobalRealtimeSync";
 import { ToastProvider } from "@/components/ui/ToastCenter";
 import { ActivityRealtimeToasts } from "@/components/ActivityRealtimeToasts";
+import { SupabaseEnvBootstrap } from "@/components/SupabaseEnvBootstrap";
 
 export function Providers({ children }: { children: ReactNode }) {
   const [persister] = useState(() => createIdbPersister());
@@ -44,6 +45,7 @@ export function Providers({ children }: { children: ReactNode }) {
       }}
     >
       <ToastProvider>
+        <SupabaseEnvBootstrap />
         <AuthRefresh />
         <AuthQuerySync />
         <AuthBootstrap />
