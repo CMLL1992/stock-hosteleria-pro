@@ -14,6 +14,8 @@ import { Footer } from "@/components/Footer";
 import { CookieBanner } from "@/components/CookieBanner";
 import { SessionGuard } from "@/components/SessionGuard";
 import { GlobalRealtimeSync } from "@/components/GlobalRealtimeSync";
+import { ToastProvider } from "@/components/ui/ToastCenter";
+import { ActivityRealtimeToasts } from "@/components/ActivityRealtimeToasts";
 
 export function Providers({ children }: { children: ReactNode }) {
   const [persister] = useState(() => createIdbPersister());
@@ -41,18 +43,21 @@ export function Providers({ children }: { children: ReactNode }) {
         buster: "v1"
       }}
     >
-      <AuthRefresh />
-      <AuthQuerySync />
-      <AuthBootstrap />
-      <SessionGuard />
-      <GlobalRealtimeSync />
-      <OfflineSync />
-      <div className="min-h-dvh bg-slate-50 pb-[calc(env(safe-area-inset-bottom)+6.5rem)] text-slate-900">
-        {children}
-        <Footer />
-      </div>
-      <CookieBanner />
-      <BottomTabBar />
+      <ToastProvider>
+        <AuthRefresh />
+        <AuthQuerySync />
+        <AuthBootstrap />
+        <SessionGuard />
+        <GlobalRealtimeSync />
+        <ActivityRealtimeToasts />
+        <OfflineSync />
+        <div className="min-h-dvh bg-slate-50 pb-[calc(env(safe-area-inset-bottom)+6.5rem)] text-slate-900">
+          {children}
+          <Footer />
+        </div>
+        <CookieBanner />
+        <BottomTabBar />
+      </ToastProvider>
     </PersistQueryClientProvider>
   );
 }

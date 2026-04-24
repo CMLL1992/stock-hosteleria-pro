@@ -13,6 +13,7 @@ import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { useCambiosGlobalesRealtime } from "@/lib/useCambiosGlobalesRealtime";
 import { useMyRole } from "@/lib/useMyRole";
 import { fetchEscandallosFinanceMapByProductIds } from "@/lib/fetchEscandallosPrecioMap";
+import { logActivity } from "@/lib/activityLog";
 
 type ProductoRow = {
   id: string;
@@ -403,6 +404,13 @@ export default function EscandallosPage() {
       };
       const { error: escErr } = await supabase().from("escandallos").upsert(esc, { onConflict: "producto_id" });
       if (escErr) throw escErr;
+
+      await logActivity({
+        establecimientoId: activeEstablishmentId,
+        icon: "price",
+        message: `Escandallo actualizado: ${p.articulo}.`,
+        metadata: { producto_id: p.id }
+      });
 
       setSaved(true);
       setTimeout(() => setSaved(false), 1200);

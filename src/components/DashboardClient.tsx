@@ -13,10 +13,12 @@ import { getEffectiveRole, hasPermission } from "@/lib/permissions";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { fetchEscandallosPrecioMapByProductIds, type EscandalloPrecioRow } from "@/lib/fetchEscandallosPrecioMap";
+import { logActivity } from "@/lib/activityLog";
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 type ChecklistTipo = "Apertura" | "Cierre";
 type ChecklistTask = { id: string; tipo: ChecklistTipo; titulo: string; orden: number; activo: boolean; completada: boolean };
+type ActivityRow = { id: string; message: string; icon: string; created_at: string; actor_user_id: string | null };
 
 export function DashboardClient() {
   const { activeEstablishmentId: establecimientoId, activeEstablishmentName, me } = useActiveEstablishment();
@@ -53,6 +55,30 @@ export function DashboardClient() {
   });
 
   const rows = useMemo(() => productosQuery.data ?? [], [productosQuery.data]);
+
+  const activityQuery = useQuery({
+    queryKey: ["dashboard", "activity", establecimientoId],
+    enabled: !!establecimientoId,
+    queryFn: async (): Promise<ActivityRow[]> => {
+      if (!establecimientoId) return [];
+      const { data, error } = await supabase()
+        .from("activity_log")
+        .select("id,message,icon,created_at,actor_user_id")
+        .eq("establecimiento_id", establecimientoId)
+        .order("created_at", { ascending: false })
+        .limit(10);
+      if (error) throw error;
+      return ((data ?? []) as unknown as ActivityRow[]).map((r) => ({
+        id: String(r.id),
+        message: String(r.message ?? ""),
+        icon: String(r.icon ?? "info"),
+        created_at: String(r.created_at ?? ""),
+        actor_user_id: r.actor_user_id != null ? String(r.actor_user_id) : null
+      }));
+    },
+    staleTime: 10_000,
+    retry: 1
+  });
 
   const checklistQuery = useQuery({
     queryKey: ["dashboard", "checklist-estado", establecimientoId],
@@ -281,6 +307,13 @@ export function DashboardClient() {
       await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", establecimientoId] });
       await queryClient.invalidateQueries({ queryKey: ["productos", establecimientoId] });
       setConfirmProd(null);
+
+      await logActivity({
+        establecimientoId,
+        icon: "envases",
+        message: `Devolución de envases registrada: ${cantidad} · ${confirmProd.articulo}.`,
+        metadata: { producto_id: confirmProd.id, cantidad }
+      });
     } catch (e) {
       setEnvasesErr(supabaseErrToString(e));
     } finally {
@@ -347,6 +380,33 @@ export function DashboardClient() {
           <p className="mt-4 text-xs text-slate-500">Todo el checklist activo está completado.</p>
         ) : (
           <p className="mt-4 text-xs text-slate-500">No hay tareas activas configuradas para este local.</p>
+        )}
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+        <p className="text-sm font-semibold text-slate-900">Última Actividad</p>
+        <p className="mt-1 text-sm text-slate-600">Movimientos importantes del local (tiempo real).</p>
+        {activityQuery.isError ? (
+          <p className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+            {(activityQuery.error as Error).message}
+          </p>
+        ) : activityQuery.isLoading ? (
+          <p className="mt-3 text-sm text-slate-600">Cargando actividad…</p>
+        ) : (activityQuery.data ?? []).length === 0 ? (
+          <p className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+            Aún no hay actividad registrada.
+          </p>
+        ) : (
+          <ul className="mt-3 space-y-2">
+            {(activityQuery.data ?? []).slice(0, 10).map((a) => (
+              <li key={a.id} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm">
+                <p className="text-slate-900">{a.message}</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {a.created_at ? new Date(a.created_at).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" }) : ""}
+                </p>
+              </li>
+            ))}
+          </ul>
         )}
       </section>
 

@@ -20,6 +20,7 @@ import {
   waUrlPedidoCestaProveedor
 } from "@/lib/whatsappPedido";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
+import { logActivity } from "@/lib/activityLog";
 import { getEffectiveRole, hasPermission, canAdjustStockAbsolute, canGenerateQr } from "@/lib/permissions";
 
 type Producto = {
@@ -449,6 +450,13 @@ export function ProductList() {
         await enqueueMovimiento(payload);
       }
 
+      await logActivity({
+        establecimientoId,
+        icon: "stock",
+        message: `Stock actualizado: ${p.articulo} → ${n} (${tipo === "entrada" ? "+" : "-"}${cantidad}).`,
+        metadata: { producto_id: p.id, tipo, cantidad, stock: n }
+      });
+
       setStockDraft((d) => ({ ...d, [p.id]: String(n) }));
 
       // Optimistic UI: ajusta caches inmediatamente
@@ -526,6 +534,16 @@ export function ProductList() {
       } else {
         await enqueueMovimiento(payload);
       }
+
+      await logActivity({
+        establecimientoId,
+        icon: "stock",
+        message:
+          movTipo === "entrada_compra"
+            ? `Entrada de compra: +${n} ${movProd.articulo}.`
+            : `Salida a barra: -${n} ${movProd.articulo}.`,
+        metadata: { producto_id: movProd.id, tipo: movTipo, cantidad: n }
+      });
 
       // Optimistic UI: actualiza caches inmediatamente (sin esperar realtime/refetch)
       const applyOptimistic = (prev: Producto[]) =>

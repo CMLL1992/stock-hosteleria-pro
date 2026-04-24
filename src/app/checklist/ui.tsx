@@ -6,6 +6,7 @@ import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { Button } from "@/components/ui/Button";
 import { useCambiosGlobalesRealtime } from "@/lib/useCambiosGlobalesRealtime";
+import { logActivity } from "@/lib/activityLog";
 
 type Tipo = "Apertura" | "Cierre";
 
@@ -154,6 +155,11 @@ export function ChecklistClient() {
         completado_por: uid
       });
       if (error) throw error;
+      await logActivity({
+        establecimientoId: activeEstablishmentId,
+        icon: "check",
+        message: `Checklist de ${tipo} completado.`
+      });
       setOk("Checklist guardado. ¡Buen trabajo!");
       setChecked(new Set());
       setTimeout(() => setOk(null), 2400);
