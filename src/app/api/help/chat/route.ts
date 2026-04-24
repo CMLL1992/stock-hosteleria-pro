@@ -147,11 +147,14 @@ export async function POST(req: Request) {
       }
     };
 
-    /** gemini-pro ya no existe en v1 para generateContent (404). Orden: v1 flash → v1 2.0 → v1beta flash. */
+    /**
+     * Prioridad 1.5-flash (v1 y v1beta) antes de 2.0: el tier gratuito suele agotar o no exponer cuota en gemini-2.0-flash (429).
+     * Tras 404 o 429, probamos el siguiente endpoint/modelo.
+     */
     const attempts: Array<{ api: "v1" | "v1beta"; model: string }> = [
       { api: "v1", model: "gemini-1.5-flash" },
-      { api: "v1", model: "gemini-2.0-flash" },
-      { api: "v1beta", model: "gemini-1.5-flash" }
+      { api: "v1beta", model: "gemini-1.5-flash" },
+      { api: "v1", model: "gemini-2.0-flash" }
     ];
 
     let geminiRes!: Response;
@@ -172,9 +175,9 @@ export async function POST(req: Request) {
 
       if (geminiRes.ok) break;
 
-      const is404 = geminiRes.status === 404;
       const hasMore = i < attempts.length - 1;
-      if (!is404 || !hasMore) {
+      const tryNext = hasMore && (geminiRes.status === 404 || geminiRes.status === 429);
+      if (!tryNext) {
         const fullGoogle = JSON.stringify(data, null, 2);
         console.error("[help/chat] Gemini HTTP", api, model, geminiRes.status, fullGoogle);
         return json(
