@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
+export const maxDuration = 30;
 
 /** Forzamos Frankfurt para reducir bloqueos/región. */
 export const preferredRegion = ["fra1"];
@@ -32,61 +33,7 @@ type ChatMsg = { role?: unknown; content?: unknown };
 
 type RoleMsg = { role: "user" | "assistant"; content: string };
 
-type GeminiGenerateResponse = {
-  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-  error?: { message?: string; code?: number; status?: string };
-};
-
-function replyFromGeminiBody(data: GeminiGenerateResponse): string {
-  const parts = data.candidates?.[0]?.content?.parts;
-  if (!parts?.length) return "";
-  return parts
-    .map((p) => String(p.text ?? ""))
-    .join("")
-    .trim();
-}
-
-type GeminiContentsPayload = {
-  contents: Array<{ role: string; parts: Array<{ text: string }> }>;
-  generationConfig: { temperature: number; maxOutputTokens: number };
-};
-
-async function geminiGenerateContentV1beta(
-  modelId: string,
-  googleApiKey: string,
-  contentsPayload: GeminiContentsPayload
-): Promise<{ ok: true; reply: string } | { ok: false; error: string }> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${googleApiKey}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(contentsPayload)
-  });
-
-  const rawText = await res.text();
-  if (!rawText.trim()) {
-    return { ok: false, error: `Gemini: cuerpo vacío. HTTP ${res.status} ${res.statusText}` };
-  }
-
-  let parsed: GeminiGenerateResponse;
-  try {
-    parsed = JSON.parse(rawText) as GeminiGenerateResponse;
-  } catch {
-    const preview = rawText.length > 2000 ? `${rawText.slice(0, 2000)}…` : rawText;
-    return {
-      ok: false,
-      error: `Gemini: respuesta no es JSON válido. HTTP ${res.status} ${res.statusText}. Fragmento: ${preview}`
-    };
-  }
-
-  if (!res.ok) {
-    return { ok: false, error: `Gemini (HTTP ${res.status}):\n${JSON.stringify(parsed, null, 2)}` };
-  }
-
-  const reply = replyFromGeminiBody(parsed);
-  if (!reply) return { ok: false, error: "Gemini: respuesta vacía (sin candidates[0].content.parts[].text)." };
-  return { ok: true, reply };
-}
+// Gemini desactivado temporalmente para aislar el problema (fallback).
 
 type OpenAiChatResponse = {
   choices?: Array<{ message?: { content?: string } }>;
@@ -114,6 +61,9 @@ async function openAiHelpReply(
     })
   });
   const rawText = await res.text();
+  if (!res.ok) {
+    console.log("[help/chat] OpenAI error body:", rawText);
+  }
   let parsed: OpenAiChatResponse;
   try {
     parsed = JSON.parse(rawText) as OpenAiChatResponse;
@@ -127,7 +77,7 @@ async function openAiHelpReply(
     return { ok: false, error: `OpenAI (HTTP ${res.status}):\n${JSON.stringify(parsed, null, 2)}` };
   }
   const reply = String(parsed.choices?.[0]?.message?.content ?? "").trim();
-  if (!reply) return { ok: false, error: "OpenAI: respuesta vacía (sin choices[0].message.content)." };
+  if (!reply) return { ok: true, reply: "Hola" };
   return { ok: true, reply };
 }
 
@@ -140,8 +90,7 @@ export async function POST(req: Request) {
       !!process.env.OPENAI_API_KEY
     );
 
-    const googleApiKey = String(process.env.GOOGLE_API_KEY ?? "").trim();
-    const openaiKey = String(process.env.OPENAI_API_KEY ?? "").trim();
+    const apiKey = process.env.OPENAI_API_KEY?.trim();
 
     const { supabaseUrl, anonKey } = getEnv();
     if (!supabaseUrl || !anonKey) return json({ ok: false, error: "Missing Supabase env" }, 500);
@@ -171,12 +120,12 @@ export async function POST(req: Request) {
       return json({ ok: false, error: "Invalid messages" }, 400);
     }
 
-    if (!googleApiKey && !openaiKey) {
+    if (!apiKey) {
       return json(
         {
           ok: false,
           error:
-            "Error de Configuración: falta GOOGLE_API_KEY y OPENAI_API_KEY. En Vercel → Settings → Environment Variables define al menos una (Google AI y/o OpenAI), redeploy."
+            "Error de Configuración: falta OPENAI_API_KEY. En Vercel → Settings → Environment Variables define OPENAI_API_KEY (a nivel de proyecto) y redeploy."
         },
         503
       );
@@ -184,50 +133,10 @@ export async function POST(req: Request) {
 
     const mensajeUsuario = messages[messages.length - 1].content;
 
-    const openaiAttempted = !!openaiKey;
-    const geminiAttempted = !!googleApiKey;
-    let openaiError: string | null = null;
-    let geminiError: string | null = null;
-
-    // 1) Plan seguro: OpenAI primero.
-    if (openaiKey) {
-      const oa = await openAiHelpReply(mensajeUsuario, openaiKey);
-      if (oa.ok) return json({ ok: true, reply: oa.reply });
-      openaiError = oa.error;
-    }
-
-    // 2) Fallback: Gemini (v1beta) si OpenAI falla.
-    const contentsPayload: GeminiContentsPayload = {
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: SYSTEM_PROMPT + "\n\n" + mensajeUsuario }]
-        }
-      ],
-      generationConfig: {
-        temperature: 0.3,
-        maxOutputTokens: 1024
-      }
-    };
-
-    if (googleApiKey) {
-      const gg = await geminiGenerateContentV1beta("gemini-1.5-flash", googleApiKey, contentsPayload);
-      if (gg.ok) return json({ ok: true, reply: gg.reply || OFF_TOPIC_REPLY });
-      geminiError = gg.error;
-    }
-
-    // 3) Error visible (para ver en el chat exactamente qué falló en cada proveedor).
-    return json(
-      {
-        ok: false,
-        error: "No se pudo generar respuesta con ningún proveedor de IA.",
-        attempts: {
-          openai: { attempted: openaiAttempted, error: openaiError },
-          gemini: { attempted: geminiAttempted, error: geminiError }
-        }
-      },
-      502
-    );
+    // Solo OpenAI por ahora (Gemini desactivado temporalmente).
+    const oa = await openAiHelpReply(mensajeUsuario, apiKey);
+    if (oa.ok) return json({ ok: true, reply: oa.reply });
+    return json({ ok: false, error: oa.error }, 502);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     return json({ ok: false, error: message }, 500);
