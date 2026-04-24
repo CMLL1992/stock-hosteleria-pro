@@ -147,14 +147,14 @@ export default function ChecklistTareasAdminPage() {
     setOk(null);
     setSavingId("__new__");
     try {
-      const { error } = await supabase().from("checklists_tareas").insert({
-        establecimiento_id: activeEstablishmentId,
-        tipo: nuevoTipo,
-        titulo,
-        orden,
-        activo: true
+      const { data, error } = await supabase().rpc("create_checklists_tarea", {
+        p_tipo: nuevoTipo,
+        p_titulo: titulo,
+        p_orden: orden,
+        p_activo: true
       });
       if (error) throw error;
+      if (!data) throw new Error("No se pudo crear la tarea (sin id).");
       setNuevoTitulo("");
       setNuevoOrden("");
       setOk("Tarea añadida.");
