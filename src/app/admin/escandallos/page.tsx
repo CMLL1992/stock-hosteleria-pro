@@ -204,6 +204,7 @@ export default function EscandallosPage() {
   const role = getEffectiveRole(me ?? null);
   const canSeeFinance = hasPermission(role, "admin");
   const [err, setErr] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -489,6 +490,33 @@ export default function EscandallosPage() {
     }
   }
 
+  async function borrarEscandalloActual() {
+    if (!activeEstablishmentId || !verId) return;
+    const row = items.find((x) => x.id === verId) ?? null;
+    const nombre = row?.articulo?.trim() || "este escandallo";
+    const ok = window.confirm(`¿Estás seguro de que quieres eliminar este escandallo?\n\n${nombre}`);
+    if (!ok) return;
+    setErr(null);
+    setSaved(false);
+    setSaving(verId);
+    try {
+      const { error } = await supabase()
+        .from("escandallos")
+        .delete()
+        .eq("producto_id", verId)
+        .eq("establecimiento_id", activeEstablishmentId);
+      if (error) throw error;
+      setOk("Escandallo eliminado.");
+      window.setTimeout(() => setOk(null), 1600);
+      setVerId("");
+      await load();
+    } catch (e) {
+      setErr(supabaseErrToString(e));
+    } finally {
+      setSaving(null);
+    }
+  }
+
   const rows = useMemo(() => {
     return items.map((p) => {
       const cn = costeNeto(p);
@@ -687,6 +715,9 @@ export default function EscandallosPage() {
 
       {err ? (
         <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{err}</p>
+      ) : null}
+      {ok ? (
+        <p className="mb-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-900">{ok}</p>
       ) : null}
 
       {/* Nuevo Escandallo (UX guiada) */}
@@ -1056,9 +1087,19 @@ export default function EscandallosPage() {
             </dl>
 
             <div className="mt-4">
-              <Button onClick={() => void saveEdit()} disabled={saving === verRow.p.id} className="min-h-11 w-full sm:w-auto">
-                {saving === verRow.p.id ? "Guardando…" : "Guardar"}
-              </Button>
+              <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-2">
+                <Button onClick={() => void saveEdit()} disabled={saving === verRow.p.id} className="min-h-11 w-full sm:w-auto">
+                  {saving === verRow.p.id ? "Guardando…" : "Guardar"}
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => void borrarEscandalloActual()}
+                  disabled={saving === verRow.p.id}
+                  className="min-h-11 w-full rounded-2xl border border-red-200 bg-red-50 px-4 text-sm font-semibold text-red-800 hover:bg-red-100 disabled:opacity-50 sm:w-auto"
+                >
+                  Eliminar
+                </button>
+              </div>
             </div>
           </article>
         ) : (

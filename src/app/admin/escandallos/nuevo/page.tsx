@@ -226,6 +226,22 @@ export default function NuevoEscandalloCocinaPage() {
     }
   }
 
+  function borrarGuardadoLocal(id: string) {
+    if (!activeEstablishmentId) return;
+    const target = guardados.find((x) => x.id === id) ?? null;
+    if (!target) return;
+    const ok = window.confirm("¿Estás seguro de que quieres eliminar este escandallo?");
+    if (!ok) return;
+    try {
+      const key = lsKeyEscandallosCocina(activeEstablishmentId);
+      const next = (guardados ?? []).filter((x) => x.id !== id);
+      localStorage.setItem(key, JSON.stringify(next));
+      setGuardados(next);
+    } catch {
+      // ignore
+    }
+  }
+
   async function guardar() {
     if (!activeEstablishmentId) {
       setErr("Selecciona un establecimiento.");
@@ -610,9 +626,26 @@ export default function NuevoEscandalloCocinaPage() {
               {guardados.map((g) => (
                 <details key={g.id} className="rounded-2xl border border-slate-200 bg-white p-4">
                   <summary className="cursor-pointer select-none text-sm font-semibold text-slate-900">
-                    {g.nombre_plato}
-                    <span className="ml-2 text-xs font-normal text-slate-500">
-                      {new Date(g.created_at).toLocaleString("es-ES")}
+                    <span className="flex w-full items-start justify-between gap-3">
+                      <span className="min-w-0">
+                        <span className="block truncate">{g.nombre_plato}</span>
+                        <span className="block text-xs font-normal text-slate-500">
+                          {new Date(g.created_at).toLocaleString("es-ES")}
+                        </span>
+                      </span>
+                      <button
+                        type="button"
+                        className="shrink-0 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-800 hover:bg-red-100"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          borrarGuardadoLocal(g.id);
+                        }}
+                        aria-label={`Eliminar escandallo ${g.nombre_plato}`}
+                        title="Eliminar"
+                      >
+                        Eliminar
+                      </button>
                     </span>
                   </summary>
                   <div className="mt-3 space-y-3">
