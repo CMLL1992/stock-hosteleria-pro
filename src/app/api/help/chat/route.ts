@@ -148,13 +148,12 @@ export async function POST(req: Request) {
     };
 
     /**
-     * Prioridad 1.5-flash (v1 y v1beta) antes de 2.0: el tier gratuito suele agotar o no exponer cuota en gemini-2.0-flash (429).
-     * Tras 404 o 429, probamos el siguiente endpoint/modelo.
+     * Solo gemini-1.5-flash: gemini-2.0-flash en tier gratuito suele devolver 429 (cuota 0 / distinta) y confunde el diagnóstico.
+     * Tras 404 o 429 en v1, probamos v1beta con el mismo modelo.
      */
     const attempts: Array<{ api: "v1" | "v1beta"; model: string }> = [
       { api: "v1", model: "gemini-1.5-flash" },
-      { api: "v1beta", model: "gemini-1.5-flash" },
-      { api: "v1", model: "gemini-2.0-flash" }
+      { api: "v1beta", model: "gemini-1.5-flash" }
     ];
 
     let geminiRes!: Response;
