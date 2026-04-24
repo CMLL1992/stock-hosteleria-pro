@@ -91,20 +91,13 @@ export async function POST(req: Request) {
     }
 
     const mensajeUsuario = messages[messages.length - 1].content;
+    const promptFinal = SYSTEM_PROMPT + "\n\nUsuario: " + mensajeUsuario;
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${googleApiKey}`;
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: SYSTEM_PROMPT + "\n\nUsuario: " + mensajeUsuario }] }],
-        safetySettings: [
-          { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
-        ]
-      })
+      body: JSON.stringify({ contents: [{ parts: [{ text: promptFinal }] }] })
     });
 
     const rawTextRes = await res.text();
