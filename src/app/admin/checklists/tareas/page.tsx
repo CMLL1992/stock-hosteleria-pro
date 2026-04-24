@@ -60,12 +60,11 @@ export default function ChecklistTareasAdminPage() {
     setErr(null);
     setLoading(true);
     try {
-      const { data, error } = await supabase()
-        .from("checklists_tareas")
-        .select("id,tipo,titulo,orden,activo")
-        .eq("establecimiento_id", activeEstablishmentId)
-        .order("tipo", { ascending: true })
-        .order("orden", { ascending: true });
+      const { data, error } = await supabase().rpc("list_checklists_tareas", {
+        p_establecimiento_id: activeEstablishmentId,
+        p_tipo: null,
+        p_activo_only: false
+      });
       if (error) throw error;
       const rows = ((data ?? []) as unknown as TareaRow[]).map((r) => ({
         id: String(r.id),
@@ -152,7 +151,8 @@ export default function ChecklistTareasAdminPage() {
         p_tipo: nuevoTipo,
         p_titulo: titulo,
         p_orden: orden,
-        p_activo: true
+        p_activo: true,
+        p_establecimiento_id: activeEstablishmentId
       });
       if (error) throw error;
       if (!data) throw new Error("No se pudo crear la tarea (sin id).");

@@ -45,13 +45,11 @@ export function ChecklistClient() {
     setErr(null);
     setLoading(true);
     try {
-      const { data, error } = await supabase()
-        .from("checklists_tareas")
-        .select("id,titulo,orden")
-        .eq("establecimiento_id", activeEstablishmentId)
-        .eq("activo", true)
-        .eq("tipo", tipo)
-        .order("orden", { ascending: true });
+      const { data, error } = await supabase().rpc("list_checklists_tareas", {
+        p_establecimiento_id: activeEstablishmentId,
+        p_tipo: tipo,
+        p_activo_only: true
+      });
       if (error) throw error;
       const base = ((data ?? []) as unknown as Array<{ id: string; titulo: string; orden: number }>).filter((r) => !!r.id);
 
