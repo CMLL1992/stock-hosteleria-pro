@@ -7,6 +7,7 @@ export type ActivityIcon = "check" | "stock" | "price" | "envases" | "info";
 export async function logActivity(opts: {
   establecimientoId: string;
   message: string;
+  actorName?: string | null;
   icon?: ActivityIcon;
   metadata?: Record<string, unknown>;
 }) {
@@ -16,10 +17,12 @@ export async function logActivity(opts: {
   try {
     const { data: auth } = await supabase().auth.getUser();
     const uid = auth?.user?.id ?? null;
+    const prefix = (opts.actorName ?? "").trim();
+    const finalMessage = prefix ? `${prefix} · ${message.trim()}` : message.trim();
     await supabase().from("activity_log").insert({
       establecimiento_id: establecimientoId,
       actor_user_id: uid,
-      message: message.trim(),
+      message: finalMessage,
       icon,
       metadata: opts.metadata ?? {}
     });

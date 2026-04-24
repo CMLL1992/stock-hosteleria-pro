@@ -112,7 +112,7 @@ export function DashboardClient() {
     enabled: !!establecimientoId && canSeePrices && !!productosQuery.data?.length,
     queryFn: async () => {
       const ids = (productosQuery.data ?? []).map((p) => p.id).filter(Boolean);
-      return await fetchEscandallosPrecioMapByProductIds(ids);
+      return await fetchEscandallosPrecioMapByProductIds(ids, establecimientoId);
     },
     staleTime: 30_000,
     retry: 1

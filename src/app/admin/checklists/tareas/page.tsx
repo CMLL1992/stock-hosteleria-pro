@@ -10,6 +10,7 @@ import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { useMyRole } from "@/lib/useMyRole";
 import { getEffectiveRole, hasPermission } from "@/lib/permissions";
+import { logActivity } from "@/lib/activityLog";
 
 type Tipo = "Apertura" | "Cierre";
 
@@ -155,6 +156,13 @@ export default function ChecklistTareasAdminPage() {
       });
       if (error) throw error;
       if (!data) throw new Error("No se pudo crear la tarea (sin id).");
+      await logActivity({
+        establecimientoId: activeEstablishmentId,
+        icon: "check",
+        message: `ha creado una tarea (${nuevoTipo}): ${titulo}.`,
+        actorName: me?.email ?? null,
+        metadata: { tarea_id: data, tipo: nuevoTipo }
+      });
       setNuevoTitulo("");
       setNuevoOrden("");
       setOk("Tarea añadida.");

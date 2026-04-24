@@ -24,16 +24,21 @@ function chunk<T>(arr: T[], size: number): T[][] {
  * Importante: NO filtramos por `escandallos.establecimiento_id` porque puede quedar
  * desalineado respecto a `productos.establecimiento_id`. La visibilidad real la aplica RLS.
  */
-export async function fetchEscandallosPrecioMapByProductIds(productIds: string[]): Promise<Map<string, EscandalloPrecioRow>> {
+export async function fetchEscandallosPrecioMapByProductIds(
+  productIds: string[],
+  establecimientoId?: string | null
+): Promise<Map<string, EscandalloPrecioRow>> {
   const ids = Array.from(new Set(productIds.map((x) => String(x ?? "").trim()).filter(Boolean)));
   const map = new Map<string, EscandalloPrecioRow>();
   if (!ids.length) return map;
 
   for (const part of chunk(ids, 120)) {
-    const { data, error } = await supabase()
+    let q = supabase()
       .from("escandallos")
       .select("producto_id,precio_tarifa,descuento_valor,descuento_tipo,rappel_valor")
       .in("producto_id", part);
+    if (establecimientoId) q = q.eq("establecimiento_id", establecimientoId);
+    const { data, error } = await q;
     if (error) throw error;
 
     for (const r of ((data ?? []) as unknown as Array<Record<string, unknown>>)) {
@@ -70,16 +75,21 @@ function normalizeIva(v: unknown): number {
   return 10;
 }
 
-export async function fetchEscandallosFinanceMapByProductIds(productIds: string[]): Promise<Map<string, EscandalloFinanceRow>> {
+export async function fetchEscandallosFinanceMapByProductIds(
+  productIds: string[],
+  establecimientoId?: string | null
+): Promise<Map<string, EscandalloFinanceRow>> {
   const ids = Array.from(new Set(productIds.map((x) => String(x ?? "").trim()).filter(Boolean)));
   const map = new Map<string, EscandalloFinanceRow>();
   if (!ids.length) return map;
 
   for (const part of chunk(ids, 120)) {
-    const { data, error } = await supabase()
+    let q = supabase()
       .from("escandallos")
       .select("producto_id,establecimiento_id,precio_tarifa,uds_caja,descuento_valor,descuento_tipo,rappel_valor,iva_compra,pvp,iva_venta")
       .in("producto_id", part);
+    if (establecimientoId) q = q.eq("establecimiento_id", establecimientoId);
+    const { data, error } = await q;
     if (error) throw error;
 
     for (const r of ((data ?? []) as unknown as Array<Record<string, unknown>>)) {

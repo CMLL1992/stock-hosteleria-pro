@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase";
 /** Columna real en `public.productos` para el nombre del artículo (según migración / entorno). */
 export type ProductoTituloCol = "articulo" | "nombre";
 
-let cachedTituloCol: ProductoTituloCol | null = null;
+const cachedByEst = new Map<string, ProductoTituloCol>();
 
 /**
  * Detecta columna de título sin provocar 400 en PostgREST.
@@ -12,34 +12,36 @@ let cachedTituloCol: ProductoTituloCol | null = null;
  * Nota: si el establecimiento no tiene productos todavía, por defecto usamos `nombre`.
  */
 export async function resolveProductoTituloColumn(establecimientoId: string | null): Promise<ProductoTituloCol> {
-  if (cachedTituloCol) return cachedTituloCol;
+  if (!establecimientoId) return "nombre";
+  const cached = cachedByEst.get(establecimientoId);
+  if (cached) return cached;
 
   let q = supabase().from("productos").select("*").limit(1);
-  if (establecimientoId) q = q.eq("establecimiento_id", establecimientoId);
+  q = q.eq("establecimiento_id", establecimientoId);
   const r = await q;
   if (r.error) throw r.error;
 
   const row = (Array.isArray(r.data) ? (r.data[0] as Record<string, unknown> | undefined) : undefined) ?? undefined;
   if (!row) {
-    cachedTituloCol = "nombre";
-    return cachedTituloCol;
+    cachedByEst.set(establecimientoId, "nombre");
+    return "nombre";
   }
   if (Object.prototype.hasOwnProperty.call(row, "articulo")) {
-    cachedTituloCol = "articulo";
-    return cachedTituloCol;
+    cachedByEst.set(establecimientoId, "articulo");
+    return "articulo";
   }
   if (Object.prototype.hasOwnProperty.call(row, "nombre")) {
-    cachedTituloCol = "nombre";
-    return cachedTituloCol;
+    cachedByEst.set(establecimientoId, "nombre");
+    return "nombre";
   }
 
-  cachedTituloCol = "nombre";
-  return cachedTituloCol;
+  cachedByEst.set(establecimientoId, "nombre");
+  return "nombre";
 }
 
 /** Solo tests / cambio de entorno. */
 export function resetProductoTituloColumnCache(): void {
-  cachedTituloCol = null;
+  cachedByEst.clear();
 }
 
 /** Nombre de columna en select/order de PostgREST. */

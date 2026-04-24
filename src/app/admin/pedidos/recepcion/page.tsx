@@ -164,7 +164,12 @@ export default function RecepcionPedidosPage() {
       setUploadPct(100);
       setAlbaranOk("Albarán guardado para auditoría ✅");
       // refresco suave por si la vista de auditoría está abierta en otra pestaña (Realtime se encargará si está activado)
-      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      if (activeEstablishmentId) {
+        void queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", activeEstablishmentId] });
+        void queryClient.invalidateQueries({ queryKey: ["productos", activeEstablishmentId] });
+        void queryClient.invalidateQueries({ queryKey: ["movimientos", activeEstablishmentId] });
+        void queryClient.invalidateQueries({ queryKey: ["pedidos", activeEstablishmentId] });
+      }
     } catch (e) {
       setErr(supabaseErrToString(e));
     } finally {

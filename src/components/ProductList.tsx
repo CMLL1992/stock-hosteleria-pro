@@ -566,7 +566,6 @@ export function ProductList() {
 
       await queryClient.invalidateQueries({ queryKey: ["productos", establecimientoId] });
       await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", establecimientoId] });
-      await queryClient.invalidateQueries({ queryKey: ["productos"] });
       setMovOpen(false);
       setMovProd(null);
       setMovStep("menu");

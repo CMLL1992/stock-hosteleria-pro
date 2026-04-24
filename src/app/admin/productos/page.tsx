@@ -351,7 +351,7 @@ export default function AdminProductosPage() {
 
         const priceById = new Map<string, number>();
         try {
-          const escMap = await fetchEscandallosPrecioMapByProductIds(base.map((p) => p.id));
+          const escMap = await fetchEscandallosPrecioMapByProductIds(base.map((p) => p.id), activeEstablishmentId);
           for (const p of base) {
             const row = escMap.get(p.id);
             priceById.set(p.id, row?.precio_tarifa ?? 0);
@@ -466,7 +466,7 @@ export default function AdminProductosPage() {
       const base = ((lite.data ?? []) as unknown as Record<string, unknown>[]).map((r) => mapProductoQueryRow(r, t));
       const priceById = new Map<string, number>();
       try {
-        const escMap = await fetchEscandallosPrecioMapByProductIds(base.map((p) => p.id));
+        const escMap = await fetchEscandallosPrecioMapByProductIds(base.map((p) => p.id), activeEstablishmentId);
         for (const p of base) {
           const row = escMap.get(p.id);
           priceById.set(p.id, row?.precio_tarifa ?? 0);

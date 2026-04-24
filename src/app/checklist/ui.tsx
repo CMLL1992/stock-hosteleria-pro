@@ -125,6 +125,14 @@ export function ChecklistClient() {
             .from("checklists_tareas_estado")
             .upsert(payload, { onConflict: "establecimiento_id,tarea_id" });
           if (error) throw error;
+          const t = tareas.find((x) => x.id === id)?.titulo ?? "";
+          await logActivity({
+            establecimientoId: activeEstablishmentId,
+            icon: "check",
+            message: willBeChecked ? `ha marcado como hecha: ${t}.` : `ha desmarcado: ${t}.`,
+            actorName: auth?.user?.email ?? null,
+            metadata: { tarea_id: id, completada: willBeChecked }
+          });
         } catch {
           // ignore
         }
