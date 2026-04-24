@@ -93,7 +93,7 @@ export async function POST(req: Request) {
     const mensajeUsuario = messages[messages.length - 1].content;
     const promptFinal = SYSTEM_PROMPT + "\n\nUsuario: " + mensajeUsuario;
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${googleApiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${googleApiKey}`;
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -116,7 +116,23 @@ export async function POST(req: Request) {
 
     if (!res.ok) {
       console.log("[help/chat] Gemini error body:", rawTextRes);
-      return json({ ok: false, error: `Gemini (HTTP ${res.status}):\n${JSON.stringify(parsed, null, 2)}` }, 502);
+      const googleMsg =
+        typeof parsed?.error?.message === "string" && parsed.error.message.trim()
+          ? parsed.error.message.trim()
+          : null;
+      return json(
+        {
+          ok: false,
+          error: `Gemini (HTTP ${res.status})`,
+          google: {
+            status: res.status,
+            statusText: res.statusText,
+            message: googleMsg,
+            raw: parsed
+          }
+        },
+        502
+      );
     }
 
     const reply = replyFromGeminiBody(parsed) || OFF_TOPIC_REPLY;
