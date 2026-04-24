@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
+// Despliegue con nueva API Key
+
 function json(data: unknown, status = 200) {
   return NextResponse.json(data, { status });
 }
