@@ -3,6 +3,7 @@
 import type { ChangeEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { MobileHeader } from "@/components/MobileHeader";
 import { Button } from "@/components/ui/Button";
 import { supabase } from "@/lib/supabase";
@@ -140,6 +141,7 @@ export default function NuevoEscandalloCocinaPage() {
   const [ingredientes, setIngredientes] = useState<IngredienteDraft[]>(() => [newIngredienteRow()]);
 
   const [guardados, setGuardados] = useState<EscandalloGuardado[]>([]);
+  const [openSaved, setOpenSaved] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!activeEstablishmentId) {
@@ -622,72 +624,105 @@ export default function NuevoEscandalloCocinaPage() {
               Aún no hay escandallos guardados.
             </p>
           ) : (
-            <div className="mt-3 space-y-2">
-              {guardados.map((g) => (
-                <details key={g.id} className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <summary className="cursor-pointer select-none text-sm font-semibold text-slate-900">
-                    <span className="flex w-full items-start justify-between gap-3">
-                      <span className="min-w-0">
-                        <span className="block truncate">{g.nombre_plato}</span>
-                        <span className="block text-xs font-normal text-slate-500">
-                          {new Date(g.created_at).toLocaleString("es-ES")}
-                        </span>
+            <ul className="mt-3 space-y-3">
+              {guardados.map((g) => {
+                const expanded = !!openSaved[g.id];
+                const costeTotal = Number(g.resumen?.coste_lote ?? 0) || 0;
+                const pvpSin = Number(g.resumen?.pvp_sin_iva ?? 0) || 0;
+                const pvpCon = Number(g.resumen?.pvp_con_iva ?? 0) || 0;
+                const costeRacion = Number(g.resumen?.coste_racion ?? 0) || 0;
+                const margenEur = pvpSin - costeRacion;
+                const margenPct = pvpSin > 0 ? (margenEur / pvpSin) * 100 : 0;
+                return (
+                  <li key={g.id} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-100">
+                    <button
+                      type="button"
+                      className="flex w-full min-h-14 items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-slate-50"
+                      onClick={() => setOpenSaved((prev) => ({ ...prev, [g.id]: !expanded }))}
+                      aria-expanded={expanded}
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-bold text-slate-900">{g.nombre_plato}</span>
+                        <span className="block text-xs font-normal text-slate-500">{new Date(g.created_at).toLocaleString("es-ES")}</span>
                       </span>
-                      <button
-                        type="button"
-                        className="shrink-0 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-800 hover:bg-red-100"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          borrarGuardadoLocal(g.id);
-                        }}
-                        aria-label={`Eliminar escandallo ${g.nombre_plato}`}
-                        title="Eliminar"
-                      >
-                        Eliminar
-                      </button>
-                    </span>
-                  </summary>
-                  <div className="mt-3 space-y-3">
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <div className="rounded-2xl bg-slate-50 p-3">
-                        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Coste lote</p>
-                        <p className="mt-1 font-semibold tabular-nums text-slate-900">{formatEUR(g.resumen.coste_lote)}</p>
-                      </div>
-                      <div className="rounded-2xl bg-slate-50 p-3">
-                        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Coste ración</p>
-                        <p className="mt-1 font-semibold tabular-nums text-slate-900">{formatEUR(g.resumen.coste_racion)}</p>
-                      </div>
-                    </div>
+                      <span className="shrink-0 text-right">
+                        <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-500">Coste total</span>
+                        <span className="block font-mono text-sm font-semibold tabular-nums text-slate-900">{formatEUR(costeTotal)}</span>
+                      </span>
+                      <span className="shrink-0 text-slate-500" aria-hidden>
+                        {expanded ? <ChevronDown className="h-6 w-6" /> : <ChevronRight className="h-6 w-6" />}
+                      </span>
+                    </button>
 
-                    <div className="overflow-x-auto rounded-2xl border border-slate-100">
-                      <table className="w-full min-w-[640px] text-sm">
-                        <thead className="bg-slate-50 text-xs font-bold uppercase tracking-wide text-slate-500">
-                          <tr>
-                            <th className="px-3 py-2 text-left">Ingrediente</th>
-                            <th className="px-3 py-2 text-right">Cantidad</th>
-                            <th className="px-3 py-2 text-right">Precio</th>
-                            <th className="px-3 py-2 text-right">Merma</th>
-                            <th className="px-3 py-2 text-right">Coste real</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {g.ingredientes.map((it, idx) => (
-                            <tr key={`${g.id}-${idx}`} className="border-t border-slate-100">
-                              <td className="px-3 py-2">{it.nombre_ingrediente}</td>
-                              <td className="px-3 py-2 text-right tabular-nums">{it.cantidad_gramos_ml}</td>
-                              <td className="px-3 py-2 text-right tabular-nums">{formatEUR(it.precio_compra_sin_iva)}</td>
-                              <td className="px-3 py-2 text-right tabular-nums">{it.porcentaje_merma}%</td>
-                              <td className="px-3 py-2 text-right font-semibold tabular-nums">{formatEUR(it.coste_real)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </details>
-              ))}
-            </div>
+                    {expanded ? (
+                      <div className="space-y-4 border-t border-slate-100 px-4 pb-4 pt-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-xs font-bold uppercase tracking-wide text-slate-600">Detalle</p>
+                          <button
+                            type="button"
+                            className="min-h-10 rounded-2xl border border-red-200 bg-red-50 px-3 text-xs font-semibold text-red-800 hover:bg-red-100"
+                            onClick={() => borrarGuardadoLocal(g.id)}
+                            aria-label={`Eliminar escandallo ${g.nombre_plato}`}
+                            title="Eliminar"
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <div className="rounded-2xl bg-slate-50 p-3">
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Coste ración</p>
+                            <p className="mt-1 font-semibold tabular-nums text-slate-900">{formatEUR(costeRacion)}</p>
+                          </div>
+                          <div className="rounded-2xl bg-slate-50 p-3">
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Margen</p>
+                            <p className="mt-1 font-semibold tabular-nums text-slate-900">
+                              {formatEUR(margenEur)}{" "}
+                              <span className="text-xs font-normal text-slate-500">({margenPct.toFixed(2)}%)</span>
+                            </p>
+                          </div>
+                          <div className="rounded-2xl bg-slate-50 p-3">
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">PVP sugerido (sin IVA)</p>
+                            <p className="mt-1 font-semibold tabular-nums text-slate-900">{formatEUR(pvpSin)}</p>
+                          </div>
+                          <div className="rounded-2xl bg-slate-50 p-3">
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">PVP sugerido (con IVA)</p>
+                            <p className="mt-1 text-lg font-extrabold tabular-nums text-slate-900">{formatEUR(pvpCon)}</p>
+                          </div>
+                        </div>
+
+                        <div className="overflow-x-auto rounded-2xl border border-slate-100">
+                          <table className="w-full min-w-[720px] text-sm">
+                            <thead className="bg-slate-50 text-xs font-bold uppercase tracking-wide text-slate-500">
+                              <tr>
+                                <th className="px-3 py-2 text-left">Ingrediente</th>
+                                <th className="px-3 py-2 text-right">Cantidad</th>
+                                <th className="px-3 py-2 text-right">Unidad</th>
+                                <th className="px-3 py-2 text-right">Precio</th>
+                                <th className="px-3 py-2 text-right">Merma</th>
+                                <th className="px-3 py-2 text-right">Coste real</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {g.ingredientes.map((it, idx) => (
+                                <tr key={`${g.id}-${idx}`} className="border-t border-slate-100">
+                                  <td className="px-3 py-2">{it.nombre_ingrediente}</td>
+                                  <td className="px-3 py-2 text-right tabular-nums">{it.cantidad_gramos_ml}</td>
+                                  <td className="px-3 py-2 text-right text-xs font-semibold text-slate-600">g/ml</td>
+                                  <td className="px-3 py-2 text-right tabular-nums">{formatEUR(it.precio_compra_sin_iva)}</td>
+                                  <td className="px-3 py-2 text-right tabular-nums">{it.porcentaje_merma}%</td>
+                                  <td className="px-3 py-2 text-right font-semibold tabular-nums">{formatEUR(it.coste_real)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </div>
       </section>
