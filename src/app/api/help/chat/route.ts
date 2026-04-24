@@ -33,64 +33,23 @@ type ChatMsg = { role?: unknown; content?: unknown };
 
 type RoleMsg = { role: "user" | "assistant"; content: string };
 
-// Gemini desactivado temporalmente para aislar el problema (fallback).
-
-type OpenAiChatResponse = {
-  choices?: Array<{ message?: { content?: string } }>;
-  error?: { message?: string };
+type GeminiGenerateResponse = {
+  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  error?: { message?: string; code?: number; status?: string };
 };
 
-async function openAiHelpReply(
-  userContent: string,
-  openaiKey: string
-): Promise<{ ok: true; reply: string } | { ok: false; error: string }> {
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${openaiKey}`
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      temperature: 0.3,
-      max_tokens: 1024,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: userContent }
-      ]
-    })
-  });
-  const rawText = await res.text();
-  if (!res.ok) {
-    console.log("[help/chat] OpenAI error body:", rawText);
-  }
-  let parsed: OpenAiChatResponse;
-  try {
-    parsed = JSON.parse(rawText) as OpenAiChatResponse;
-  } catch {
-    return {
-      ok: false,
-      error: `OpenAI: respuesta no es JSON. HTTP ${res.status} ${res.statusText}. Fragmento: ${rawText.slice(0, 800)}`
-    };
-  }
-  if (!res.ok) {
-    return { ok: false, error: `OpenAI (HTTP ${res.status}):\n${JSON.stringify(parsed, null, 2)}` };
-  }
-  const reply = String(parsed.choices?.[0]?.message?.content ?? "").trim();
-  if (!reply) return { ok: true, reply: "Hola" };
-  return { ok: true, reply };
+function replyFromGeminiBody(data: GeminiGenerateResponse): string {
+  const parts = data.candidates?.[0]?.content?.parts;
+  if (!parts?.length) return "";
+  return parts
+    .map((p) => String(p.text ?? ""))
+    .join("")
+    .trim();
 }
 
 export async function POST(req: Request) {
   try {
-    console.log(
-      "Claves configuradas - Gemini:",
-      !!process.env.GOOGLE_API_KEY,
-      "OpenAI:",
-      !!process.env.OPENAI_API_KEY
-    );
-
-    const apiKey = process.env.OPENAI_API_KEY?.trim();
+    const googleApiKey = process.env.GOOGLE_API_KEY?.trim();
 
     const { supabaseUrl, anonKey } = getEnv();
     if (!supabaseUrl || !anonKey) return json({ ok: false, error: "Missing Supabase env" }, 500);
@@ -120,12 +79,12 @@ export async function POST(req: Request) {
       return json({ ok: false, error: "Invalid messages" }, 400);
     }
 
-    if (!apiKey) {
+    if (!googleApiKey) {
       return json(
         {
           ok: false,
           error:
-            "Error de Configuración: falta OPENAI_API_KEY. En Vercel → Settings → Environment Variables define OPENAI_API_KEY (a nivel de proyecto) y redeploy."
+            "Error de Configuración: falta GOOGLE_API_KEY. En Vercel → Settings → Environment Variables define GOOGLE_API_KEY (a nivel de proyecto) y redeploy."
         },
         503
       );
@@ -133,10 +92,48 @@ export async function POST(req: Request) {
 
     const mensajeUsuario = messages[messages.length - 1].content;
 
-    // Solo OpenAI por ahora (Gemini desactivado temporalmente).
-    const oa = await openAiHelpReply(mensajeUsuario, apiKey);
-    if (oa.ok) return json({ ok: true, reply: oa.reply });
-    return json({ ok: false, error: oa.error }, 502);
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${googleApiKey}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: `${SYSTEM_PROMPT}\n\n${mensajeUsuario}` }]
+          }
+        ],
+        generationConfig: { temperature: 0.3, maxOutputTokens: 1024 },
+        safetySettings: [
+          { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+        ]
+      })
+    });
+
+    const rawTextRes = await res.text();
+    let parsed: GeminiGenerateResponse;
+    try {
+      parsed = rawTextRes.trim() ? (JSON.parse(rawTextRes) as GeminiGenerateResponse) : {};
+    } catch {
+      return json(
+        {
+          ok: false,
+          error: `Gemini: respuesta no es JSON. HTTP ${res.status} ${res.statusText}. Fragmento: ${rawTextRes.slice(0, 1200)}`
+        },
+        502
+      );
+    }
+
+    if (!res.ok) {
+      console.log("[help/chat] Gemini error body:", rawTextRes);
+      return json({ ok: false, error: `Gemini (HTTP ${res.status}):\n${JSON.stringify(parsed, null, 2)}` }, 502);
+    }
+
+    const reply = replyFromGeminiBody(parsed) || OFF_TOPIC_REPLY;
+    return json({ ok: true, reply });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     return json({ ok: false, error: message }, 500);
