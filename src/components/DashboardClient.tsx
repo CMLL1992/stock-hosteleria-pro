@@ -61,13 +61,11 @@ export function DashboardClient() {
     enabled: !!establecimientoId,
     queryFn: async (): Promise<ChecklistTask[]> => {
       if (!establecimientoId) return [];
-      const tareasRes = await supabase()
-        .from("checklists_tareas")
-        .select("id,tipo,titulo,orden,activo")
-        .eq("establecimiento_id", establecimientoId)
-        .eq("activo", true)
-        .order("tipo", { ascending: true })
-        .order("orden", { ascending: true });
+      const tareasRes = await supabase().rpc("list_checklists_tareas", {
+        p_establecimiento_id: establecimientoId,
+        p_tipo: null,
+        p_activo_only: true
+      });
       if (tareasRes.error) throw tareasRes.error;
       const base = (tareasRes.data ?? []) as unknown as Array<{ id: string; tipo: string; titulo: string; orden: number; activo: boolean }>;
       const ids = base.map((t) => String(t.id)).filter(Boolean);
