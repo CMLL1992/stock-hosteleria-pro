@@ -553,7 +553,7 @@ export default function EscandallosPage() {
     setEditIvaCompra(String(verRow.p.iva_compra ?? 10));
     setEditPvp(String(verRow.p.pvp ?? 0));
     setEditIvaVenta(String(verRow.p.iva_venta ?? 10));
-  }, [verId, verRow?.p.id]);
+  }, [verRow]);
 
   if (meLoading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
   if (!canSeeFinance) {

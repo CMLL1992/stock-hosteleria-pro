@@ -288,14 +288,6 @@ export default function NuevoEscandalloCocinaPage() {
         }
       });
 
-      const payloadEsc = {
-        establecimiento_id: activeEstablishmentId,
-        nombre_plato: nombre,
-        raciones_lote: clampNonNeg(toNum(racionesLote)) || 1,
-        multiplicador: clampNonNeg(toNum(multiplicador)) || 3.5,
-        iva_final: ivaOk
-      };
-
       const ingredientesPayload = calc.lines
         .filter((x) => x.nombre_ingrediente.trim())
         .map((x) => ({

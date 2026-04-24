@@ -216,7 +216,7 @@ export function AdminHomeClient({ denied }: { denied?: string | null } = {}) {
         ))}
       </div>
     );
-  }, [data?.isSuperadmin, data?.profileReady, data?.role, denied, error, isLoading]);
+  }, [data, data?.isSuperadmin, data?.profileReady, data?.role, denied, error, isLoading]);
 
   return (
     <div className="min-h-dvh bg-slate-50">
