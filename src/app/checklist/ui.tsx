@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { Button } from "@/components/ui/Button";
+import { useCambiosGlobalesRealtime } from "@/lib/useCambiosGlobalesRealtime";
 
 type Tipo = "Apertura" | "Cierre";
 
@@ -12,6 +13,7 @@ type TareaRow = {
   id: string;
   titulo: string;
   orden: number;
+  completada: boolean;
 };
 
 export function ChecklistClient() {
@@ -23,6 +25,14 @@ export function ChecklistClient() {
   const [ok, setOk] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  useCambiosGlobalesRealtime({
+    establecimientoId: activeEstablishmentId,
+    tables: ["checklists_tareas", "checklists_tareas_estado"],
+    onChange: () => {
+      void fetchTareas();
+    }
+  });
 
   const fetchTareas = useCallback(async () => {
     if (!activeEstablishmentId) {
@@ -42,9 +52,36 @@ export function ChecklistClient() {
         .eq("tipo", tipo)
         .order("orden", { ascending: true });
       if (error) throw error;
-      const rows = ((data ?? []) as unknown as TareaRow[]).filter((r) => !!r.id);
+      const base = ((data ?? []) as unknown as Array<{ id: string; titulo: string; orden: number }>).filter((r) => !!r.id);
+
+      // Estado compartido (si existe la tabla). Si no existe, seguimos sin persistencia global.
+      const completedSet = new Set<string>();
+      try {
+        const ids = base.map((r) => r.id);
+        if (ids.length) {
+          const s = await supabase()
+            .from("checklists_tareas_estado")
+            .select("tarea_id,completada")
+            .eq("establecimiento_id", activeEstablishmentId)
+            .in("tarea_id", ids);
+          if (!s.error) {
+            for (const row of (s.data ?? []) as unknown as Array<{ tarea_id: string; completada: boolean }>) {
+              if (row.completada) completedSet.add(String(row.tarea_id));
+            }
+          }
+        }
+      } catch {
+        // ignore (tabla no existe / permisos / etc.)
+      }
+
+      const rows: TareaRow[] = base.map((r) => ({
+        id: String(r.id),
+        titulo: String(r.titulo ?? ""),
+        orden: Math.trunc(Number(r.orden) || 0),
+        completada: completedSet.has(String(r.id))
+      }));
       setTareas(rows);
-      setChecked(new Set());
+      setChecked(new Set(rows.filter((t) => t.completada).map((t) => t.id)));
     } catch (e) {
       setErr(supabaseErrToString(e));
       setTareas([]);
@@ -64,10 +101,35 @@ export function ChecklistClient() {
   }, [tareas, checked]);
 
   function toggle(id: string) {
+    if (!activeEstablishmentId) return;
     setChecked((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      const willBeChecked = !next.has(id);
+      if (willBeChecked) next.add(id);
+      else next.delete(id);
+
+      // Persistencia compartida (si la tabla existe). Si falla, mantenemos estado local.
+      (async () => {
+        try {
+          const { data: auth } = await supabase().auth.getUser();
+          const uid = auth?.user?.id ?? null;
+          const payload = {
+            establecimiento_id: activeEstablishmentId,
+            tarea_id: id,
+            completada: willBeChecked,
+            updated_at: new Date().toISOString(),
+            updated_by: uid
+          };
+          const { error } = await supabase()
+            .from("checklists_tareas_estado")
+            .upsert(payload, { onConflict: "establecimiento_id,tarea_id" });
+          if (error) throw error;
+        } catch {
+          // ignore
+        }
+      })();
+
+      setTareas((prevT) => prevT.map((t) => (t.id === id ? { ...t, completada: willBeChecked } : t)));
       return next;
     });
   }

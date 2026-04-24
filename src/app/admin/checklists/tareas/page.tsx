@@ -230,7 +230,29 @@ export default function ChecklistTareasAdminPage() {
               type="checkbox"
               className="h-5 w-5 rounded border-slate-300"
               checked={t.activo}
-              onChange={(e) => patchLocal(t.id, { activo: e.currentTarget.checked })}
+              onChange={(e) => {
+                const next = e.currentTarget.checked;
+                patchLocal(t.id, { activo: next });
+                // Persistencia inmediata (sin depender de pulsar Guardar)
+                void (async () => {
+                  if (!activeEstablishmentId) return;
+                  setSavingId(t.id);
+                  try {
+                    const { error } = await supabase()
+                      .from("checklists_tareas")
+                      .update({ activo: next })
+                      .eq("id", t.id)
+                      .eq("establecimiento_id", activeEstablishmentId);
+                    if (error) throw error;
+                    setOk("Estado actualizado.");
+                    window.setTimeout(() => setOk(null), 1200);
+                  } catch (e2) {
+                    setErr(supabaseErrToString(e2));
+                  } finally {
+                    setSavingId(null);
+                  }
+                })();
+              }}
             />
             Activa (visible en el móvil)
           </label>

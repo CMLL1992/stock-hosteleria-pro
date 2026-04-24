@@ -2,7 +2,15 @@ import { useEffect, useRef } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 
-type RealtimeTable = "movimientos" | "productos" | "pedidos" | "usuarios" | "escandallos";
+type RealtimeTable =
+  | "movimientos"
+  | "productos"
+  | "pedidos"
+  | "usuarios"
+  | "escandallos"
+  | "checklists_tareas"
+  | "checklists_tareas_estado"
+  | "checklists_registros";
 
 /**
  * Suscripción Realtime "global" por establecimiento.
@@ -43,7 +51,8 @@ export function useCambiosGlobalesRealtime(opts: {
   useEffect(() => {
     if (!establecimientoId) return;
 
-    const watchTables: RealtimeTable[] = tables ?? ["movimientos", "productos", "pedidos", "usuarios", "escandallos"];
+    const watchTables: RealtimeTable[] =
+      tables ?? ["movimientos", "productos", "pedidos", "usuarios", "escandallos", "checklists_tareas", "checklists_tareas_estado", "checklists_registros"];
     const channel = supabase().channel(`cambios-globales:${establecimientoId}:${instanceIdRef.current}`);
 
     for (const table of watchTables) {
