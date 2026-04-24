@@ -56,9 +56,10 @@ type GeminiContentsPayload = {
 async function geminiGenerateContent(
   modelId: string,
   googleApiKey: string,
-  contentsPayload: GeminiContentsPayload
+  contentsPayload: GeminiContentsPayload,
+  apiVersion: "v1" | "v1beta" = "v1"
 ): Promise<{ res: Response; data: GeminiGenerateResponse; bodyReadError: string | null }> {
-  const url = `https://generativelanguage.googleapis.com/v1/models/${modelId}:generateContent?key=${googleApiKey}`;
+  const url = `https://generativelanguage.googleapis.com/${apiVersion}/models/${modelId}:generateContent?key=${googleApiKey}`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -146,32 +147,49 @@ export async function POST(req: Request) {
       }
     };
 
-    let { res: geminiRes, data, bodyReadError } = await geminiGenerateContent(
-      "gemini-1.5-flash",
-      googleApiKey,
-      contentsPayload
-    );
+    /** gemini-pro ya no existe en v1 para generateContent (404). Orden: v1 flash → v1 2.0 → v1beta flash. */
+    const attempts: Array<{ api: "v1" | "v1beta"; model: string }> = [
+      { api: "v1", model: "gemini-1.5-flash" },
+      { api: "v1", model: "gemini-2.0-flash" },
+      { api: "v1beta", model: "gemini-1.5-flash" }
+    ];
 
-    if (bodyReadError) {
-      console.error("[help/chat] Gemini body parse:", bodyReadError);
-      return json({ ok: false, error: bodyReadError }, 502);
-    }
+    let geminiRes!: Response;
+    let data!: GeminiGenerateResponse;
+    let bodyReadError: string | null = null;
 
-    if (!geminiRes.ok && geminiRes.status === 404) {
-      ({ res: geminiRes, data, bodyReadError } = await geminiGenerateContent("gemini-pro", googleApiKey, contentsPayload));
+    for (let i = 0; i < attempts.length; i++) {
+      const { api, model } = attempts[i];
+      const r = await geminiGenerateContent(model, googleApiKey, contentsPayload, api);
+      geminiRes = r.res;
+      data = r.data;
+      bodyReadError = r.bodyReadError;
+
       if (bodyReadError) {
-        console.error("[help/chat] Gemini body parse (fallback):", bodyReadError);
+        console.error("[help/chat] Gemini body parse:", bodyReadError);
         return json({ ok: false, error: bodyReadError }, 502);
+      }
+
+      if (geminiRes.ok) break;
+
+      const is404 = geminiRes.status === 404;
+      const hasMore = i < attempts.length - 1;
+      if (!is404 || !hasMore) {
+        const fullGoogle = JSON.stringify(data, null, 2);
+        console.error("[help/chat] Gemini HTTP", api, model, geminiRes.status, fullGoogle);
+        return json(
+          {
+            ok: false,
+            error: `Google API (${api} / ${model} — HTTP ${geminiRes.status}):\n${fullGoogle}`
+          },
+          geminiRes.status >= 400 && geminiRes.status < 600 ? geminiRes.status : 502
+        );
       }
     }
 
     if (!geminiRes.ok) {
       const fullGoogle = JSON.stringify(data, null, 2);
-      console.error("[help/chat] Gemini HTTP", geminiRes.status, fullGoogle);
-      return json(
-        { ok: false, error: `Google API (${geminiRes.status}):\n${fullGoogle}` },
-        geminiRes.status >= 400 && geminiRes.status < 600 ? geminiRes.status : 502
-      );
+      return json({ ok: false, error: `Google API:\n${fullGoogle}` }, 502);
     }
 
     const reply = replyFromGeminiBody(data) || OFF_TOPIC_REPLY;
