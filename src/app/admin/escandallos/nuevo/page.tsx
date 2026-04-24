@@ -3,7 +3,6 @@
 import type { ChangeEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, ChevronRight } from "lucide-react";
 import { MobileHeader } from "@/components/MobileHeader";
 import { Button } from "@/components/ui/Button";
 import { supabase } from "@/lib/supabase";
@@ -141,7 +140,7 @@ export default function NuevoEscandalloCocinaPage() {
   const [ingredientes, setIngredientes] = useState<IngredienteDraft[]>(() => [newIngredienteRow()]);
 
   const [guardados, setGuardados] = useState<EscandalloGuardado[]>([]);
-  const [openSaved, setOpenSaved] = useState<Record<string, boolean>>({});
+  const [selectedSavedId, setSelectedSavedId] = useState<string>("");
 
   useEffect(() => {
     if (!activeEstablishmentId) {
@@ -239,6 +238,7 @@ export default function NuevoEscandalloCocinaPage() {
       const next = (guardados ?? []).filter((x) => x.id !== id);
       localStorage.setItem(key, JSON.stringify(next));
       setGuardados(next);
+      setSelectedSavedId((cur) => (cur === id ? "" : cur));
     } catch {
       // ignore
     }
@@ -624,55 +624,63 @@ export default function NuevoEscandalloCocinaPage() {
               Aún no hay escandallos guardados.
             </p>
           ) : (
-            <ul className="mt-3 space-y-3">
-              {guardados.map((g) => {
-                const expanded = !!openSaved[g.id];
-                const costeTotal = Number(g.resumen?.coste_lote ?? 0) || 0;
-                const pvpSin = Number(g.resumen?.pvp_sin_iva ?? 0) || 0;
-                const pvpCon = Number(g.resumen?.pvp_con_iva ?? 0) || 0;
-                const costeRacion = Number(g.resumen?.coste_racion ?? 0) || 0;
-                const margenEur = pvpSin - costeRacion;
-                const margenPct = pvpSin > 0 ? (margenEur / pvpSin) * 100 : 0;
-                return (
-                  <li key={g.id} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-100">
-                    <button
-                      type="button"
-                      className="flex w-full min-h-14 items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-slate-50"
-                      onClick={() => setOpenSaved((prev) => ({ ...prev, [g.id]: !expanded }))}
-                      aria-expanded={expanded}
+            <>
+              <section className="mt-3 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-100">
+                <h3 className="text-base font-bold text-slate-900">Consultar escandallo</h3>
+                <p className="mt-1 text-sm text-slate-600">Selecciona un producto para ver su ficha.</p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
+                    Producto
+                    <select
+                      className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                      value={selectedSavedId}
+                      onChange={(e) => setSelectedSavedId(e.currentTarget.value)}
+                      aria-label="Consultar escandallo"
                     >
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate font-bold text-slate-900">{g.nombre_plato}</span>
-                        <span className="block text-xs font-normal text-slate-500">{new Date(g.created_at).toLocaleString("es-ES")}</span>
-                      </span>
-                      <span className="shrink-0 text-right">
-                        <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-500">Coste total</span>
-                        <span className="block font-mono text-sm font-semibold tabular-nums text-slate-900">{formatEUR(costeTotal)}</span>
-                      </span>
-                      <span className="shrink-0 text-slate-500" aria-hidden>
-                        {expanded ? <ChevronDown className="h-6 w-6" /> : <ChevronRight className="h-6 w-6" />}
-                      </span>
-                    </button>
+                      <option value="">(Selecciona…)</option>
+                      {guardados
+                        .slice()
+                        .sort((a, b) => a.nombre_plato.localeCompare(b.nombre_plato, "es", { sensitivity: "base" }))
+                        .map((g) => (
+                          <option key={g.id} value={g.id}>
+                            {g.nombre_plato}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                </div>
 
-                    {expanded ? (
-                      <div className="space-y-4 border-t border-slate-100 px-4 pb-4 pt-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="text-xs font-bold uppercase tracking-wide text-slate-600">Detalle</p>
+                {selectedSavedId ? (
+                  (() => {
+                    const g = guardados.find((x) => x.id === selectedSavedId) ?? null;
+                    if (!g) return null;
+                    const costeTotal = Number(g.resumen?.coste_lote ?? 0) || 0;
+                    const pvpSin = Number(g.resumen?.pvp_sin_iva ?? 0) || 0;
+                    const pvpCon = Number(g.resumen?.pvp_con_iva ?? 0) || 0;
+                    const costeRacion = Number(g.resumen?.coste_racion ?? 0) || 0;
+                    const margenEur = pvpSin - costeRacion;
+                    const margenPct = pvpSin > 0 ? (margenEur / pvpSin) * 100 : 0;
+
+                    return (
+                      <article className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-100">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <h4 className="truncate text-base font-bold leading-snug text-slate-900">{g.nombre_plato}</h4>
+                            <p className="mt-1 text-xs text-slate-500">{new Date(g.created_at).toLocaleString("es-ES")}</p>
+                          </div>
                           <button
                             type="button"
-                            className="min-h-10 rounded-2xl border border-red-200 bg-red-50 px-3 text-xs font-semibold text-red-800 hover:bg-red-100"
+                            className="min-h-11 rounded-2xl border border-red-200 bg-red-50 px-4 text-sm font-semibold text-red-800 hover:bg-red-100"
                             onClick={() => borrarGuardadoLocal(g.id)}
-                            aria-label={`Eliminar escandallo ${g.nombre_plato}`}
-                            title="Eliminar"
                           >
                             Eliminar
                           </button>
                         </div>
 
-                        <div className="grid gap-2 sm:grid-cols-2">
+                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
                           <div className="rounded-2xl bg-slate-50 p-3">
-                            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Coste ración</p>
-                            <p className="mt-1 font-semibold tabular-nums text-slate-900">{formatEUR(costeRacion)}</p>
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Coste total</p>
+                            <p className="mt-1 font-semibold tabular-nums text-slate-900">{formatEUR(costeTotal)}</p>
                           </div>
                           <div className="rounded-2xl bg-slate-50 p-3">
                             <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Margen</p>
@@ -691,7 +699,7 @@ export default function NuevoEscandalloCocinaPage() {
                           </div>
                         </div>
 
-                        <div className="overflow-x-auto rounded-2xl border border-slate-100">
+                        <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-100">
                           <table className="w-full min-w-[720px] text-sm">
                             <thead className="bg-slate-50 text-xs font-bold uppercase tracking-wide text-slate-500">
                               <tr>
@@ -717,12 +725,12 @@ export default function NuevoEscandalloCocinaPage() {
                             </tbody>
                           </table>
                         </div>
-                      </div>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
+                      </article>
+                    );
+                  })()
+                ) : null}
+              </section>
+            </>
           )}
         </div>
       </section>

@@ -1110,11 +1110,7 @@ export default function EscandallosPage() {
               </div>
             </div>
           </article>
-        ) : (
-          <p className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-            Selecciona un producto para ver sus importes y márgenes.
-          </p>
-        )}
+        ) : null}
       </section>
       </main>
     </div>
