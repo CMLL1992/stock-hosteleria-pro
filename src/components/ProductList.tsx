@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Search } from "lucide-react";
+import { ArrowDown, ArrowUp, Search } from "lucide-react";
 import { Drawer } from "@/components/ui/Drawer";
 import { Button } from "@/components/ui/Button";
 import { supabase } from "@/lib/supabase";
@@ -411,14 +411,19 @@ export function ProductList() {
       const salidas = recargaPicked
         .map((p) => ({ p, n: Math.max(0, Math.trunc(Number(recargaQty[p.id] ?? "0") || 0)) }))
         .filter((x) => x.n > 0);
-      if (!salidas.length) {
-        setRecargaErr("Indica al menos una cantidad > 0.");
+      const vaciosSubidos = recargaPicked
+        .map((p) => ({ p, v: Math.max(0, Math.trunc(Number(recargaVacios[p.id] ?? "0") || 0)) }))
+        .filter((x) => x.v > 0);
+      if (salidas.length === 0 && vaciosSubidos.length === 0) {
+        setRecargaErr("Indica una cantidad > 0 en “Cargar a Nevera” o “Subir Vacíos”.");
         return;
       }
 
       const movimientos: Array<Record<string, unknown>> = [];
+      let totalNevera = 0;
       let totalVacios = 0;
       for (const { p, n } of salidas) {
+        totalNevera += n;
         movimientos.push({
           client_uuid: newClientUuid(),
           producto_id: p.id,
@@ -428,19 +433,18 @@ export function ProductList() {
           usuario_id,
           timestamp: nowIso
         });
-        const v = Math.max(0, Math.trunc(Number(recargaVacios[p.id] ?? "0") || 0));
-        if (v > 0) {
-          totalVacios += v;
-          movimientos.push({
-            client_uuid: newClientUuid(),
-            producto_id: p.id,
-            establecimiento_id: establecimientoId,
-            tipo: "devolucion_envase",
-            cantidad: v,
-            usuario_id,
-            timestamp: nowIso
-          });
-        }
+      }
+      for (const { p, v } of vaciosSubidos) {
+        totalVacios += v;
+        movimientos.push({
+          client_uuid: newClientUuid(),
+          producto_id: p.id,
+          establecimiento_id: establecimientoId,
+          tipo: "devolucion_envase",
+          cantidad: v,
+          usuario_id,
+          timestamp: nowIso
+        });
       }
 
       if (typeof navigator !== "undefined" && navigator.onLine) {
@@ -457,11 +461,12 @@ export function ProductList() {
       const applyOptimistic = (prev: Producto[]) =>
         prev.map((x) => {
           const s = salidas.find((t) => t.p.id === x.id);
-          if (!s) return x;
-          const n = s.n;
-          const nextStock = Math.max(0, Math.trunc(Number(x.stock_actual ?? 0) || 0) - n);
-          const v = Math.max(0, Math.trunc(Number(recargaVacios[x.id] ?? "0") || 0));
-          const nextVacios = Math.max(0, Math.trunc(Number(x.stock_vacios ?? 0) || 0) + v);
+          const vv = vaciosSubidos.find((t) => t.p.id === x.id);
+          if (!s && !vv) return x;
+          const nextStock = s ? Math.max(0, Math.trunc(Number(x.stock_actual ?? 0) || 0) - s.n) : Math.max(0, Math.trunc(Number(x.stock_actual ?? 0) || 0));
+          const nextVacios = vv
+            ? Math.max(0, Math.trunc(Number(x.stock_vacios ?? 0) || 0) + vv.v)
+            : Math.max(0, Math.trunc(Number(x.stock_vacios ?? 0) || 0));
           return { ...x, stock_actual: nextStock, stock_vacios: nextVacios };
         });
 
@@ -474,9 +479,12 @@ export function ProductList() {
       await logActivity({
         establecimientoId,
         icon: "envases",
-        message: `ha recargado neveras y devuelto ${totalVacios} envases.`,
+        message: `ha movido mercancía entre barra y almacén (nevera: -${totalNevera}, vacíos: +${totalVacios}).`,
         actorName: me?.email ?? null,
-        metadata: { productos: salidas.map((s) => ({ producto_id: s.p.id, cantidad: s.n, vacios: Number(recargaVacios[s.p.id] ?? 0) || 0 })) }
+        metadata: {
+          nevera: salidas.map((s) => ({ producto_id: s.p.id, cantidad: s.n })),
+          vacios: vaciosSubidos.map((x) => ({ producto_id: x.p.id, cantidad: x.v }))
+        }
       });
 
       setRecargaOpen(false);
@@ -586,7 +594,7 @@ export function ProductList() {
             onClick={() => openRecarga()}
             className="min-h-12 w-full rounded-3xl bg-premium-blue px-5 text-sm font-extrabold uppercase tracking-wide text-white shadow-sm shadow-blue-900/10 hover:brightness-95 sm:w-auto"
           >
-            RECARGAR NEVERAS
+            BARRA ⇄ ALMACÉN
           </button>
           <button
             type="button"
@@ -842,7 +850,10 @@ export function ProductList() {
 
                             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                               <div className="rounded-2xl bg-slate-50 p-4">
-                                <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-600">Cant. a Neveras</p>
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-600">📥 Cargar a Nevera</p>
+                                  <ArrowDown className="h-4 w-4 text-premium-blue" aria-hidden />
+                                </div>
                                 <div className="mt-2 grid grid-cols-[44px_1fr_44px] items-center gap-2">
                                   <button
                                     type="button"
@@ -875,7 +886,10 @@ export function ProductList() {
                               </div>
 
                               <div className="rounded-2xl bg-slate-50 p-4">
-                                <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-600">Envases Vacíos (al almacén)</p>
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-600">📤 Subir Vacíos</p>
+                                  <ArrowUp className="h-4 w-4 text-premium-green" aria-hidden />
+                                </div>
                                 <div className="mt-2 grid grid-cols-[44px_1fr_44px] items-center gap-2">
                                   <button
                                     type="button"
