@@ -14,7 +14,7 @@ import { supabase } from "@/lib/supabase";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { fetchEscandallosPrecioMapByProductIds, type EscandalloPrecioRow } from "@/lib/fetchEscandallosPrecioMap";
 import { logActivity } from "@/lib/activityLog";
-import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 
 export function DashboardClient() {
@@ -179,22 +179,28 @@ export function DashboardClient() {
     return { envasesVaciosEUR, envasesLlenosEUR, stockRealSinEnvaseEUR, totalEUR };
   }, [envasesCatalogoQuery.data, escandallosPrecioQuery.data, rows]);
 
-  const barrasResumen = useMemo(() => {
-    const { envasesVaciosEUR, envasesLlenosEUR, stockRealSinEnvaseEUR } = valorEconomicoInventario;
-    return [
-      { key: "stock", label: "Stock (sin envase)", value: Math.round((stockRealSinEnvaseEUR + Number.EPSILON) * 100) / 100 },
-      { key: "env-llenos", label: "Envases (llenos)", value: Math.round((envasesLlenosEUR + Number.EPSILON) * 100) / 100 },
-      { key: "env-vacios", label: "Envases (vacíos)", value: Math.round((envasesVaciosEUR + Number.EPSILON) * 100) / 100 }
-    ];
-  }, [valorEconomicoInventario]);
+  const coloresValoracion = useMemo(() => {
+    return {
+      stock: "#2563EB", // Azul
+      "env-llenos": "#F97316", // Naranja
+      "env-vacios": "#22C55E" // Verde
+    } as const;
+  }, []);
 
-  const pieResumen = useMemo(() => {
-    const colors: Record<string, string> = { stock: "#0F172A", "env-llenos": "#334155", "env-vacios": "#64748B" };
-    const items = barrasResumen
-      .map((x) => ({ ...x, color: colors[x.key] ?? "#94A3B8" }))
-      .filter((x) => (Number(x.value) || 0) > 0);
-    return items.length ? items : barrasResumen.map((x, idx) => ({ ...x, color: ["#0F172A", "#334155", "#64748B"][idx] }));
-  }, [barrasResumen]);
+  const valoracionItems = useMemo(() => {
+    const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+    const { envasesVaciosEUR, envasesLlenosEUR, stockRealSinEnvaseEUR, totalEUR } = valorEconomicoInventario;
+    const totalOk = Math.max(0, Number(totalEUR) || 0);
+    const items = [
+      { key: "stock" as const, label: "Valor Stock Real", value: round2(stockRealSinEnvaseEUR), color: coloresValoracion.stock },
+      { key: "env-llenos" as const, label: "Envases en Stock (llenos)", value: round2(envasesLlenosEUR), color: coloresValoracion["env-llenos"] },
+      { key: "env-vacios" as const, label: "Envases Vacíos (a recuperar)", value: round2(envasesVaciosEUR), color: coloresValoracion["env-vacios"] }
+    ];
+    return items.map((x) => ({
+      ...x,
+      pct: totalOk > 0 ? Math.max(0, Math.min(1, (Number(x.value) || 0) / totalOk)) : 0
+    }));
+  }, [coloresValoracion, valorEconomicoInventario]);
 
   function formatEUR(n: number): string {
     return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(n);
@@ -332,48 +338,45 @@ export function DashboardClient() {
         <p className="text-sm font-semibold text-slate-900">Valor económico del inventario</p>
         <p className="mt-1 text-sm text-slate-600">Resumen por establecimiento (EUR). Se recalcula con cada movimiento.</p>
 
-        <div className="mt-3 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-2xl bg-slate-50 p-4">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Envases vacíos</p>
-            <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{formatEUR(valorEconomicoInventario.envasesVaciosEUR)}</p>
-          </div>
-          <div className="rounded-2xl bg-slate-50 p-4">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Envases en stock (llenos)</p>
-            <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{formatEUR(valorEconomicoInventario.envasesLlenosEUR)}</p>
-          </div>
-          <div className="rounded-2xl bg-slate-50 p-4">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Stock real (sin envase)</p>
-            <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{formatEUR(valorEconomicoInventario.stockRealSinEnvaseEUR)}</p>
-          </div>
-        </div>
-
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
-          <div className="h-52 w-full rounded-2xl bg-white">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={barrasResumen} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-                <XAxis dataKey="label" tick={{ fill: "#334155", fontSize: 12 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: "#64748B", fontSize: 12 }} axisLine={false} tickLine={false} width={78} />
-                <Tooltip formatter={(v) => formatEUR(Number(v) || 0)} contentStyle={{ borderRadius: 12, borderColor: "#E2E8F0" }} />
-                <Bar dataKey="value" radius={[10, 10, 10, 10]}>
-                  {barrasResumen.map((d) => (
-                    <Cell key={d.key} fill={d.key === "stock" ? "#0F172A" : d.key === "env-llenos" ? "#334155" : "#64748B"} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <div className="grid gap-4 sm:grid-cols-3 lg:col-span-2">
+            {valoracionItems.map((it) => {
+              const donutData = [
+                { key: it.key, label: it.label, value: Math.max(0, Number(it.value) || 0), color: it.color },
+                { key: `${it.key}-rest`, label: "resto", value: Math.max(0, (Number(valorEconomicoInventario.totalEUR) || 0) - (Number(it.value) || 0)), color: "#E2E8F0" }
+              ];
+              return (
+                <div
+                  key={it.key}
+                  className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm"
+                  style={{ borderTopColor: it.color, borderTopWidth: 4 }}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{it.label}</p>
+                      <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{formatEUR(it.value)}</p>
+                    </div>
+                    <span className="mt-1 inline-flex h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: it.color }} aria-hidden />
+                  </div>
 
-          <div className="h-52 w-full rounded-2xl bg-white">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Tooltip formatter={(v) => formatEUR(Number(v) || 0)} contentStyle={{ borderRadius: 12, borderColor: "#E2E8F0" }} />
-                <Pie data={pieResumen} dataKey="value" nameKey="label" innerRadius={52} outerRadius={78} paddingAngle={2}>
-                  {pieResumen.map((d) => (
-                    <Cell key={d.key} fill={(d as { color?: string }).color ?? "#94A3B8"} />
-                  ))}
-                </Pie>
-              </PieChart>
-            </ResponsiveContainer>
+                  <div className="relative mt-3 h-36 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Tooltip formatter={(v) => formatEUR(Number(v) || 0)} contentStyle={{ borderRadius: 12, borderColor: "#E2E8F0" }} />
+                        <Pie data={donutData} dataKey="value" nameKey="label" innerRadius={44} outerRadius={62} paddingAngle={1}>
+                          {donutData.map((d) => (
+                            <Cell key={d.key} fill={(d as { color?: string }).color ?? "#94A3B8"} />
+                          ))}
+                        </Pie>
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="pointer-events-none absolute inset-0 grid place-items-center">
+                      <p className="text-sm font-extrabold tabular-nums text-slate-900">{Math.round(it.pct * 100)}%</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
