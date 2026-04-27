@@ -145,6 +145,7 @@ export default function ReservasPlanoPage() {
   const [editMode, setEditMode] = useState(false);
   const [scale, setScale] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [planoUnlocked, setPlanoUnlocked] = useState(false); // Bloqueado por defecto (permite scroll página)
 
   const today = todayYmd();
   const [selectedDate, setSelectedDate] = useState<string>(today);
@@ -197,9 +198,21 @@ export default function ReservasPlanoPage() {
     // Para fechas futuras, por defecto mostramos lista (más útil para planificación).
     if (!isToday) {
       setEditMode(false);
+      setPlanoUnlocked(false);
       setViewMode("lista");
     }
   }, [isToday]);
+
+  useEffect(() => {
+    // Cuando el plano está desbloqueado, desactivamos el scroll del body para evitar “guerra” de gestos.
+    if (typeof document === "undefined") return;
+    const prev = document.body.style.overflow;
+    if (planoUnlocked) document.body.style.overflow = "hidden";
+    else document.body.style.overflow = prev || "";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [planoUnlocked]);
 
   const refreshFromDb = useCallback(async () => {
     if (!activeEstablishmentId) return;
@@ -929,6 +942,24 @@ export default function ReservasPlanoPage() {
               >
                 {viewMode === "plano" ? "Vista Plano" : "Vista Lista"}
               </button>
+              {viewMode === "plano" ? (
+                <button
+                  type="button"
+                  className={[
+                    "min-h-11 rounded-2xl px-4 text-sm font-extrabold transition-colors",
+                    planoUnlocked ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
+                  ].join(" ")}
+                  onClick={() => {
+                    if (!isToday) return;
+                    setPlanoUnlocked((v) => !v);
+                    setEditMode(false);
+                  }}
+                  disabled={!isToday}
+                  aria-label={planoUnlocked ? "Bloquear plano" : "Desbloquear plano"}
+                >
+                  {isToday ? (planoUnlocked ? "Bloquear plano" : "Desbloquear plano") : "Plano (lectura)"}
+                </button>
+              ) : null}
               <div className="relative">
                 <input
                   className="premium-input min-h-11 w-[220px] px-3 text-sm"
@@ -972,9 +1003,9 @@ export default function ReservasPlanoPage() {
                 type="button"
                 className={["min-h-11 rounded-2xl px-4 text-sm font-extrabold transition-colors", editMode ? "bg-premium-blue text-white" : "border border-slate-200 bg-white text-slate-900 hover:bg-slate-50"].join(" ")}
                 onClick={() => setEditMode((v) => !v)}
-                disabled={!isToday}
+                disabled={!isToday || !planoUnlocked}
               >
-                {isToday ? (editMode ? "Editar plano: ON" : "Editar plano") : "Modo lectura"}
+                {!isToday ? "Modo lectura" : planoUnlocked ? (editMode ? "Editar plano: ON" : "Editar plano") : "Plano bloqueado"}
               </button>
               <button
                 type="button"
@@ -992,7 +1023,12 @@ export default function ReservasPlanoPage() {
               <button type="button" className="min-h-11 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-black text-slate-900 hover:bg-slate-50" onClick={() => setScale((s) => Math.min(2.2, Math.round((s + 0.1) * 10) / 10))} aria-label="Zoom más">
                 <Plus className="h-4 w-4" />
               </button>
-              <button type="button" className="premium-btn-primary min-h-11 rounded-2xl px-4 disabled:opacity-60" onClick={addMesa} disabled={addMesaLoading}>
+              <button
+                type="button"
+                className="premium-btn-primary min-h-11 rounded-2xl px-4 disabled:opacity-60"
+                onClick={addMesa}
+                disabled={addMesaLoading || !isToday || !planoUnlocked}
+              >
                 {addMesaLoading ? "Añadiendo…" : "+ Mesa"}
               </button>
             </div>
@@ -1019,11 +1055,11 @@ export default function ReservasPlanoPage() {
           <div className="mt-4 overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 shadow-sm">
             <div
               ref={boardRef}
-              className="relative h-[64vh] min-h-[420px] w-full touch-none"
-              onPointerDown={onPointerDownBoard}
-              onPointerMove={onPointerMove}
-              onPointerUp={onPointerUp}
-              onPointerCancel={onPointerUp}
+              className={["relative h-[64vh] min-h-[420px] w-full", planoUnlocked ? "touch-none" : "touch-auto"].join(" ")}
+              onPointerDown={planoUnlocked ? onPointerDownBoard : undefined}
+              onPointerMove={planoUnlocked ? onPointerMove : undefined}
+              onPointerUp={planoUnlocked ? onPointerUp : undefined}
+              onPointerCancel={planoUnlocked ? onPointerUp : undefined}
             >
               <div
                 className="absolute inset-0"
@@ -1035,7 +1071,7 @@ export default function ReservasPlanoPage() {
               >
                 {/* Grid visual */}
                 <div
-                  className="absolute inset-0 opacity-60"
+                  className="absolute inset-0 opacity-40"
                   style={{
                     backgroundImage:
                       "linear-gradient(to right, rgba(148,163,184,0.22) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,0.22) 1px, transparent 1px)",
@@ -1050,14 +1086,14 @@ export default function ReservasPlanoPage() {
                   const base = [
                     "absolute -translate-x-1/2 -translate-y-1/2 select-none",
                     "grid place-items-center",
-                    "h-20 w-20",
+                    "h-24 w-24",
                     m.forma === "round" ? "rounded-full" : "rounded-2xl",
                     "border border-slate-200",
                     "shadow-sm",
                     st.bg,
                     "ring-2",
                     st.ring,
-                    editMode ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
+                    planoUnlocked && editMode ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
                   ].join(" ");
                   return (
                     <div
@@ -1066,8 +1102,8 @@ export default function ReservasPlanoPage() {
                       style={{ left, top }}
                       role="button"
                       tabIndex={0}
-                      onClick={() => (editMode ? openMesa(m.id) : openMesa(m.id))}
-                      onPointerDown={(e) => onPointerDownMesa(e, m)}
+                      onClick={() => openMesa(m.id)}
+                      onPointerDown={planoUnlocked && editMode ? (e) => onPointerDownMesa(e, m) : undefined}
                       aria-label={`Mesa ${m.numero}`}
                     >
                       <div className="text-center">
@@ -1084,6 +1120,19 @@ export default function ReservasPlanoPage() {
             </div>
           </div>
           )}
+
+          {/* Acción rápida (móvil): Añadir mesa */}
+          {viewMode !== "lista" && isToday && planoUnlocked ? (
+            <button
+              type="button"
+              className="fixed bottom-[86px] right-4 z-50 grid h-14 w-14 place-items-center rounded-full bg-premium-blue text-2xl font-black text-white shadow-lg shadow-premium-blue/20 hover:brightness-110 active:brightness-95 disabled:opacity-50"
+              onClick={addMesa}
+              disabled={addMesaLoading}
+              aria-label="Añadir mesa"
+            >
+              +
+            </button>
+          ) : null}
 
           {viewMode === "lista" ? (
             <div className="mt-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-100">

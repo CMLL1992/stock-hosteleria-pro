@@ -680,7 +680,8 @@ export function DashboardClient() {
                           });
 
                           const url = waMeUrl(g.telefono, msg);
-                          window.open(url, "_blank", "noopener,noreferrer");
+                          // UX (PWA/iOS): abre fuera sin reemplazar la ruta actual (evita “pantalla en blanco” al volver)
+                          window.open(url, "_blank", "noreferrer");
 
                           // Limpieza: resetea inputs a 0 (solo los productos de este proveedor)
                           setPedidoRapidoQty((prev) => {
