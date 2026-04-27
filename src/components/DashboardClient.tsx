@@ -14,7 +14,7 @@ import { supabase } from "@/lib/supabase";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { fetchEscandallosPrecioMapByProductIds, type EscandalloPrecioRow } from "@/lib/fetchEscandallosPrecioMap";
 import { logActivity } from "@/lib/activityLog";
-import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import { Building2, ChevronDown } from "lucide-react";
 // wa.me directo (mensaje propio) para reposición
 
@@ -100,90 +100,6 @@ export function DashboardClient() {
 
   const rows = useMemo(() => productosQuery.data ?? [], [productosQuery.data]);
 
-  const reservasMetricsQuery = useQuery({
-    queryKey: ["dashboard", "reservas-metrics", establecimientoId],
-    enabled: !!establecimientoId,
-    queryFn: async () => {
-      const since = new Date();
-      since.setDate(since.getDate() - 28);
-      const sinceISO = since.toISOString().slice(0, 10);
-      const estId = establecimientoId as string;
-
-      // Nota: `sala_reservas` puede variar entre instalaciones (prepago_eur/total/precio).
-      // Hacemos un intento robusto y si falla por columna inexistente, degradamos sin romper la UI.
-      let data: unknown[] | null = null;
-      try {
-        const res = await supabase()
-          .from("sala_reservas")
-          .select("fecha,hora,pax,prepago_eur")
-          .eq("establecimiento_id", estId)
-          .gte("fecha", sinceISO)
-          .limit(5000);
-        if (res.error) throw res.error;
-        data = (res.data ?? []) as unknown as unknown[];
-      } catch (e) {
-        // Fallback: sin el campo económico
-        try {
-          // eslint-disable-next-line no-console
-          console.error("[dashboard] reservas metrics query failed; fallback without prepago_eur", e);
-        } catch {
-          // ignore
-        }
-        const res2 = await supabase()
-          .from("sala_reservas")
-          .select("fecha,hora,pax")
-          .eq("establecimiento_id", estId)
-          .gte("fecha", sinceISO)
-          .limit(5000);
-        if (res2.error) throw res2.error;
-        data = (res2.data ?? []) as unknown as unknown[];
-      }
-
-      const rows = (data ?? []) as unknown as Array<Record<string, unknown>>;
-
-      const byDow = new Map<number, number>(); // 0..6 (Mon..Sun)
-      const byFranja = { comidas: 0, cenas: 0, otras: 0 };
-      let ventasEst = 0;
-
-      for (const r of rows) {
-        const fecha = String(r.fecha ?? "").slice(0, 10);
-        const hora = String(r.hora ?? "").trim();
-        const prep = Number(r.prepago_eur ?? 0) || 0;
-        ventasEst += Math.max(0, prep);
-
-        // DOW (Mon..Sun)
-        const t = Date.parse(`${fecha}T12:00:00`);
-        if (Number.isFinite(t)) {
-          const js = new Date(t).getDay(); // 0 Sun..6 Sat
-          const mon0 = (js + 6) % 7; // 0 Mon..6 Sun
-          byDow.set(mon0, (byDow.get(mon0) ?? 0) + 1);
-        }
-
-        // Franja horaria (aprox)
-        const hh = Math.trunc(Number(hora.split(":")[0] ?? ""));
-        if (Number.isFinite(hh)) {
-          if (hh >= 13 && hh <= 16) byFranja.comidas += 1;
-          else if (hh >= 20 && hh <= 23) byFranja.cenas += 1;
-          else byFranja.otras += 1;
-        } else {
-          byFranja.otras += 1;
-        }
-      }
-
-      const dowLabels = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
-      const ocupacionDow = dowLabels.map((label, i) => ({ label, reservas: byDow.get(i) ?? 0 }));
-      const ocupacionFranja = [
-        { label: "Comidas", reservas: byFranja.comidas },
-        { label: "Cenas", reservas: byFranja.cenas },
-        { label: "Otras", reservas: byFranja.otras }
-      ];
-
-      return { ventasEst, ocupacionDow, ocupacionFranja, totalReservas: rows.length };
-    },
-    staleTime: 20_000,
-    retry: 1
-  });
-
   const escandallosPrecioQuery = useQuery({
     queryKey: ["dashboard", "escandallos-precio", establecimientoId, productosQuery.data],
     enabled: !!establecimientoId && canSeePrices && !!productosQuery.data?.length,
@@ -196,12 +112,6 @@ export function DashboardClient() {
   });
 
   const bajoMinimos = useMemo(() => rows.filter((p) => p.stock_actual <= p.stock_minimo), [rows]);
-  const stockCriticoPct = useMemo(() => {
-    const total = rows.length;
-    if (!total) return 0;
-    return Math.max(0, Math.min(1, bajoMinimos.length / total));
-  }, [bajoMinimos.length, rows.length]);
-
   function sanitizeIntString(raw: string): string {
     const cleaned = String(raw ?? "").replace(/[^\d]/g, "");
     return cleaned === "" ? "" : String(Math.max(0, Math.trunc(Number(cleaned) || 0)));
@@ -312,7 +222,8 @@ export function DashboardClient() {
       const { data, error } = await supabase()
         .from("envases_catalogo")
         .select("id,coste")
-        .eq("establecimiento_id", establecimientoId as string);
+        // Envases del local + envases globales del sistema (establecimiento_id NULL)
+        .or(`establecimiento_id.eq.${establecimientoId as string},establecimiento_id.is.null`);
       if (error) throw error;
       const map = new Map<string, number>();
       for (const r of ((data ?? []) as unknown as Array<Record<string, unknown>>)) {
@@ -535,91 +446,7 @@ export function DashboardClient() {
 
       {/* Acceso a Pedidos eliminado: ahora está en la barra inferior */}
 
-      <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-slate-900">Inteligencia del local</p>
-            <p className="mt-1 text-sm text-slate-600">Métricas reales por establecimiento (últimos 28 días).</p>
-          </div>
-          <div className="shrink-0 text-right">
-            <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Ventas estimadas</p>
-            <p className="mt-1 text-xl font-black tabular-nums text-slate-900">
-              {formatEUR(reservasMetricsQuery.data?.ventasEst ?? 0)}
-            </p>
-          </div>
-        </div>
-
-        {reservasMetricsQuery.error ? (
-          <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-            No se pudo cargar `sala_reservas` para métricas (RLS/columna). {supabaseErrToString(reservasMetricsQuery.error)}
-          </p>
-        ) : null}
-
-        <div className="mt-4 grid gap-4 lg:grid-cols-3">
-          <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-2">
-            <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Ocupación (reservas por día)</p>
-            {reservasMetricsQuery.isLoading ? <p className="mt-2 text-sm text-slate-500">Cargando…</p> : null}
-            <div className="mt-3 h-40 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={
-                    reservasMetricsQuery.data?.ocupacionDow ?? [
-                      { label: "Lun", reservas: 0 },
-                      { label: "Mar", reservas: 0 },
-                      { label: "Mié", reservas: 0 },
-                      { label: "Jue", reservas: 0 },
-                      { label: "Vie", reservas: 0 },
-                      { label: "Sáb", reservas: 0 },
-                      { label: "Dom", reservas: 0 }
-                    ]
-                  }
-                >
-                  <XAxis dataKey="label" tickLine={false} axisLine={false} fontSize={12} />
-                  <YAxis tickLine={false} axisLine={false} fontSize={12} allowDecimals={false} width={26} />
-                  <Tooltip cursor={{ fill: "rgba(15, 23, 42, 0.06)" }} />
-                  <Bar dataKey="reservas" radius={[10, 10, 0, 0]} fill="#1D4ED8" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <p className="mt-2 text-xs text-slate-500">
-              Total reservas: <span className="font-semibold text-slate-700">{reservasMetricsQuery.data?.totalReservas ?? 0}</span>
-            </p>
-          </div>
-
-          <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Stock crítico</p>
-            <p className="mt-1 text-sm text-slate-600">Bajo mínimos vs total de productos</p>
-            <div className="relative mt-3 h-36 w-full">
-              <ResponsiveContainer width="100%" height="100%" style={{ pointerEvents: "none" }}>
-                <PieChart>
-                  <Pie
-                    data={[
-                      { key: "critico", label: "Bajo mínimos", value: bajoMinimos.length, color: "#EF4444" },
-                      { key: "ok", label: "OK", value: Math.max(0, rows.length - bajoMinimos.length), color: "#E2E8F0" }
-                    ]}
-                    dataKey="value"
-                    nameKey="label"
-                    innerRadius={44}
-                    outerRadius={62}
-                    paddingAngle={1}
-                    isAnimationActive={false}
-                  >
-                    <Cell fill="#EF4444" />
-                    <Cell fill="#E2E8F0" />
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="pointer-events-none absolute inset-0 grid place-items-center">
-                <p className="text-sm font-extrabold tabular-nums text-slate-900">{Math.round(stockCriticoPct * 100)}%</p>
-              </div>
-            </div>
-            <p className="mt-2 text-xs text-slate-500">
-              Bajo mínimos: <span className="font-semibold text-slate-700">{bajoMinimos.length}</span> /{" "}
-              <span className="font-semibold text-slate-700">{rows.length}</span>
-            </p>
-          </div>
-        </div>
-      </section>
+      {/* Sección de inteligencia eliminada (ventas/actividad) por decisión de producto */}
 
       <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
         <p className="text-sm font-semibold text-slate-900">Valor económico del inventario</p>
