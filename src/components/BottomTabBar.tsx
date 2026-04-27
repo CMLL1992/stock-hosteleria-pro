@@ -55,28 +55,32 @@ export function BottomTabBar() {
   }, [isAdmin]);
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 px-3 pb-3" style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 12px)" }} aria-label="Navegación inferior">
-      <div className="mx-auto max-w-3xl">
-        <div className="flex items-stretch justify-between gap-1 rounded-full border border-slate-200 bg-white/90 p-1.5 shadow-[0_18px_40px_rgba(15,23,42,0.10)] backdrop-blur-md">
-          {tabs.map((t) => {
-            const active = tabActive(pathname, t.href);
-            return (
-              <Link
-                key={t.href + t.label}
-                href={t.href}
-                className={[
-                  "flex min-h-[46px] min-w-0 flex-1 items-center justify-center rounded-full px-2 py-2 transition-all duration-200",
-                  active
-                    ? "bg-premium-blue/10 text-premium-blue ring-1 ring-premium-blue/20"
-                    : "text-slate-600 hover:bg-slate-50 active:bg-slate-50"
-                ].join(" ")}
-                aria-current={active ? "page" : undefined}
-              >
-                <span className="max-w-full truncate px-0.5 text-xs font-semibold tracking-wide">{t.label}</span>
-              </Link>
-            );
-          })}
-        </div>
+    <nav
+      className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-100 bg-white shadow-[0_-14px_30px_rgba(15,23,42,0.10)]"
+      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      aria-label="Navegación inferior"
+    >
+      <div className="mx-auto flex max-w-3xl items-stretch justify-between gap-1 px-2 pb-2 pt-2">
+        {tabs.map((t) => {
+          const active = tabActive(pathname, t.href);
+          return (
+            <Link
+              key={t.href + t.label}
+              href={t.href}
+              className={[
+                "relative flex min-h-[54px] min-w-0 flex-1 items-center justify-center px-2 py-2 transition-colors duration-200",
+                active ? "text-premium-blue" : "text-slate-500 hover:text-slate-700"
+              ].join(" ")}
+              aria-current={active ? "page" : undefined}
+            >
+              {/* Indicador superior (activo) */}
+              {active ? (
+                <span className="absolute left-2 right-2 top-0 h-1 rounded-b-full bg-premium-blue" aria-hidden />
+              ) : null}
+              <span className="max-w-full truncate px-0.5 text-[11px] font-semibold tracking-wide">{t.label}</span>
+            </Link>
+          );
+        })}
       </div>
     </nav>
   );
