@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -15,7 +15,7 @@ import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { fetchEscandallosPrecioMapByProductIds, type EscandalloPrecioRow } from "@/lib/fetchEscandallosPrecioMap";
 import { logActivity } from "@/lib/activityLog";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
-import { Building2, ChevronDown, ChevronRight } from "lucide-react";
+import { Building2, ChevronDown } from "lucide-react";
 // wa.me directo (mensaje propio) para reposición
 
 
