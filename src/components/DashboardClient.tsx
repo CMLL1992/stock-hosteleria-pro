@@ -16,7 +16,7 @@ import { fetchEscandallosPrecioMapByProductIds, type EscandalloPrecioRow } from 
 import { logActivity } from "@/lib/activityLog";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import { Building2 } from "lucide-react";
-import { waUrlPedidoAgrupadoProveedor } from "@/lib/whatsappPedido";
+// wa.me directo (mensaje propio) para reposición
 
 
 export function DashboardClient() {
@@ -32,6 +32,47 @@ export function DashboardClient() {
   const [confirmProd, setConfirmProd] = useState<null | { id: string; articulo: string; stock_vacios: number }>(null);
   const [confirming, setConfirming] = useState(false);
   const [envasesErr, setEnvasesErr] = useState<string | null>(null);
+
+  function buildReposicionWhatsAppText(input: {
+    nombreEstablecimiento: string;
+    nombreProveedor: string;
+    lineas: Array<{ articulo: string; cantidad: number; unidad?: string | null }>;
+  }): string {
+    const est = (input.nombreEstablecimiento ?? "").trim() || "Mi local";
+    const prov = (input.nombreProveedor ?? "").trim() || "Proveedor";
+    const lines = input.lineas.filter((l) => (Number(l.cantidad) || 0) > 0);
+    const header = `PEDIDO DE REPOSICIÓN · ${est}\nProveedor: ${prov}\n`;
+    const body =
+      lines.length === 0
+        ? "— (sin líneas)\n"
+        : lines
+            .map((l) => {
+              const qty = Math.max(0, Math.trunc(Number(l.cantidad) || 0));
+              const u = (l.unidad ?? "").trim();
+              return `- ${l.articulo}: ${qty}${u ? ` ${u}` : ""}`;
+            })
+            .join("\n") + "\n";
+    return `${header}\n${body}`;
+  }
+
+  function waMeUrl(phoneDigits: string | null, text: string): string {
+    const digits = (phoneDigits ?? "").replace(/\D/g, "");
+    // Si no hay número, WhatsApp Web/App abrirá y el usuario elegirá contacto.
+    const base = digits ? `https://wa.me/${digits}` : "https://wa.me/";
+    return `${base}?text=${encodeURIComponent(text)}`;
+  }
+
+  async function logReposicionIfPossible(input: { establecimiento_id: string; detalle_json: unknown }) {
+    try {
+      await supabase().from("reposiciones_log").insert({
+        establecimiento_id: input.establecimiento_id,
+        fecha: new Date().toISOString().slice(0, 10),
+        detalle_json: input.detalle_json
+      } as unknown as Record<string, unknown>);
+    } catch {
+      // opcional: si no existe la tabla o RLS bloquea, no rompemos el flujo operativo
+    }
+  }
 
   useCambiosGlobalesRealtime({
     establecimientoId: establecimientoId ?? null,
@@ -80,13 +121,7 @@ export function DashboardClient() {
     return Math.max(0, Math.trunc(Number(pedidoRapidoQty[id] ?? "0") || 0));
   }
 
-  function setQtyDelta(id: string, delta: number) {
-    setPedidoRapidoQty((prev) => {
-      const curr = Math.max(0, Math.trunc(Number(prev[id] ?? "0") || 0));
-      const next = Math.max(0, curr + delta);
-      return { ...prev, [id]: String(next) };
-    });
-  }
+  // Nota: antes había botones +/-; ahora el flujo es con input numérico directo.
 
   const bajoMinimosPorProveedor = useMemo(() => {
     const map = new Map<string, { nombre: string; telefono: string | null; items: typeof bajoMinimos }>();
@@ -570,7 +605,6 @@ export function DashboardClient() {
                           <div className="text-center">Pedir</div>
                         </div>
                         {g.items.map((p) => {
-                          const q = qtyNum(p.id);
                           const min = Number(p.stock_minimo) || 0;
                           const act = Number(p.stock_actual) || 0;
                           return (
@@ -582,63 +616,83 @@ export function DashboardClient() {
                                   <span className="font-bold text-slate-700">{min}</span>
                                 </p>
                               </div>
-                              <div className="grid grid-cols-[44px_1fr_44px] items-center gap-2">
-                                <button
-                                  type="button"
-                                  className="min-h-12 min-w-12 rounded-2xl border border-slate-200 bg-white text-2xl font-black leading-none text-slate-900 hover:bg-slate-50 disabled:opacity-40"
-                                  onClick={() => setQtyDelta(p.id, -1)}
-                                  disabled={q <= 0}
-                                  aria-label={`Restar 1 a ${p.articulo}`}
-                                >
-                                  −
-                                </button>
+                              <div className="flex items-center justify-center">
                                 <input
-                                  className="min-h-12 w-full min-w-24 rounded-2xl border border-slate-200 bg-white px-3 text-center text-xl font-bold tabular-nums text-slate-900"
+                                  type="number"
+                                  min={0}
+                                  step={1}
+                                  className={[
+                                    "min-h-12 w-full min-w-24 rounded-2xl border border-slate-200 bg-white px-3 text-center text-xl font-bold tabular-nums text-slate-900 shadow-sm ring-1 ring-slate-100",
+                                    "focus:outline-none focus:ring-2 focus:ring-premium-blue/20"
+                                  ].join(" ")}
                                   inputMode="numeric"
-                                  pattern="[0-9]*"
-                                  value={String(q)}
-                                  onChange={(e) =>
-                                    setPedidoRapidoQty((d) => ({ ...d, [p.id]: sanitizeIntString(e.currentTarget.value) }))
+                                  value={pedidoRapidoQty[p.id] ?? "0"}
+                                  onChange={(e) => setPedidoRapidoQty((d) => ({ ...d, [p.id]: sanitizeIntString(e.currentTarget.value) }))}
+                                  onBlur={() =>
+                                    setPedidoRapidoQty((d) => {
+                                      const curr = String(d[p.id] ?? "").trim();
+                                      if (curr !== "") return d;
+                                      return { ...d, [p.id]: "0" };
+                                    })
                                   }
                                   aria-label={`Cantidad a pedir de ${p.articulo}`}
                                 />
-                                <button
-                                  type="button"
-                                  className="min-h-12 min-w-12 rounded-2xl border border-slate-200 bg-white text-2xl font-black leading-none text-slate-900 hover:bg-slate-50"
-                                  onClick={() => setQtyDelta(p.id, +1)}
-                                  aria-label={`Sumar 1 a ${p.articulo}`}
-                                >
-                                  +
-                                </button>
                               </div>
                             </div>
                           );
                         })}
                       </div>
 
-                      <a
-                        href={waUrlPedidoAgrupadoProveedor({
-                          nombreProveedor: g.nombre,
-                          telefonoWhatsapp: g.telefono,
-                          nombreEstablecimiento: (activeEstablishmentName ?? "").trim() || "mi local",
-                          lineas: g.items
+                      <button
+                        type="button"
+                        className={[
+                          "premium-btn-primary w-full justify-center inline-flex",
+                          g.items.some((p) => qtyNum(p.id) > 0) ? "" : "pointer-events-none opacity-50"
+                        ].join(" ")}
+                        onClick={async () => {
+                          if (!establecimientoId) return;
+                          const ok = window.confirm("¿Deseas enviar este pedido al proveedor por WhatsApp?");
+                          if (!ok) return;
+
+                          const lineas = g.items
                             .map((p) => ({
                               articulo: p.articulo,
                               cantidad: qtyNum(p.id),
                               unidad: p.unidad
                             }))
-                            .filter((l) => (Number(l.cantidad) || 0) > 0)
-                        })}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={[
-                          "premium-btn-primary w-full justify-center inline-flex",
-                          g.items.some((p) => qtyNum(p.id) > 0) ? "" : "pointer-events-none opacity-50"
-                        ].join(" ")}
-                        onClick={() => setPedidoRapidoOpen(false)}
+                            .filter((l) => (Number(l.cantidad) || 0) > 0);
+
+                          const msg = buildReposicionWhatsAppText({
+                            nombreEstablecimiento: (activeEstablishmentName ?? "").trim() || "mi local",
+                            nombreProveedor: g.nombre,
+                            lineas
+                          });
+
+                          void logReposicionIfPossible({
+                            establecimiento_id: establecimientoId,
+                            detalle_json: {
+                              tipo: "reposicion_bajo_minimos",
+                              proveedor: { nombre: g.nombre, telefono_whatsapp: g.telefono },
+                              establecimiento: { id: establecimientoId, nombre: (activeEstablishmentName ?? "").trim() || null },
+                              lineas,
+                              created_at: new Date().toISOString()
+                            }
+                          });
+
+                          const url = waMeUrl(g.telefono, msg);
+                          window.open(url, "_blank", "noopener,noreferrer");
+
+                          // Limpieza: resetea inputs a 0 (solo los productos de este proveedor)
+                          setPedidoRapidoQty((prev) => {
+                            const next = { ...prev };
+                            for (const p of g.items) next[p.id] = "0";
+                            return next;
+                          });
+                          setPedidoRapidoOpen(false);
+                        }}
                       >
-                        Enviar Pedido por WhatsApp
-                      </a>
+                        Enviar Pedido
+                      </button>
                     </section>
                   ))}
               </div>
