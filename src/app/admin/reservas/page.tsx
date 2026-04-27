@@ -425,6 +425,8 @@ function ReservasPlanoInner() {
         .eq("establecimiento_id", activeEstablishmentId);
       if (res.error) throw res.error;
       setSheetOpen(false);
+      setManageOpen(false);
+      setMergeMode(false);
       setSelMesaId(null);
       void load();
     } catch (e) {
@@ -751,6 +753,8 @@ function ReservasPlanoInner() {
             onClose={() => {
               setSheetOpen(false);
               setManageOpen(false);
+              setSelMesaId(null);
+              setMergeMode(false);
             }}
             variant="light"
           >
