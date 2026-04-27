@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { MobileHeader } from "@/components/MobileHeader";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import type { AppRole } from "@/lib/session";
@@ -106,6 +105,7 @@ export default function EventosPage() {
   const [proveedores, setProveedores] = useState<ProveedorRow[]>([]);
   const [catalogo, setCatalogo] = useState<DashboardProducto[]>([]);
   const [catalogoSearch, setCatalogoSearch] = useState("");
+  const [pickProductoId, setPickProductoId] = useState<string>("");
 
   const [eventos, setEventos] = useState<Evento[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -243,10 +243,44 @@ export default function EventosPage() {
     return catalogo.filter((p) => p.articulo.toLowerCase().includes(q));
   }, [catalogo, catalogoSearch]);
 
+  const catalogoDropdown = useMemo(() => {
+    const list = filteredCatalogo.slice();
+    list.sort((a, b) => a.articulo.localeCompare(b.articulo, "es", { sensitivity: "base" }));
+    return list;
+  }, [filteredCatalogo]);
+
   const proveedorSelected = useMemo(() => {
     if (!selected?.proveedorId) return null;
     return proveedores.find((p) => p.id === selected.proveedorId) ?? null;
   }, [proveedores, selected?.proveedorId]);
+
+  function setPedidoDelta(ev: Evento, productoId: string, delta: number) {
+    const curr = ev.lineas.find((l) => l.productoId === productoId);
+    const next = Math.max(0, (Number(curr?.stockEvento) || 0) + delta);
+    updateLinea(ev, productoId, { stockEvento: next });
+  }
+
+  function confirmarPedidoYEnviarWhatsApp(ev: Evento) {
+    const url = waUrl;
+    if (!url) return;
+    // Lo pedido pasa a "Recibido" como stock inicial del evento (sin tocar stock real).
+    setEventos((prev) =>
+      prev.map((e) => {
+        if (e.id !== ev.id) return e;
+        return {
+          ...e,
+          lineas: e.lineas.map((l) => {
+            const pedido = Math.max(0, Number(l.stockEvento) || 0);
+            if (pedido <= 0) return l;
+            // Si ya han editado recibido manualmente, no lo pisamos.
+            if ((Number(l.recibidoQty) || 0) > 0) return l;
+            return { ...l, recibidoQty: pedido };
+          })
+        };
+      })
+    );
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
 
   const resumen = useMemo(() => {
     const lineas = selected?.lineas ?? [];
@@ -411,20 +445,16 @@ export default function EventosPage() {
                   </div>
 
                   <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                    <a
-                      href={waUrl ?? "#"}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      type="button"
                       className={[
                         "premium-btn-primary inline-flex w-full justify-center",
                         waUrl ? "" : "pointer-events-none opacity-50"
                       ].join(" ")}
+                      onClick={() => confirmarPedidoYEnviarWhatsApp(selected)}
                     >
                       Enviar Pedido por WhatsApp
-                    </a>
-                    <Link href="/admin/pedidos" className="premium-btn-secondary inline-flex w-full justify-center">
-                      Ir a Pedidos (normal)
-                    </Link>
+                    </button>
                   </div>
 
                   <p className="mt-3 text-xs text-slate-500">
@@ -434,33 +464,43 @@ export default function EventosPage() {
 
                 <div className="grid gap-4 lg:grid-cols-2">
                   <div className="premium-card">
-                    <p className="text-sm font-black tracking-tight text-slate-900">Añadir productos (catálogo)</p>
-                    <input
-                      className="premium-input mt-3"
-                      value={catalogoSearch}
-                      onChange={(e) => setCatalogoSearch(e.currentTarget.value)}
-                      placeholder="Buscar producto…"
-                      aria-label="Buscar producto…"
-                    />
-                    <div className="mt-3 max-h-[360px] overflow-auto rounded-2xl border border-slate-200 bg-white">
-                      {filteredCatalogo.slice(0, 200).map((p) => (
-                        <button
-                          key={p.id}
-                          type="button"
-                          onClick={() => addProductoToEvento(selected, p)}
-                          className="flex w-full items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-left hover:bg-slate-50"
-                        >
-                          <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">{p.articulo}</span>
-                          <span className="shrink-0 text-xs text-slate-500">Añadir</span>
-                        </button>
-                      ))}
+                    <p className="text-sm font-black tracking-tight text-slate-900">Añadir producto</p>
+                    <div className="mt-3 grid gap-2">
+                      <label className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Producto (dropdown)</label>
+                      <select
+                        className="premium-input"
+                        value={pickProductoId}
+                        onChange={(e) => {
+                          const id = e.currentTarget.value;
+                          setPickProductoId(id);
+                          const p = catalogo.find((x) => x.id === id);
+                          if (!p) return;
+                          addProductoToEvento(selected, p);
+                          // Reset para poder añadir otro rápidamente
+                          setPickProductoId("");
+                        }}
+                      >
+                        <option value="">Selecciona un producto…</option>
+                        {catalogoDropdown.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.articulo}
+                            </option>
+                          ))}
+                      </select>
+                      <input
+                        className="premium-input"
+                        value={catalogoSearch}
+                        onChange={(e) => setCatalogoSearch(e.currentTarget.value)}
+                        placeholder="Filtrar (opcional)…"
+                        aria-label="Filtrar productos…"
+                      />
                     </div>
                   </div>
 
                   <div className="premium-card">
-                    <p className="text-sm font-black tracking-tight text-slate-900">Stock de Evento (pedido)</p>
+                    <p className="text-sm font-black tracking-tight text-slate-900">Pedido del evento</p>
                     {selected.lineas.length === 0 ? (
-                      <p className="mt-2 text-sm text-slate-600">Añade productos desde el catálogo para crear el pedido.</p>
+                      <p className="mt-2 text-sm text-slate-600">Selecciona productos arriba para empezar.</p>
                     ) : (
                       <div className="mt-3 space-y-2">
                         {selected.lineas.map((l) => (
@@ -475,16 +515,30 @@ export default function EventosPage() {
                               </button>
                             </div>
 
-                            <div className="mt-3 grid grid-cols-[1fr_140px] items-end gap-2">
-                              <div className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Stock de Evento</div>
-                              <input
-                                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-center text-xl font-bold tabular-nums text-slate-900"
-                                inputMode="numeric"
-                                pattern="[0-9]*"
-                                value={String(l.stockEvento)}
-                                onChange={(e) => updateLinea(selected, l.productoId, { stockEvento: parseIntInput(e.currentTarget.value) })}
-                                aria-label={`Stock de evento para ${l.articulo}`}
-                              />
+                            <div className="mt-3 grid grid-cols-[1fr_170px] items-center gap-2">
+                              <div className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Pedir</div>
+                              <div className="grid grid-cols-[44px_1fr_44px] items-center gap-2">
+                                <button
+                                  type="button"
+                                  className="min-h-12 min-w-12 rounded-2xl border border-slate-200 bg-white text-2xl font-black leading-none text-slate-900 hover:bg-slate-50 disabled:opacity-40"
+                                  onClick={() => setPedidoDelta(selected, l.productoId, -1)}
+                                  disabled={(Number(l.stockEvento) || 0) <= 0}
+                                  aria-label={`Restar 1 a pedido de ${l.articulo}`}
+                                >
+                                  −
+                                </button>
+                                <div className="min-h-12 w-full min-w-24 rounded-2xl border border-slate-200 bg-slate-50 px-3 text-center text-xl font-bold tabular-nums text-slate-900 grid place-items-center">
+                                  {Math.max(0, Number(l.stockEvento) || 0)}
+                                </div>
+                                <button
+                                  type="button"
+                                  className="min-h-12 min-w-12 rounded-2xl border border-slate-200 bg-white text-2xl font-black leading-none text-slate-900 hover:bg-slate-50"
+                                  onClick={() => setPedidoDelta(selected, l.productoId, +1)}
+                                  aria-label={`Sumar 1 a pedido de ${l.articulo}`}
+                                >
+                                  +
+                                </button>
+                              </div>
                             </div>
                           </div>
                         ))}
