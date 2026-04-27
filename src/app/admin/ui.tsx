@@ -96,7 +96,7 @@ const SECTIONS: AdminSection[] = [
       {
         id: "eventos",
         href: "/admin/eventos",
-        title: "EVENTOS",
+        title: "Eventos",
         subtitle: "Pedidos y control financiero aislado (fantasma)."
       },
       {
