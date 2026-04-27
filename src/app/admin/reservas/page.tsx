@@ -409,7 +409,11 @@ function ReservasPlanoInner() {
     // Permitir borrar desde "Gestionar" aunque el plano esté bloqueado.
     if (!canDrag) return;
     if (deletingMesa) return;
-    const ok = typeof window !== "undefined" ? window.confirm(`¿Eliminar la mesa ${selMesa.numero}?`) : false;
+    const decor = isDecorativo(selMesa);
+    const label = decor
+      ? String(selMesa.nombre ?? "").trim() || "este elemento estructural"
+      : `la mesa ${selMesa.numero}`;
+    const ok = typeof window !== "undefined" ? window.confirm(`¿Eliminar ${label}?`) : false;
     if (!ok) return;
     setDeletingMesa(true);
     setErrMsg(null);
@@ -711,6 +715,12 @@ function ReservasPlanoInner() {
                         if (planoUnlocked) {
                           setSelMesaId(m.id);
                           haptic(20);
+                          // Decorativos: en edición el tap no abría el drawer; abrimos Gestionar para poder eliminar.
+                          if (isDecorativo(m)) {
+                            setSheetOpen(true);
+                            setManageOpen(true);
+                            setMergeMode(false);
+                          }
                           return;
                         }
                         openMesa(m.id);
@@ -735,16 +745,26 @@ function ReservasPlanoInner() {
           </div>
 
           {/* BottomSheet */}
-          <Drawer open={sheetOpen} title={selMesa ? `Mesa ${selMesa.numero}` : "Mesa"} onClose={() => setSheetOpen(false)} variant="light">
+          <Drawer
+            open={sheetOpen}
+            title={selMesa ? (isDecorativo(selMesa) ? String(selMesa.nombre ?? "").trim() || "Elemento" : `Mesa ${selMesa.numero}`) : "Mesa"}
+            onClose={() => {
+              setSheetOpen(false);
+              setManageOpen(false);
+            }}
+            variant="light"
+          >
             {!selMesa ? null : (
               <div className="space-y-4 pb-6">
-                <button
-                  type="button"
-                  className="min-h-12 w-full rounded-2xl bg-blue-600 text-sm font-extrabold text-white hover:bg-blue-700"
-                  onClick={() => setManageOpen(true)}
-                >
-                  Gestionar
-                </button>
+                {!manageOpen ? (
+                  <button
+                    type="button"
+                    className="min-h-12 w-full rounded-2xl bg-blue-600 text-sm font-extrabold text-white hover:bg-blue-700"
+                    onClick={() => setManageOpen(true)}
+                  >
+                    Gestionar
+                  </button>
+                ) : null}
 
                 {manageOpen ? (
                   <div className="space-y-3">
