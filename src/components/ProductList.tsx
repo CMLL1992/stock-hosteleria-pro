@@ -584,14 +584,14 @@ export function ProductList() {
           <button
             type="button"
             onClick={() => openRecarga()}
-            className="min-h-12 w-full rounded-3xl border-2 border-slate-900 bg-slate-900 px-4 text-sm font-extrabold uppercase tracking-wide text-white shadow-sm hover:bg-slate-800 sm:w-auto"
+            className="min-h-12 w-full rounded-3xl bg-premium-blue px-5 text-sm font-extrabold uppercase tracking-wide text-white shadow-sm shadow-blue-900/10 hover:brightness-95 sm:w-auto"
           >
             RECARGAR NEVERAS
           </button>
           <button
             type="button"
             onClick={() => openModificarStock()}
-            className="min-h-12 w-full rounded-3xl border border-slate-200 bg-white px-4 text-sm font-extrabold uppercase tracking-wide text-slate-900 shadow-sm hover:bg-slate-50 sm:w-auto"
+            className="min-h-12 w-full rounded-3xl border border-slate-200 bg-white px-5 text-sm font-extrabold uppercase tracking-wide text-slate-900 shadow-sm hover:bg-slate-50 sm:w-auto"
           >
             MODIFICAR STOCK
           </button>
@@ -701,14 +701,19 @@ export function ProductList() {
               <div
                 className={[
                   "w-full max-w-full rounded-3xl border border-slate-200 bg-white p-4 shadow-sm",
-                  sem === "sin" ? "border-l-4 border-l-red-500" : sem === "bajo" ? "border-l-4 border-l-amber-400" : "border-l-4 border-l-emerald-500"
+                  "border-t-4",
+                  sem === "sin"
+                    ? "border-t-premium-orange"
+                    : sem === "bajo"
+                      ? "border-t-premium-orange"
+                      : "border-t-premium-green"
                 ].join(" ")}
               >
                 <div className="flex items-start gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <Link href={`/p/${encodeURIComponent(p.id)}`} className="min-w-0">
-                        <p className="text-lg font-bold leading-snug text-slate-900">{p.articulo}</p>
+                        <p className="text-lg font-black leading-snug text-slate-900">{p.articulo}</p>
                       </Link>
                       <span
                         className="inline-flex min-h-8 items-center rounded-full border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700"
@@ -799,8 +804,8 @@ export function ProductList() {
             {recargaFamilies.map(([fam, items]) => {
               const open = !!recargaSearch.trim();
               return (
-                <details key={fam} open={open} className="rounded-3xl border border-slate-200 bg-slate-50">
-                  <summary className="cursor-pointer list-none rounded-3xl px-4 py-3">
+                <details key={fam} open={open} className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+                  <summary className="cursor-pointer list-none rounded-3xl bg-slate-50 px-4 py-3">
                     <div className="flex items-center justify-between gap-3">
                       <p className="text-sm font-extrabold uppercase tracking-wide text-slate-900">{fam}</p>
                       <p className="text-xs font-semibold text-slate-500">{items.length}</p>
@@ -812,7 +817,7 @@ export function ProductList() {
                         const q = recargaQtyNum(p.id);
                         const v = recargaVaciosNum(p.id);
                         return (
-                          <div key={p.id} className="rounded-2xl border border-slate-200 bg-white p-3">
+                          <div key={p.id} className="rounded-2xl border border-slate-200 bg-white p-4">
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
                                 <p className="truncate text-sm font-bold text-slate-900">{p.articulo}</p>
@@ -836,7 +841,7 @@ export function ProductList() {
                             </div>
 
                             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                              <div className="rounded-2xl bg-slate-50 p-3">
+                              <div className="rounded-2xl bg-slate-50 p-4">
                                 <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-600">Cant. a Neveras</p>
                                 <div className="mt-2 grid grid-cols-[44px_1fr_44px] items-center gap-2">
                                   <button
@@ -869,7 +874,7 @@ export function ProductList() {
                                 </div>
                               </div>
 
-                              <div className="rounded-2xl bg-slate-50 p-3">
+                              <div className="rounded-2xl bg-slate-50 p-4">
                                 <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-600">Envases Vacíos (al almacén)</p>
                                 <div className="mt-2 grid grid-cols-[44px_1fr_44px] items-center gap-2">
                                   <button

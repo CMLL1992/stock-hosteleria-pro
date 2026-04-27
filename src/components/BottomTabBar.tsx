@@ -56,7 +56,7 @@ export function BottomTabBar() {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur-md"
+      className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/90 shadow-[0_-10px_30px_rgba(15,23,42,0.06)] backdrop-blur-md"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       aria-label="Navegación inferior"
     >
@@ -69,7 +69,9 @@ export function BottomTabBar() {
               href={t.href}
               className={[
                 "flex min-h-[52px] min-w-0 flex-1 items-center justify-center rounded-2xl px-1 py-2 transition-colors",
-                active ? "bg-slate-100 text-slate-900" : "text-slate-600 active:bg-slate-50"
+                active
+                  ? "bg-premium-blue/10 text-premium-blue ring-1 ring-premium-blue/20"
+                  : "text-slate-600 hover:bg-slate-50 active:bg-slate-50"
               ].join(" ")}
               aria-current={active ? "page" : undefined}
             >

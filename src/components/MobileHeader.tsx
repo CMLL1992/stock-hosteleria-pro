@@ -62,7 +62,7 @@ export function MobileHeader({
   }, [perfilOpen]);
 
   return (
-    <header className="sticky top-0 z-30 border-b border-slate-200 bg-slate-50/85 backdrop-blur">
+    <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/70 backdrop-blur">
       <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -109,7 +109,7 @@ export function MobileHeader({
               return "Staff";
             })()}
           </p>
-          <h1 className="truncate text-lg font-semibold text-slate-900">{title}</h1>
+          <h1 className="truncate text-xl font-black tracking-tight text-slate-900">{title}</h1>
           {isSuperadmin ? (
             <div className="mt-2 max-w-[280px]">
               <label className="sr-only" htmlFor="establecimiento">

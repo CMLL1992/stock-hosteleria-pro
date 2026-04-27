@@ -4,6 +4,13 @@ export default {
   content: ["./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
+      colors: {
+        premium: {
+          blue: "#1D4ED8",
+          orange: "#F97316",
+          green: "#10B981"
+        }
+      },
       keyframes: {
         "stock-alert": {
           "0%, 100%": { transform: "translateX(0)" },

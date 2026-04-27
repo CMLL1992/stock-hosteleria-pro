@@ -181,9 +181,9 @@ export function DashboardClient() {
 
   const coloresValoracion = useMemo(() => {
     return {
-      stock: "#2563EB", // Azul
+      stock: "#1D4ED8", // Azul (Premium)
       "env-llenos": "#F97316", // Naranja
-      "env-vacios": "#22C55E" // Verde
+      "env-vacios": "#10B981" // Verde
     } as const;
   }, []);
 
