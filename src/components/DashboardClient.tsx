@@ -155,14 +155,15 @@ export function DashboardClient() {
   const [pedidoRapidoOpenProv, setPedidoRapidoOpenProv] = useState<Record<string, boolean>>({});
   useEffect(() => {
     if (!pedidoRapidoOpen) return;
-    // Estado inicial: limpio (colapsado). Abrimos el primero si existe para guiar el flujo.
+    // Estado inicial: todos plegados (el usuario elige proveedor).
     setPedidoRapidoOpenProv(() => {
       const next: Record<string, boolean> = {};
-      const firstKey = bajoMinimosPorProveedor[0]?.key ?? "";
-      for (const g of bajoMinimosPorProveedor) next[g.key] = g.key === firstKey;
+      for (const g of bajoMinimosPorProveedor) next[g.key] = false;
       return next;
     });
   }, [bajoMinimosPorProveedor, pedidoRapidoOpen]);
+
+  const pedidoRapidoProvBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   function bucketUnidad(p: { unidad: string | null; categoria: string | null; articulo: string }): "caja" | "barril" | "gas" | null {
     const unidad = (p.unidad ?? "").trim().toLowerCase();
@@ -576,11 +577,21 @@ export function DashboardClient() {
                       <button
                         type="button"
                         className="w-full text-left"
+                        ref={(el) => {
+                          pedidoRapidoProvBtnRefs.current[g.key] = el;
+                        }}
                         onClick={() =>
-                          setPedidoRapidoOpenProv((prev) => ({
-                            ...prev,
-                            [g.key]: !prev[g.key]
-                          }))
+                          setPedidoRapidoOpenProv((prev) => {
+                            const nextOpen = !prev[g.key];
+                            const next = { ...prev, [g.key]: nextOpen };
+                            if (nextOpen) {
+                              window.setTimeout(() => {
+                                const el = pedidoRapidoProvBtnRefs.current[g.key];
+                                el?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+                              }, 80);
+                            }
+                            return next;
+                          })
                         }
                         aria-expanded={!!pedidoRapidoOpenProv[g.key]}
                       >
@@ -597,110 +608,119 @@ export function DashboardClient() {
                             </p>
                           </div>
                           <span className="shrink-0 text-slate-400">
-                            {pedidoRapidoOpenProv[g.key] ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+                            <ChevronDown
+                              className={[
+                                "h-5 w-5 transition-transform duration-200 ease-out",
+                                pedidoRapidoOpenProv[g.key] ? "rotate-180" : "rotate-0"
+                              ].join(" ")}
+                              aria-hidden
+                            />
                           </span>
                         </div>
                       </button>
 
                       {pedidoRapidoOpenProv[g.key] ? (
-                        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-                          <div className="grid grid-cols-[1fr_148px] gap-2 border-b border-slate-100 px-4 py-2 text-[11px] font-extrabold uppercase tracking-wide text-slate-500">
-                            <div>Producto</div>
-                            <div className="text-center">Pedir</div>
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-2 shadow-sm">
+                          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                            <div className="grid grid-cols-[1fr_148px] gap-2 border-b border-slate-100 px-4 py-2 text-[11px] font-extrabold uppercase tracking-wide text-slate-500">
+                              <div>Producto</div>
+                              <div className="text-center">Pedir</div>
+                            </div>
+                            {g.items.map((p) => {
+                              const min = Number(p.stock_minimo) || 0;
+                              const act = Number(p.stock_actual) || 0;
+                              return (
+                                <div key={p.id} className="grid grid-cols-[1fr_148px] items-center gap-2 border-b border-slate-100 px-4 py-2">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-semibold text-slate-900">{p.articulo}</p>
+                                    <p className="mt-0.5 text-[11px] text-slate-500">
+                                      Stock: <span className="font-bold text-slate-700">{act}</span> · Mínimo:{" "}
+                                      <span className="font-bold text-slate-700">{min}</span>
+                                    </p>
+                                  </div>
+                                  <div className="flex items-center justify-center">
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      step={1}
+                                      className={[
+                                        "min-h-11 w-full min-w-24 rounded-2xl border border-slate-200 bg-white px-3 text-center text-lg font-bold tabular-nums text-slate-900 shadow-sm ring-1 ring-slate-100",
+                                        "focus:outline-none focus:ring-2 focus:ring-premium-blue/20"
+                                      ].join(" ")}
+                                      inputMode="numeric"
+                                      value={pedidoRapidoQty[p.id] ?? "0"}
+                                      onChange={(e) =>
+                                        setPedidoRapidoQty((d) => ({ ...d, [p.id]: sanitizeIntString(e.currentTarget.value) }))
+                                      }
+                                      onBlur={() =>
+                                        setPedidoRapidoQty((d) => {
+                                          const curr = String(d[p.id] ?? "").trim();
+                                          if (curr !== "") return d;
+                                          return { ...d, [p.id]: "0" };
+                                        })
+                                      }
+                                      aria-label={`Cantidad a pedir de ${p.articulo}`}
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
-                          {g.items.map((p) => {
-                            const min = Number(p.stock_minimo) || 0;
-                            const act = Number(p.stock_actual) || 0;
-                            return (
-                              <div key={p.id} className="grid grid-cols-[1fr_148px] items-center gap-2 border-b border-slate-100 px-4 py-2">
-                                <div className="min-w-0">
-                                  <p className="truncate text-sm font-semibold text-slate-900">{p.articulo}</p>
-                                  <p className="mt-0.5 text-[11px] text-slate-500">
-                                    Stock: <span className="font-bold text-slate-700">{act}</span> · Mínimo:{" "}
-                                    <span className="font-bold text-slate-700">{min}</span>
-                                  </p>
-                                </div>
-                                <div className="flex items-center justify-center">
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    step={1}
-                                    className={[
-                                      "min-h-11 w-full min-w-24 rounded-2xl border border-slate-200 bg-white px-3 text-center text-lg font-bold tabular-nums text-slate-900 shadow-sm ring-1 ring-slate-100",
-                                      "focus:outline-none focus:ring-2 focus:ring-premium-blue/20"
-                                    ].join(" ")}
-                                    inputMode="numeric"
-                                    value={pedidoRapidoQty[p.id] ?? "0"}
-                                    onChange={(e) =>
-                                      setPedidoRapidoQty((d) => ({ ...d, [p.id]: sanitizeIntString(e.currentTarget.value) }))
-                                    }
-                                    onBlur={() =>
-                                      setPedidoRapidoQty((d) => {
-                                        const curr = String(d[p.id] ?? "").trim();
-                                        if (curr !== "") return d;
-                                        return { ...d, [p.id]: "0" };
-                                      })
-                                    }
-                                    aria-label={`Cantidad a pedir de ${p.articulo}`}
-                                  />
-                                </div>
-                              </div>
-                            );
-                          })}
+
+                          <button
+                            type="button"
+                            className={[
+                              "premium-btn-primary w-full justify-center inline-flex mt-2",
+                              g.items.some((p) => qtyNum(p.id) > 0) ? "" : "pointer-events-none opacity-50"
+                            ].join(" ")}
+                            onClick={async () => {
+                              if (!establecimientoId) return;
+                              const ok = window.confirm("¿Deseas enviar este pedido al proveedor por WhatsApp?");
+                              if (!ok) return;
+
+                              const lineas = g.items
+                                .map((p) => ({
+                                  articulo: p.articulo,
+                                  cantidad: qtyNum(p.id),
+                                  unidad: p.unidad
+                                }))
+                                .filter((l) => (Number(l.cantidad) || 0) > 0);
+
+                              const msg = buildReposicionWhatsAppText({
+                                nombreEstablecimiento: (activeEstablishmentName ?? "").trim() || "mi local",
+                                nombreProveedor: g.nombre,
+                                lineas
+                              });
+
+                              void logReposicionIfPossible({
+                                establecimiento_id: establecimientoId,
+                                detalle_json: {
+                                  tipo: "reposicion_bajo_minimos",
+                                  proveedor: { nombre: g.nombre, telefono_whatsapp: g.telefono },
+                                  establecimiento: { id: establecimientoId, nombre: (activeEstablishmentName ?? "").trim() || null },
+                                  lineas,
+                                  created_at: new Date().toISOString()
+                                }
+                              });
+
+                              const url = waMeUrl(g.telefono, msg);
+                              // UX (PWA/iOS): abre fuera sin reemplazar la ruta actual (evita “pantalla en blanco” al volver)
+                              window.open(url, "_blank", "noreferrer");
+
+                              // Limpieza: resetea inputs a 0 (solo los productos de este proveedor)
+                              setPedidoRapidoQty((prev) => {
+                                const next = { ...prev };
+                                for (const p of g.items) next[p.id] = "0";
+                                return next;
+                              });
+                              setPedidoRapidoOpen(false);
+                            }}
+                          >
+                            Enviar Pedido
+                          </button>
                         </div>
                       ) : null}
 
-                      <button
-                        type="button"
-                        className={[
-                          "premium-btn-primary w-full justify-center inline-flex",
-                          g.items.some((p) => qtyNum(p.id) > 0) ? "" : "pointer-events-none opacity-50"
-                        ].join(" ")}
-                        onClick={async () => {
-                          if (!establecimientoId) return;
-                          const ok = window.confirm("¿Deseas enviar este pedido al proveedor por WhatsApp?");
-                          if (!ok) return;
-
-                          const lineas = g.items
-                            .map((p) => ({
-                              articulo: p.articulo,
-                              cantidad: qtyNum(p.id),
-                              unidad: p.unidad
-                            }))
-                            .filter((l) => (Number(l.cantidad) || 0) > 0);
-
-                          const msg = buildReposicionWhatsAppText({
-                            nombreEstablecimiento: (activeEstablishmentName ?? "").trim() || "mi local",
-                            nombreProveedor: g.nombre,
-                            lineas
-                          });
-
-                          void logReposicionIfPossible({
-                            establecimiento_id: establecimientoId,
-                            detalle_json: {
-                              tipo: "reposicion_bajo_minimos",
-                              proveedor: { nombre: g.nombre, telefono_whatsapp: g.telefono },
-                              establecimiento: { id: establecimientoId, nombre: (activeEstablishmentName ?? "").trim() || null },
-                              lineas,
-                              created_at: new Date().toISOString()
-                            }
-                          });
-
-                          const url = waMeUrl(g.telefono, msg);
-                          // UX (PWA/iOS): abre fuera sin reemplazar la ruta actual (evita “pantalla en blanco” al volver)
-                          window.open(url, "_blank", "noreferrer");
-
-                          // Limpieza: resetea inputs a 0 (solo los productos de este proveedor)
-                          setPedidoRapidoQty((prev) => {
-                            const next = { ...prev };
-                            for (const p of g.items) next[p.id] = "0";
-                            return next;
-                          });
-                          setPedidoRapidoOpen(false);
-                        }}
-                      >
-                        Enviar Pedido
-                      </button>
                     </section>
                   ))}
               </div>
