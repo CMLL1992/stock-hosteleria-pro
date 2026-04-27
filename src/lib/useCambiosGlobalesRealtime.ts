@@ -11,6 +11,7 @@ type RealtimeTable =
   | "sala_zonas"
   | "sala_mesas"
   | "sala_reservas"
+  | "sala_horarios"
   ;
 
 /**

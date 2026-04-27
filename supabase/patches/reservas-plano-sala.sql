@@ -97,35 +97,35 @@ alter table public.sala_reservas enable row level security;
 drop policy if exists sala_zonas_select on public.sala_zonas;
 create policy sala_zonas_select on public.sala_zonas
 for select to authenticated
-using (establecimiento_id = public.my_establecimiento_id());
+using (public.is_superadmin() or establecimiento_id = public.my_establecimiento_id());
 
 drop policy if exists sala_zonas_write on public.sala_zonas;
 create policy sala_zonas_write on public.sala_zonas
 for all to authenticated
-using (establecimiento_id = public.my_establecimiento_id())
-with check (establecimiento_id = public.my_establecimiento_id());
+using (public.is_superadmin() or establecimiento_id = public.my_establecimiento_id())
+with check (public.is_superadmin() or establecimiento_id = public.my_establecimiento_id());
 
 -- Mesas
 drop policy if exists sala_mesas_select on public.sala_mesas;
 create policy sala_mesas_select on public.sala_mesas
 for select to authenticated
-using (establecimiento_id = public.my_establecimiento_id());
+using (public.is_superadmin() or establecimiento_id = public.my_establecimiento_id());
 
 drop policy if exists sala_mesas_write on public.sala_mesas;
 create policy sala_mesas_write on public.sala_mesas
 for all to authenticated
-using (establecimiento_id = public.my_establecimiento_id())
-with check (establecimiento_id = public.my_establecimiento_id());
+using (public.is_superadmin() or establecimiento_id = public.my_establecimiento_id())
+with check (public.is_superadmin() or establecimiento_id = public.my_establecimiento_id());
 
 -- Reservas
 drop policy if exists sala_reservas_select on public.sala_reservas;
 create policy sala_reservas_select on public.sala_reservas
 for select to authenticated
-using (establecimiento_id = public.my_establecimiento_id());
+using (public.is_superadmin() or establecimiento_id = public.my_establecimiento_id());
 
 drop policy if exists sala_reservas_write on public.sala_reservas;
 create policy sala_reservas_write on public.sala_reservas
 for all to authenticated
-using (establecimiento_id = public.my_establecimiento_id())
-with check (establecimiento_id = public.my_establecimiento_id());
+using (public.is_superadmin() or establecimiento_id = public.my_establecimiento_id())
+with check (public.is_superadmin() or establecimiento_id = public.my_establecimiento_id());
 

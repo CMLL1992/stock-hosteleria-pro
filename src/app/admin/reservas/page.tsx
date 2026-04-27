@@ -33,6 +33,8 @@ type Mesa = {
   x: number; // 0..1
   y: number; // 0..1
   estado: MesaEstado;
+  horaCheckin?: string | null;
+  horaCheckout?: string | null;
   reservaHoy?: Reserva | null;
 };
 
@@ -43,6 +45,13 @@ type Zona = {
 };
 
 type PlanoState = { version: 1; establecimientoId: string; zonas: Zona[] };
+
+type Horario = {
+  dow: number; // 0..6
+  abierto: boolean;
+  horaApertura: string; // "20:00"
+  horaCierre: string; // "23:00"
+};
 
 function todayYmd(): string {
   const d = new Date();
@@ -122,6 +131,12 @@ export default function ReservasPlanoPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selMesaId, setSelMesaId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [addMesaLoading, setAddMesaLoading] = useState(false);
+  const [horarios, setHorarios] = useState<Horario[] | null>(null);
+  const [horariosSaving, setHorariosSaving] = useState(false);
+
+  const reservaIdsRef = useRef<Set<string>>(new Set());
+  const audioAllowedRef = useRef(false);
 
   const boardRef = useRef<HTMLDivElement | null>(null);
   const draggingMesaRef = useRef<{ mesaId: string; startClientX: number; startClientY: number; startX: number; startY: number } | null>(null);
@@ -151,6 +166,40 @@ export default function ReservasPlanoPage() {
     if (!activeEstablishmentId) return;
     setErr(null);
     try {
+      // 0) Horarios (si existe tabla, sino ignora)
+      try {
+        const hRes = await supabase()
+          .from("sala_horarios")
+          .select("dow,abierto,hora_apertura,hora_cierre")
+          .eq("establecimiento_id", activeEstablishmentId)
+          .order("dow", { ascending: true });
+        if (!hRes.error) {
+          const rows = (hRes.data ?? []) as Array<{ dow: number; abierto: boolean; hora_apertura: string; hora_cierre: string }>;
+          if (rows.length) {
+            setHorarios(
+              rows.map((r) => ({
+                dow: Number(r.dow),
+                abierto: !!r.abierto,
+                horaApertura: String(r.hora_apertura ?? "20:00").slice(0, 5),
+                horaCierre: String(r.hora_cierre ?? "23:00").slice(0, 5)
+              }))
+            );
+          } else {
+            setHorarios([
+              { dow: 1, abierto: true, horaApertura: "20:00", horaCierre: "23:00" },
+              { dow: 2, abierto: true, horaApertura: "20:00", horaCierre: "23:00" },
+              { dow: 3, abierto: true, horaApertura: "20:00", horaCierre: "23:00" },
+              { dow: 4, abierto: true, horaApertura: "20:00", horaCierre: "23:00" },
+              { dow: 5, abierto: true, horaApertura: "20:00", horaCierre: "23:00" },
+              { dow: 6, abierto: true, horaApertura: "20:00", horaCierre: "23:00" },
+              { dow: 0, abierto: true, horaApertura: "20:00", horaCierre: "23:00" }
+            ]);
+          }
+        }
+      } catch {
+        // ignore (entornos sin la tabla aún)
+      }
+
       // 1) leer zonas
       const zRes = await supabase()
         .from("sala_zonas")
@@ -188,7 +237,7 @@ export default function ReservasPlanoPage() {
       // 2) leer mesas
       const mRes = await supabase()
         .from("sala_mesas")
-        .select("id,zona_id,numero,pax_max,forma,x,y,estado,hora_checkin")
+        .select("id,zona_id,numero,pax_max,forma,x,y,estado,hora_checkin,hora_checkout")
         .eq("establecimiento_id", activeEstablishmentId)
         .order("numero", { ascending: true });
       if (mRes.error) throw mRes.error;
@@ -202,6 +251,7 @@ export default function ReservasPlanoPage() {
         y: number;
         estado: MesaEstado;
         hora_checkin: string | null;
+        hora_checkout: string | null;
       }>;
 
       // 3) reservas de hoy
@@ -247,6 +297,8 @@ export default function ReservasPlanoPage() {
           x: clamp01(Number(m.x ?? 0.2) || 0.2),
           y: clamp01(Number(m.y ?? 0.2) || 0.2),
           estado: (m.estado as MesaEstado) ?? "libre",
+          horaCheckin: m.hora_checkin ?? null,
+          horaCheckout: m.hora_checkout ?? null,
           reservaHoy: resByMesa.get(m.id) ?? null
         };
         mesasByZona.set(m.zona_id, [...(mesasByZona.get(m.zona_id) ?? []), mesa]);
@@ -261,7 +313,22 @@ export default function ReservasPlanoPage() {
       const next: PlanoState = { version: 1, establecimientoId: activeEstablishmentId, zonas };
       setState(next);
       setZoneId((curr) => (zonas.some((z) => z.id === curr) ? curr : zonas[0]?.id ?? curr));
+
+      // Sonido: nuevas reservas (hoy) desde web u otros usuarios
+      const nextIds = new Set<string>();
+      for (const r of resRows) nextIds.add(String(r.id));
+      const prevIds = reservaIdsRef.current;
+      let hasNew = false;
+      for (const id of nextIds) {
+        if (!prevIds.has(id)) {
+          hasNew = true;
+          break;
+        }
+      }
+      reservaIdsRef.current = nextIds;
+      if (hasNew) beep();
     } catch (e) {
+      console.error("[reservas] refreshFromDb error", e);
       setErr(supabaseErrToString(e));
       setState(defaultPlano(activeEstablishmentId));
     }
@@ -284,7 +351,9 @@ export default function ReservasPlanoPage() {
     if (patch.x != null) payload.x = patch.x;
     if (patch.y != null) payload.y = patch.y;
     if (patch.estado != null) payload.estado = patch.estado;
-    if ((patch as { hora_checkin?: string | null }).hora_checkin !== undefined) payload.hora_checkin = (patch as { hora_checkin?: string | null }).hora_checkin;
+    if ((patch as { horaCheckin?: string | null }).horaCheckin !== undefined) payload.hora_checkin = (patch as { horaCheckin?: string | null }).horaCheckin;
+    if ((patch as { horaCheckout?: string | null }).horaCheckout !== undefined) payload.hora_checkout = (patch as { horaCheckout?: string | null }).horaCheckout;
+    // IMPORTANTE: filtramos por establecimiento_id para evitar escribir accidentalmente en otra sede
     const up = await supabase().from("sala_mesas").update(payload).eq("id", mesaId).eq("establecimiento_id", activeEstablishmentId);
     if (up.error) throw up.error;
   }
@@ -298,9 +367,12 @@ export default function ReservasPlanoPage() {
 
   async function addMesa() {
     if (!zona || !state) return;
+    if (!activeEstablishmentId) return;
+    if (addMesaLoading) return;
     const nextNum = Math.max(0, ...zona.mesas.map((m) => m.numero)) + 1;
     try {
       setErr(null);
+      setAddMesaLoading(true);
       const ins = await supabase()
         .from("sala_mesas")
         .insert({
@@ -326,7 +398,10 @@ export default function ReservasPlanoPage() {
         });
       }
     } catch (e) {
+      console.error("[reservas] addMesa error", e);
       setErr(supabaseErrToString(e));
+    } finally {
+      setAddMesaLoading(false);
     }
   }
 
@@ -341,6 +416,7 @@ export default function ReservasPlanoPage() {
       updateZona(zonaId, { mesas: z.mesas.filter((m) => m.id !== mesaId) });
       if (selMesaId === mesaId) setSelMesaId(null);
     } catch (e) {
+      console.error("[reservas] removeMesa error", e);
       setErr(supabaseErrToString(e));
     }
   }
@@ -396,6 +472,7 @@ export default function ReservasPlanoPage() {
     try {
       await updateMesaDb(mesa.id, { x: mesa.x, y: mesa.y });
     } catch (e) {
+      console.error("[reservas] drag-save error", e);
       setErr(supabaseErrToString(e));
       void refreshFromDb();
     }
@@ -415,13 +492,16 @@ export default function ReservasPlanoPage() {
 
   async function setEstado(estado: MesaEstado) {
     if (!mesaSel || !zona) return;
-    const patch: Partial<Mesa> & { hora_checkin?: string | null } = { estado };
-    if (estado === "ocupada") patch.hora_checkin = new Date().toISOString();
+    const prev = mesaSel.estado;
+    const patch: Partial<Mesa> = { estado };
+    if (estado === "ocupada") patch.horaCheckin = new Date().toISOString();
+    if (prev === "ocupada" && (estado === "sucia" || estado === "libre")) patch.horaCheckout = new Date().toISOString();
     updateMesa(zona.id, mesaSel.id, patch);
     try {
       setErr(null);
       await updateMesaDb(mesaSel.id, patch);
     } catch (e) {
+      console.error("[reservas] setEstado error", e);
       setErr(supabaseErrToString(e));
       void refreshFromDb();
     }
@@ -457,6 +537,7 @@ export default function ReservasPlanoPage() {
         .maybeSingle();
       if (up.error) throw up.error;
     } catch (e) {
+      console.error("[reservas] upsertReservaHoy error", e);
       setErr(supabaseErrToString(e));
       void refreshFromDb();
     }
@@ -478,6 +559,60 @@ export default function ReservasPlanoPage() {
     }
     return out.slice(0, 8);
   }, [search, state]);
+
+  const quickCounts = useMemo(() => {
+    const mesas = zona?.mesas ?? [];
+    const libres = mesas.filter((m) => m.estado === "libre").length;
+    const reservadas = mesas.filter((m) => m.estado === "reservada").length;
+    const ocupadas = mesas.filter((m) => m.estado === "ocupada").length;
+    return { libres, reservadas, ocupadas };
+  }, [zona?.mesas]);
+
+  const estanciaMediaMin = useMemo(() => {
+    const mesas = zona?.mesas ?? [];
+    const deltas: number[] = [];
+    for (const m of mesas) {
+      if (!m.horaCheckin || !m.horaCheckout) continue;
+      const a = new Date(m.horaCheckin).getTime();
+      const b = new Date(m.horaCheckout).getTime();
+      if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+      const mins = Math.round((b - a) / 60000);
+      if (mins > 0 && mins < 24 * 60) deltas.push(mins);
+    }
+    if (!deltas.length) return null;
+    return Math.round(deltas.reduce((s, x) => s + x, 0) / deltas.length);
+  }, [zona?.mesas]);
+
+  function allowAudio() {
+    audioAllowedRef.current = true;
+  }
+
+  function beep() {
+    if (!audioAllowedRef.current) return;
+    try {
+      const Ctx =
+        (globalThis.AudioContext as unknown as typeof AudioContext | undefined) ??
+        ((globalThis as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext as typeof AudioContext | undefined);
+      if (!Ctx) return;
+      const ctx = new Ctx();
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = "sine";
+      o.frequency.value = 880;
+      g.gain.value = 0.0001;
+      o.connect(g);
+      g.connect(ctx.destination);
+      const t0 = ctx.currentTime;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.05, t0 + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.18);
+      o.start(t0);
+      o.stop(t0 + 0.2);
+      o.onended = () => void ctx.close();
+    } catch {
+      // ignore
+    }
+  }
 
   async function clearReservaHoy() {
     if (!activeEstablishmentId || !zona || !mesaSel) return;
@@ -506,8 +641,50 @@ export default function ReservasPlanoPage() {
   useCambiosGlobalesRealtime({
     establecimientoId: activeEstablishmentId,
     onChange: () => void refreshFromDb(),
-    tables: ["sala_zonas", "sala_mesas", "sala_reservas"]
+    tables: ["sala_zonas", "sala_mesas", "sala_reservas", "sala_horarios"]
   });
+
+  function fmtDow(dow: number) {
+    if (dow === 1) return "Lunes";
+    if (dow === 2) return "Martes";
+    if (dow === 3) return "Miércoles";
+    if (dow === 4) return "Jueves";
+    if (dow === 5) return "Viernes";
+    if (dow === 6) return "Sábado";
+    return "Domingo";
+  }
+
+  function patchHorario(dow: number, patch: Partial<Horario>) {
+    setHorarios((prev) => {
+      const base = prev ?? [];
+      const next = base.map((h) => (h.dow === dow ? { ...h, ...patch } : h));
+      return next;
+    });
+  }
+
+  async function saveHorarios() {
+    if (!activeEstablishmentId) return;
+    if (!horarios?.length) return;
+    if (horariosSaving) return;
+    setHorariosSaving(true);
+    setErr(null);
+    try {
+      const payload = horarios.map((h) => ({
+        establecimiento_id: activeEstablishmentId,
+        dow: h.dow,
+        abierto: !!h.abierto,
+        hora_apertura: `${h.horaApertura}:00`,
+        hora_cierre: `${h.horaCierre}:00`
+      }));
+      const up = await supabase().from("sala_horarios").upsert(payload, { onConflict: "establecimiento_id,dow" });
+      if (up.error) throw up.error;
+    } catch (e) {
+      console.error("[reservas] saveHorarios error", e);
+      setErr(supabaseErrToString(e));
+    } finally {
+      setHorariosSaving(false);
+    }
+  }
 
   if (meLoading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
   if (error) return <main className="p-4 text-sm text-red-700">{supabaseErrToString(error)}</main>;
@@ -551,7 +728,7 @@ export default function ReservasPlanoPage() {
   return (
     <div className="min-h-dvh bg-slate-50">
       <MobileHeader title="Reservas" showBack backHref="/admin" />
-      <main className="mx-auto w-full max-w-5xl p-4 pb-28">
+      <main className="mx-auto w-full max-w-5xl p-4 pb-28" onPointerDown={allowAudio} onClick={allowAudio}>
         {err ? <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{err}</p> : null}
 
         <div className="premium-card">
@@ -562,6 +739,17 @@ export default function ReservasPlanoPage() {
                 <MapPin className="h-4 w-4 text-slate-500" aria-hidden />
                 <p className="truncate text-base font-black tracking-tight">{(activeEstablishmentName ?? "").trim() || "Mi local"}</p>
               </div>
+              <p className="mt-1 text-xs font-semibold text-slate-600">
+                Libres: <span className="font-black tabular-nums text-slate-900">{quickCounts.libres}</span> · Reservadas:{" "}
+                <span className="font-black tabular-nums text-slate-900">{quickCounts.reservadas}</span> · Ocupadas:{" "}
+                <span className="font-black tabular-nums text-slate-900">{quickCounts.ocupadas}</span>
+                {estanciaMediaMin != null ? (
+                  <>
+                    {" "}
+                    · Estancia media: <span className="font-black tabular-nums text-slate-900">{estanciaMediaMin}</span> min
+                  </>
+                ) : null}
+              </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -620,10 +808,84 @@ export default function ReservasPlanoPage() {
               <button type="button" className="min-h-11 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-black text-slate-900 hover:bg-slate-50" onClick={() => setScale((s) => Math.min(2.2, Math.round((s + 0.1) * 10) / 10))} aria-label="Zoom más">
                 <Plus className="h-4 w-4" />
               </button>
-              <button type="button" className="premium-btn-primary min-h-11 rounded-2xl px-4" onClick={addMesa}>
-                + Mesa
+              <button type="button" className="premium-btn-primary min-h-11 rounded-2xl px-4 disabled:opacity-60" onClick={addMesa} disabled={addMesaLoading}>
+                {addMesaLoading ? "Añadiendo…" : "+ Mesa"}
               </button>
             </div>
+          </div>
+
+          <div className="mt-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-100">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Configuración</p>
+                <p className="mt-1 text-base font-black tracking-tight text-slate-900">Horarios</p>
+                <p className="mt-1 text-sm font-medium text-slate-600">Define apertura/cierre por día. Intervalos de 30 minutos.</p>
+              </div>
+              <button
+                type="button"
+                className={["min-h-11 rounded-2xl px-4 text-sm font-extrabold transition", horariosSaving ? "bg-slate-200 text-slate-500" : "bg-premium-blue text-white shadow-sm hover:brightness-110 active:brightness-95"].join(" ")}
+                onClick={saveHorarios}
+                disabled={horariosSaving}
+              >
+                {horariosSaving ? "Guardando…" : "Guardar horarios"}
+              </button>
+            </div>
+
+            {horarios?.length ? (
+              <div className="mt-4 grid gap-3">
+                {horarios
+                  .slice()
+                  .sort((a, b) => (a.dow === 1 ? -10 : a.dow) - (b.dow === 1 ? -10 : b.dow)) // lunes primero (estética)
+                  .map((h) => (
+                    <div key={h.dow} className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-4 sm:items-center">
+                      <div className="sm:col-span-1">
+                        <p className="text-sm font-extrabold text-slate-900">{fmtDow(h.dow)}</p>
+                        <p className="text-xs font-semibold text-slate-600">{h.abierto ? "Abierto" : "Cerrado (descanso)"}</p>
+                      </div>
+
+                      <div className="sm:col-span-1">
+                        <label className="text-xs font-semibold text-slate-600">Apertura</label>
+                        <input
+                          type="time"
+                          step={1800}
+                          className="premium-input mt-1"
+                          value={h.horaApertura}
+                          disabled={!h.abierto}
+                          onChange={(e) => patchHorario(h.dow, { horaApertura: e.currentTarget.value })}
+                        />
+                      </div>
+
+                      <div className="sm:col-span-1">
+                        <label className="text-xs font-semibold text-slate-600">Cierre</label>
+                        <input
+                          type="time"
+                          step={1800}
+                          className="premium-input mt-1"
+                          value={h.horaCierre}
+                          disabled={!h.abierto}
+                          onChange={(e) => patchHorario(h.dow, { horaCierre: e.currentTarget.value })}
+                        />
+                      </div>
+
+                      <div className="sm:col-span-1">
+                        <label className="text-xs font-semibold text-slate-600">Descanso</label>
+                        <button
+                          type="button"
+                          className={[
+                            "mt-1 min-h-11 w-full rounded-2xl px-3 text-sm font-extrabold transition",
+                            h.abierto ? "border border-slate-200 bg-white text-slate-900 hover:bg-slate-50" : "bg-premium-orange text-white shadow-sm hover:brightness-110"
+                          ].join(" ")}
+                          onClick={() => patchHorario(h.dow, { abierto: !h.abierto })}
+                        >
+                          {h.abierto ? "Marcar como cerrado" : "Abrir este día"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-slate-600">Cargando horarios…</p>
+            )}
           </div>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-4">
