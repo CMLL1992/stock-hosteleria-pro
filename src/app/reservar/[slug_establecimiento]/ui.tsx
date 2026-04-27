@@ -16,7 +16,7 @@ type Disp = {
   mesas_libres?: number;
 };
 
-type HorarioRow = { dow: number; abierto: boolean; hora_apertura: string; hora_cierre: string };
+type HorarioRow = { dia_semana: number; activo: boolean; hora_inicio: string; hora_fin: string };
 
 function todayYmd(): string {
   const d = new Date();
@@ -53,6 +53,34 @@ function buildSlots30(openHHMM: string, closeHHMM: string): string[] {
   return out;
 }
 
+function AnimatedCheck() {
+  return (
+    <div className="relative h-16 w-16">
+      <div className="absolute inset-0 rounded-full border-2 border-emerald-200 bg-emerald-50" />
+      <svg viewBox="0 0 52 52" className="absolute inset-0 h-16 w-16">
+        <path
+          d="M14 27 L23 36 L39 18"
+          fill="none"
+          stroke="rgb(16 185 129)"
+          strokeWidth="5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{
+            strokeDasharray: 60,
+            strokeDashoffset: 60,
+            animation: "dash 520ms ease-out forwards"
+          }}
+        />
+      </svg>
+      <style>{`
+        @keyframes dash {
+          to { stroke-dashoffset: 0; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 export default function ReservarPublicClient({ slug }: { slug: string }) {
   const [est, setEst] = useState<EstPublic | null>(null);
   const [loading, setLoading] = useState(true);
@@ -81,9 +109,9 @@ export default function ReservarPublicClient({ slug }: { slug: string }) {
       try {
         const { data, error } = await supabase()
           .from("sala_horarios")
-          .select("dow,abierto,hora_apertura,hora_cierre")
+          .select("dia_semana,activo,hora_inicio,hora_fin")
           .eq("establecimiento_id", estId)
-          .order("dow", { ascending: true });
+          .order("dia_semana", { ascending: true });
         if (cancelled) return;
         if (error) throw error;
         setHorarios((data as unknown as HorarioRow[]) ?? []);
@@ -180,13 +208,13 @@ export default function ReservarPublicClient({ slug }: { slug: string }) {
     const libre = Number(disp.capacidad_libre ?? 0) || 0;
     if (pax <= 0 || libre < pax) return [];
     const dow = jsDowFromYmd(fecha);
-    const h = (horarios ?? []).find((x) => Number(x.dow) === dow) ?? null;
+    const h = (horarios ?? []).find((x) => Number(x.dia_semana) === dow) ?? null;
     if (h) {
-      if (!h.abierto) return [];
-      return buildSlots30(String(h.hora_apertura).slice(0, 5), String(h.hora_cierre).slice(0, 5));
+      if (!h.activo) return [];
+      return buildSlots30(String(h.hora_inicio).slice(0, 5), String(h.hora_fin).slice(0, 5));
     }
-    // Fallback si aún no hay módulo configurado: rango generoso
-    return buildSlots30("20:00", "23:00");
+    // Si no hay horario configurado para ese día => cerrado
+    return [];
   }, [disp?.capacidad_libre, disp?.ok, fecha, horarios, pax]);
 
   async function submit() {
@@ -224,8 +252,13 @@ export default function ReservarPublicClient({ slug }: { slug: string }) {
       <div className="min-h-dvh bg-slate-50">
         <main className="mx-auto max-w-xl p-4 pb-10">
           <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm ring-1 ring-slate-100">
-            <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Reserva confirmada</p>
-            <p className="mt-1 text-2xl font-black tracking-tight text-slate-900">{est.nombre}</p>
+            <div className="flex items-center gap-4">
+              <AnimatedCheck />
+              <div className="min-w-0">
+                <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Reserva confirmada</p>
+                <p className="mt-1 truncate text-2xl font-black tracking-tight text-slate-900">{est.nombre}</p>
+              </div>
+            </div>
 
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
@@ -243,7 +276,10 @@ export default function ReservarPublicClient({ slug }: { slug: string }) {
             </div>
 
             <p className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-900">
-              Reserva confirmada. ¡Te esperamos!
+              ¡Reserva confirmada en <span className="font-black">{est.nombre}</span>! Te esperamos el{" "}
+              <span className="font-black tabular-nums">{ticket.fecha}</span> a las{" "}
+              <span className="font-black tabular-nums">{ticket.hora}</span> para{" "}
+              <span className="font-black tabular-nums">{ticket.pax}</span> personas.
             </p>
 
             <button
@@ -319,7 +355,7 @@ export default function ReservarPublicClient({ slug }: { slug: string }) {
                       </option>
                     ))
                   ) : (
-                    <option value={hora}>Sin disponibilidad</option>
+                    <option value={hora}>Cerrado</option>
                   )}
                 </select>
               </div>

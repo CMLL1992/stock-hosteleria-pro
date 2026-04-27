@@ -47,10 +47,10 @@ type Zona = {
 type PlanoState = { version: 1; establecimientoId: string; zonas: Zona[] };
 
 type Horario = {
-  dow: number; // 0..6
-  abierto: boolean;
-  horaApertura: string; // "20:00"
-  horaCierre: string; // "23:00"
+  diaSemana: number; // 0..6
+  activo: boolean;
+  horaInicio: string; // "20:00"
+  horaFin: string; // "23:00"
 };
 
 function todayYmd(): string {
@@ -134,9 +134,13 @@ export default function ReservasPlanoPage() {
   const [addMesaLoading, setAddMesaLoading] = useState(false);
   const [horarios, setHorarios] = useState<Horario[] | null>(null);
   const [horariosSaving, setHorariosSaving] = useState(false);
+  const [horariosOpen, setHorariosOpen] = useState(false);
+  const [horariosDirty, setHorariosDirty] = useState(false);
 
   const reservaIdsRef = useRef<Set<string>>(new Set());
   const audioAllowedRef = useRef(false);
+  const [toastOpen, setToastOpen] = useState(false);
+  const [toastCount, setToastCount] = useState(0);
 
   const boardRef = useRef<HTMLDivElement | null>(null);
   const draggingMesaRef = useRef<{ mesaId: string; startClientX: number; startClientY: number; startX: number; startY: number } | null>(null);
@@ -170,31 +174,32 @@ export default function ReservasPlanoPage() {
       try {
         const hRes = await supabase()
           .from("sala_horarios")
-          .select("dow,abierto,hora_apertura,hora_cierre")
+          .select("dia_semana,activo,hora_inicio,hora_fin")
           .eq("establecimiento_id", activeEstablishmentId)
-          .order("dow", { ascending: true });
+          .order("dia_semana", { ascending: true });
         if (!hRes.error) {
-          const rows = (hRes.data ?? []) as Array<{ dow: number; abierto: boolean; hora_apertura: string; hora_cierre: string }>;
+          const rows = (hRes.data ?? []) as Array<{ dia_semana: number; activo: boolean; hora_inicio: string; hora_fin: string }>;
           if (rows.length) {
             setHorarios(
               rows.map((r) => ({
-                dow: Number(r.dow),
-                abierto: !!r.abierto,
-                horaApertura: String(r.hora_apertura ?? "20:00").slice(0, 5),
-                horaCierre: String(r.hora_cierre ?? "23:00").slice(0, 5)
+                diaSemana: Number(r.dia_semana),
+                activo: !!r.activo,
+                horaInicio: String(r.hora_inicio ?? "20:00").slice(0, 5),
+                horaFin: String(r.hora_fin ?? "23:00").slice(0, 5)
               }))
             );
           } else {
             setHorarios([
-              { dow: 1, abierto: true, horaApertura: "20:00", horaCierre: "23:00" },
-              { dow: 2, abierto: true, horaApertura: "20:00", horaCierre: "23:00" },
-              { dow: 3, abierto: true, horaApertura: "20:00", horaCierre: "23:00" },
-              { dow: 4, abierto: true, horaApertura: "20:00", horaCierre: "23:00" },
-              { dow: 5, abierto: true, horaApertura: "20:00", horaCierre: "23:00" },
-              { dow: 6, abierto: true, horaApertura: "20:00", horaCierre: "23:00" },
-              { dow: 0, abierto: true, horaApertura: "20:00", horaCierre: "23:00" }
+              { diaSemana: 1, activo: true, horaInicio: "20:00", horaFin: "23:00" },
+              { diaSemana: 2, activo: true, horaInicio: "20:00", horaFin: "23:00" },
+              { diaSemana: 3, activo: true, horaInicio: "20:00", horaFin: "23:00" },
+              { diaSemana: 4, activo: true, horaInicio: "20:00", horaFin: "23:00" },
+              { diaSemana: 5, activo: true, horaInicio: "20:00", horaFin: "23:00" },
+              { diaSemana: 6, activo: true, horaInicio: "20:00", horaFin: "23:00" },
+              { diaSemana: 0, activo: true, horaInicio: "20:00", horaFin: "23:00" }
             ]);
           }
+          setHorariosDirty(false);
         }
       } catch {
         // ignore (entornos sin la tabla aún)
@@ -326,7 +331,11 @@ export default function ReservasPlanoPage() {
         }
       }
       reservaIdsRef.current = nextIds;
-      if (hasNew) beep();
+      if (hasNew) {
+        beep();
+        setToastOpen(true);
+        setToastCount((c) => c + 1);
+      }
     } catch (e) {
       console.error("[reservas] refreshFromDb error", e);
       setErr(supabaseErrToString(e));
@@ -654,12 +663,13 @@ export default function ReservasPlanoPage() {
     return "Domingo";
   }
 
-  function patchHorario(dow: number, patch: Partial<Horario>) {
+  function patchHorario(diaSemana: number, patch: Partial<Horario>) {
     setHorarios((prev) => {
       const base = prev ?? [];
-      const next = base.map((h) => (h.dow === dow ? { ...h, ...patch } : h));
+      const next = base.map((h) => (h.diaSemana === diaSemana ? { ...h, ...patch } : h));
       return next;
     });
+    setHorariosDirty(true);
   }
 
   async function saveHorarios() {
@@ -671,13 +681,15 @@ export default function ReservasPlanoPage() {
     try {
       const payload = horarios.map((h) => ({
         establecimiento_id: activeEstablishmentId,
-        dow: h.dow,
-        abierto: !!h.abierto,
-        hora_apertura: `${h.horaApertura}:00`,
-        hora_cierre: `${h.horaCierre}:00`
+        dia_semana: h.diaSemana,
+        activo: !!h.activo,
+        hora_inicio: `${h.horaInicio}:00`,
+        hora_fin: `${h.horaFin}:00`
       }));
-      const up = await supabase().from("sala_horarios").upsert(payload, { onConflict: "establecimiento_id,dow" });
+      const up = await supabase().from("sala_horarios").upsert(payload, { onConflict: "establecimiento_id,dia_semana" });
       if (up.error) throw up.error;
+      setHorariosDirty(false);
+      setHorariosOpen(false);
     } catch (e) {
       console.error("[reservas] saveHorarios error", e);
       setErr(supabaseErrToString(e));
@@ -730,6 +742,29 @@ export default function ReservasPlanoPage() {
       <MobileHeader title="Reservas" showBack backHref="/admin" />
       <main className="mx-auto w-full max-w-5xl p-4 pb-28" onPointerDown={allowAudio} onClick={allowAudio}>
         {err ? <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{err}</p> : null}
+        {toastOpen ? (
+          <div className="mb-3 overflow-hidden rounded-2xl border border-premium-blue/20 bg-premium-blue/5 p-3 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-extrabold text-slate-900">Nueva reserva recibida</p>
+                <p className="mt-0.5 text-xs font-semibold text-slate-600">
+                  Hay una reserva nueva entrando por la web. Confírmala en el plano. (Pendientes:{" "}
+                  <span className="font-black tabular-nums text-slate-900">{toastCount}</span>)
+                </p>
+              </div>
+              <button
+                type="button"
+                className="min-h-10 shrink-0 rounded-2xl bg-premium-blue px-3 text-xs font-extrabold text-white shadow-sm hover:brightness-110 active:brightness-95"
+                onClick={() => {
+                  setToastOpen(false);
+                  setToastCount(0);
+                }}
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         <div className="premium-card">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -799,6 +834,13 @@ export default function ReservasPlanoPage() {
               >
                 {editMode ? "Editar plano: ON" : "Editar plano"}
               </button>
+              <button
+                type="button"
+                className="min-h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-extrabold text-slate-900 hover:bg-slate-50"
+                onClick={() => setHorariosOpen(true)}
+              >
+                Configurar horarios
+              </button>
               <button type="button" className="min-h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-extrabold text-slate-900 hover:bg-slate-50" onClick={resetView}>
                 Reset vista
               </button>
@@ -812,80 +854,6 @@ export default function ReservasPlanoPage() {
                 {addMesaLoading ? "Añadiendo…" : "+ Mesa"}
               </button>
             </div>
-          </div>
-
-          <div className="mt-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-100">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Configuración</p>
-                <p className="mt-1 text-base font-black tracking-tight text-slate-900">Horarios</p>
-                <p className="mt-1 text-sm font-medium text-slate-600">Define apertura/cierre por día. Intervalos de 30 minutos.</p>
-              </div>
-              <button
-                type="button"
-                className={["min-h-11 rounded-2xl px-4 text-sm font-extrabold transition", horariosSaving ? "bg-slate-200 text-slate-500" : "bg-premium-blue text-white shadow-sm hover:brightness-110 active:brightness-95"].join(" ")}
-                onClick={saveHorarios}
-                disabled={horariosSaving}
-              >
-                {horariosSaving ? "Guardando…" : "Guardar horarios"}
-              </button>
-            </div>
-
-            {horarios?.length ? (
-              <div className="mt-4 grid gap-3">
-                {horarios
-                  .slice()
-                  .sort((a, b) => (a.dow === 1 ? -10 : a.dow) - (b.dow === 1 ? -10 : b.dow)) // lunes primero (estética)
-                  .map((h) => (
-                    <div key={h.dow} className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-4 sm:items-center">
-                      <div className="sm:col-span-1">
-                        <p className="text-sm font-extrabold text-slate-900">{fmtDow(h.dow)}</p>
-                        <p className="text-xs font-semibold text-slate-600">{h.abierto ? "Abierto" : "Cerrado (descanso)"}</p>
-                      </div>
-
-                      <div className="sm:col-span-1">
-                        <label className="text-xs font-semibold text-slate-600">Apertura</label>
-                        <input
-                          type="time"
-                          step={1800}
-                          className="premium-input mt-1"
-                          value={h.horaApertura}
-                          disabled={!h.abierto}
-                          onChange={(e) => patchHorario(h.dow, { horaApertura: e.currentTarget.value })}
-                        />
-                      </div>
-
-                      <div className="sm:col-span-1">
-                        <label className="text-xs font-semibold text-slate-600">Cierre</label>
-                        <input
-                          type="time"
-                          step={1800}
-                          className="premium-input mt-1"
-                          value={h.horaCierre}
-                          disabled={!h.abierto}
-                          onChange={(e) => patchHorario(h.dow, { horaCierre: e.currentTarget.value })}
-                        />
-                      </div>
-
-                      <div className="sm:col-span-1">
-                        <label className="text-xs font-semibold text-slate-600">Descanso</label>
-                        <button
-                          type="button"
-                          className={[
-                            "mt-1 min-h-11 w-full rounded-2xl px-3 text-sm font-extrabold transition",
-                            h.abierto ? "border border-slate-200 bg-white text-slate-900 hover:bg-slate-50" : "bg-premium-orange text-white shadow-sm hover:brightness-110"
-                          ].join(" ")}
-                          onClick={() => patchHorario(h.dow, { abierto: !h.abierto })}
-                        >
-                          {h.abierto ? "Marcar como cerrado" : "Abrir este día"}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            ) : (
-              <p className="mt-4 text-sm text-slate-600">Cargando horarios…</p>
-            )}
           </div>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-4">
@@ -971,6 +939,82 @@ export default function ReservasPlanoPage() {
             </div>
           </div>
         </div>
+
+        <Drawer open={horariosOpen} title="Configurar horarios" onClose={() => setHorariosOpen(false)}>
+          <div className="space-y-4 pb-4">
+            <div className="premium-card-tight">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Apertura / cierre</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">Intervalos cada 30 minutos</p>
+                </div>
+                <button
+                  type="button"
+                  className={["min-h-11 rounded-2xl px-4 text-sm font-extrabold transition", horariosSaving ? "bg-slate-200 text-slate-500" : "bg-premium-blue text-white shadow-sm hover:brightness-110 active:brightness-95"].join(" ")}
+                  onClick={saveHorarios}
+                  disabled={horariosSaving || !horariosDirty}
+                >
+                  {horariosSaving ? "Guardando…" : horariosDirty ? "Guardar" : "Guardado"}
+                </button>
+              </div>
+            </div>
+
+            {horarios?.length ? (
+              <div className="grid gap-3">
+                {horarios
+                  .slice()
+                  .sort((a, b) => (a.diaSemana === 1 ? -10 : a.diaSemana) - (b.diaSemana === 1 ? -10 : b.diaSemana))
+                  .map((h) => (
+                    <div key={h.diaSemana} className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-extrabold text-slate-900">{fmtDow(h.diaSemana)}</p>
+                          <p className="text-xs font-semibold text-slate-600">{h.activo ? "Abierto" : "Cerrado"}</p>
+                        </div>
+                        <button
+                          type="button"
+                          className={[
+                            "min-h-10 rounded-2xl px-3 text-xs font-extrabold transition",
+                            h.activo ? "border border-slate-200 bg-white text-slate-900 hover:bg-slate-50" : "bg-premium-orange text-white shadow-sm hover:brightness-110"
+                          ].join(" ")}
+                          onClick={() => patchHorario(h.diaSemana, { activo: !h.activo })}
+                        >
+                          {h.activo ? "Marcar cerrado" : "Abrir día"}
+                        </button>
+                      </div>
+
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        <div>
+                          <label className="text-xs font-semibold text-slate-600">Hora inicio</label>
+                          <input
+                            type="time"
+                            step={1800}
+                            className="premium-input mt-1"
+                            value={h.horaInicio}
+                            disabled={!h.activo}
+                            onChange={(e) => patchHorario(h.diaSemana, { horaInicio: e.currentTarget.value })}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-slate-600">Hora fin</label>
+                          <input
+                            type="time"
+                            step={1800}
+                            className="premium-input mt-1"
+                            value={h.horaFin}
+                            disabled={!h.activo}
+                            onChange={(e) => patchHorario(h.diaSemana, { horaFin: e.currentTarget.value })}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-600">Cargando horarios…</p>
+            )}
+          </div>
+        </Drawer>
 
         <Drawer open={drawerOpen} title={mesaSel ? `Mesa ${mesaSel.numero}` : "Mesa"} onClose={() => setDrawerOpen(false)}>
           {!mesaSel || !zona ? null : (
