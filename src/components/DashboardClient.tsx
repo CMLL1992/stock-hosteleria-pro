@@ -15,6 +15,7 @@ import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { fetchEscandallosPrecioMapByProductIds, type EscandalloPrecioRow } from "@/lib/fetchEscandallosPrecioMap";
 import { logActivity } from "@/lib/activityLog";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
+import { Building2 } from "lucide-react";
 import { waUrlPedidoAgrupadoProveedor } from "@/lib/whatsappPedido";
 
 
@@ -332,8 +333,16 @@ export function DashboardClient() {
   return (
     <div className="w-full max-w-full space-y-6">
       {me?.isSuperadmin && activeEstablishmentName ? (
-        <div className="w-full rounded-3xl border border-slate-100 bg-white p-4 text-base text-slate-600 shadow-sm">
-          Establecimiento activo: <span className="font-semibold text-slate-900">{activeEstablishmentName}</span>
+        <div className="w-full rounded-3xl border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-50 text-slate-600 ring-1 ring-slate-200">
+              <Building2 className="h-4 w-4" aria-hidden strokeWidth={2.2} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Establecimiento activo</p>
+              <p className="truncate text-base font-medium text-slate-900">{activeEstablishmentName}</p>
+            </div>
+          </div>
         </div>
       ) : null}
 

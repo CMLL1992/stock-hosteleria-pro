@@ -15,6 +15,7 @@ body {
 body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-color: rgb(248 250 252); /* slate-50 */
 }
 
 /* Evita zoom automático al enfocar inputs en iOS/Android (mín. 16px). */
