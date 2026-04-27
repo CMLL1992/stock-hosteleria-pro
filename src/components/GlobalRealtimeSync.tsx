@@ -16,6 +16,7 @@ export function GlobalRealtimeSync() {
   useCambiosGlobalesRealtime({
     establecimientoId: establecimientoId ?? null,
     queryClient,
+    tables: ["movimientos", "productos", "pedidos", "usuarios", "escandallos", "sala_zonas", "sala_mesas", "sala_reservas", "sala_horarios"],
     queryKeys: [
       // Stock / catálogo
       ["productos", establecimientoId],

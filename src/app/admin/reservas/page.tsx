@@ -48,7 +48,8 @@ export default function ReservasPlanoPage() {
 function ReservasPlanoInner() {
   const { data: me, isLoading: meLoading, error } = useMyRole();
   const role = getEffectiveRole(me ?? null);
-  const canAdmin = hasPermission(role, "admin");
+  const canView = hasPermission(role, "staff");
+  const canDrag = hasPermission(role, "admin");
   const { activeEstablishmentId, activeEstablishmentName } = useActiveEstablishment();
 
   const [isDesktop, setIsDesktop] = useState(false);
@@ -112,6 +113,7 @@ function ReservasPlanoInner() {
 
   useCambiosGlobalesRealtime({
     establecimientoId: activeEstablishmentId,
+    tables: ["sala_zonas", "sala_mesas", "sala_reservas"],
     onChange: () => void load()
   });
 
@@ -137,6 +139,7 @@ function ReservasPlanoInner() {
   }
 
   function onPointerDownMesa(e: React.PointerEvent, mesa: Mesa) {
+    if (!canDrag) return;
     if (!planoUnlocked) return;
     e.preventDefault();
     e.stopPropagation();
@@ -202,7 +205,7 @@ function ReservasPlanoInner() {
   if (meLoading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
   if (error) return <main className="p-4 text-sm text-red-700">{supabaseErrToString(error)}</main>;
   if (!activeEstablishmentId) return <main className="p-4 text-sm text-slate-600">Selecciona un establecimiento.</main>;
-  if (!canAdmin) return <main className="p-4 text-sm text-slate-600">Acceso denegado.</main>;
+  if (!canView) return <main className="p-4 text-sm text-slate-600">Acceso denegado.</main>;
 
   return (
     <div className="min-h-dvh bg-[#0A0A0C] text-white">
@@ -291,7 +294,11 @@ function ReservasPlanoInner() {
               planoUnlocked ? "border-violet-400/30 bg-violet-500/15" : "border-white/10 bg-white/5"
             ].join(" ")}
             aria-label={planoUnlocked ? "Bloquear plano" : "Desbloquear plano"}
-            onClick={() => setPlanoUnlocked((v) => !v)}
+            disabled={!canDrag}
+            onClick={() => {
+              if (!canDrag) return;
+              setPlanoUnlocked((v) => !v);
+            }}
             title={planoUnlocked ? "Bloquear" : "Desbloquear"}
           >
             {planoUnlocked ? <LockOpen className="h-6 w-6 text-violet-200" /> : <Lock className="h-6 w-6 text-white/80" />}

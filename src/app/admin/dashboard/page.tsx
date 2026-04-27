@@ -8,7 +8,7 @@ import { getEffectiveRole, hasPermission } from "@/lib/permissions";
 export default function AdminDashboardPage() {
   const { data: me, isLoading } = useMyRole();
   const role = getEffectiveRole(me ?? null);
-  const canAccessDashboard = hasPermission(role, "admin");
+  const canAccessDashboard = hasPermission(role, "staff");
 
   if (isLoading) return <main className="p-4 text-base text-slate-600">Cargando…</main>;
   if (!canAccessDashboard) {
