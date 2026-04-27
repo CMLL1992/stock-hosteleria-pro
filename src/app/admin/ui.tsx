@@ -2,7 +2,18 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import {
+  Boxes,
+  Building2,
+  CalendarDays,
+  ChevronRight,
+  ClipboardList,
+  Package,
+  Shield,
+  ShoppingBag,
+  Truck,
+  Users
+} from "lucide-react";
 import { MobileHeader } from "@/components/MobileHeader";
 import { useMyRole } from "@/lib/useMyRole";
 import { getEffectiveRole, hasPermission } from "@/lib/permissions";
@@ -23,10 +34,48 @@ type AdminSection = {
   items: AdminNavItem[];
 };
 
+function itemIcon(id: string) {
+  switch (id) {
+    case "establecimientos":
+      return Building2;
+    case "usuarios":
+      return Users;
+    case "roles":
+      return Shield;
+    case "auditoria-albaranes":
+      return ClipboardList;
+    case "productos":
+      return Package;
+    case "catalogo-envases":
+      return Boxes;
+    case "importar-csv":
+      return ClipboardList;
+    case "escandallos":
+      return ClipboardList;
+    case "eventos":
+      return CalendarDays;
+    case "pedidos":
+      return ShoppingBag;
+    case "proveedores":
+      return Truck;
+    case "movimientos":
+      return ClipboardList;
+    default:
+      return Package;
+  }
+}
+
+function accentByIndex(i: number): { bar: string; bg: string; text: string } {
+  // Paleta premium: azul / naranja / verde (sin clases dinámicas).
+  if (i % 3 === 1) return { bar: "bg-premium-orange", bg: "bg-premium-orange/10", text: "text-premium-orange" };
+  if (i % 3 === 2) return { bar: "bg-premium-green", bg: "bg-premium-green/10", text: "text-premium-green" };
+  return { bar: "bg-premium-blue", bg: "bg-premium-blue/10", text: "text-premium-blue" };
+}
+
 const SECTIONS: AdminSection[] = [
   {
     id: "institucional",
-    heading: "Institucional y accesos",
+    heading: "Usuarios y accesos",
     items: [
       {
         id: "establecimientos",
@@ -97,7 +146,7 @@ const SECTIONS: AdminSection[] = [
         id: "eventos",
         href: "/admin/eventos",
         title: "Eventos",
-        subtitle: "Pedidos y control financiero aislado (fantasma)."
+        subtitle: "Pedidos y control financiero independiente del establecimiento."
       },
       {
         id: "pedidos",
@@ -184,26 +233,44 @@ export function AdminHomeClient({ denied }: { denied?: string | null } = {}) {
         </header>
 
         {visible.map((section) => (
-          <section key={section.id} className="space-y-2">
-            <h2 className="px-1 text-sm font-bold tracking-tight text-slate-900">{section.heading}</h2>
-            <div className="w-full max-w-full overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-100">
-              {section.items.map((item, idx) => (
-                <Link
-                  key={item.id}
-                  href={item.href}
-                  className={[
-                    "flex w-full min-h-[56px] max-w-full items-center gap-3 px-4 py-3 transition",
-                    "hover:bg-slate-50 hover:pl-5",
-                    idx < section.items.length - 1 ? "border-b border-slate-100" : ""
-                  ].join(" ")}
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium text-slate-800">{item.title}</p>
-                    <p className="mt-0.5 text-xs leading-snug text-slate-500">{item.subtitle}</p>
-                  </div>
-                  <ChevronRight className="h-5 w-5 shrink-0 text-slate-300" aria-hidden strokeWidth={2} />
-                </Link>
-              ))}
+          <section key={section.id} className="space-y-3">
+            <h2 className="px-1 text-sm font-black tracking-tight text-slate-700">{section.heading}</h2>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {section.items.map((item, idx) => {
+                const Icon = itemIcon(item.id);
+                const accent = accentByIndex(idx);
+                return (
+                  <Link
+                    key={item.id}
+                    href={item.href}
+                    className={[
+                      "group relative flex min-h-[88px] w-full max-w-full items-center gap-3 overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm",
+                      "transition hover:-translate-y-[1px] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-premium-blue/20"
+                    ].join(" ")}
+                  >
+                    <span
+                      className={[
+                        "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl",
+                        accent.bg,
+                        accent.text
+                      ].join(" ")}
+                      aria-hidden
+                    >
+                      <Icon className="h-5 w-5" strokeWidth={2.2} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-black tracking-tight text-slate-900">{item.title}</p>
+                      <p className="mt-1 text-xs leading-snug text-slate-500">{item.subtitle}</p>
+                    </div>
+                    <ChevronRight
+                      className="h-5 w-5 shrink-0 text-slate-300 transition group-hover:translate-x-0.5"
+                      aria-hidden
+                      strokeWidth={2}
+                    />
+                    <span className={["absolute left-0 top-0 h-full w-1", accent.bar].join(" ")} aria-hidden />
+                  </Link>
+                );
+              })}
             </div>
           </section>
         ))}

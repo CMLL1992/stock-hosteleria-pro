@@ -14,7 +14,7 @@ import { supabase } from "@/lib/supabase";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { fetchEscandallosPrecioMapByProductIds, type EscandalloPrecioRow } from "@/lib/fetchEscandallosPrecioMap";
 import { logActivity } from "@/lib/activityLog";
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import { waUrlPedidoAgrupadoProveedor } from "@/lib/whatsappPedido";
 
 
@@ -427,10 +427,17 @@ export function DashboardClient() {
                   </div>
 
                   <div className="relative mt-3 h-36 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" style={{ pointerEvents: "none" }}>
                       <PieChart>
-                        <Tooltip formatter={(v) => formatEUR(Number(v) || 0)} contentStyle={{ borderRadius: 12, borderColor: "#E2E8F0" }} />
-                        <Pie data={donutData} dataKey="value" nameKey="label" innerRadius={44} outerRadius={62} paddingAngle={1}>
+                        <Pie
+                          data={donutData}
+                          dataKey="value"
+                          nameKey="label"
+                          innerRadius={44}
+                          outerRadius={62}
+                          paddingAngle={1}
+                          isAnimationActive={false}
+                        >
                           {donutData.map((d) => (
                             <Cell key={d.key} fill={(d as { color?: string }).color ?? "#94A3B8"} />
                           ))}
