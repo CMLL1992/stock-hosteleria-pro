@@ -94,6 +94,12 @@ const SECTIONS: AdminSection[] = [
     heading: "Operaciones y movimientos",
     items: [
       {
+        id: "eventos",
+        href: "/admin/eventos",
+        title: "EVENTOS",
+        subtitle: "Pedidos y control financiero aislado (fantasma)."
+      },
+      {
         id: "pedidos",
         href: "/admin/pedidos",
         title: "Pedidos",
