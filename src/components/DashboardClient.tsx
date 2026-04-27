@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -15,6 +15,7 @@ import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { fetchEscandallosPrecioMapByProductIds, type EscandalloPrecioRow } from "@/lib/fetchEscandallosPrecioMap";
 import { logActivity } from "@/lib/activityLog";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import { cantidadSugeridaPedido, waUrlPedidoAgrupadoProveedor } from "@/lib/whatsappPedido";
 
 
 export function DashboardClient() {
@@ -25,6 +26,8 @@ export function DashboardClient() {
   const queryClient = useQueryClient();
   const [envasesOpen, setEnvasesOpen] = useState(false);
   const [pedidoRapidoOpen, setPedidoRapidoOpen] = useState(false);
+  const [pedidoRapidoProveedorKey, setPedidoRapidoProveedorKey] = useState<string>("");
+  const [pedidoRapidoQty, setPedidoRapidoQty] = useState<Record<string, string>>({});
   const [confirmProd, setConfirmProd] = useState<null | { id: string; articulo: string; stock_vacios: number }>(null);
   const [confirming, setConfirming] = useState(false);
   const [envasesErr, setEnvasesErr] = useState<string | null>(null);
@@ -66,6 +69,57 @@ export function DashboardClient() {
   });
 
   const bajoMinimos = useMemo(() => rows.filter((p) => p.stock_actual <= p.stock_minimo), [rows]);
+
+  function sanitizeIntString(raw: string): string {
+    const cleaned = String(raw ?? "").replace(/[^\d]/g, "");
+    return cleaned === "" ? "" : String(Math.max(0, Math.trunc(Number(cleaned) || 0)));
+  }
+
+  function qtyNum(id: string): number {
+    return Math.max(0, Math.trunc(Number(pedidoRapidoQty[id] ?? "0") || 0));
+  }
+
+  function setQtyDelta(id: string, delta: number) {
+    setPedidoRapidoQty((prev) => {
+      const curr = Math.max(0, Math.trunc(Number(prev[id] ?? "0") || 0));
+      const next = Math.max(0, curr + delta);
+      return { ...prev, [id]: String(next) };
+    });
+  }
+
+  const bajoMinimosPorProveedor = useMemo(() => {
+    const map = new Map<string, { nombre: string; telefono: string | null; items: typeof bajoMinimos }>();
+    for (const p of bajoMinimos) {
+      const provNombre = (p.proveedor?.nombre ?? "").trim() || "Proveedor";
+      const tel = p.proveedor?.telefono_whatsapp ?? null;
+      const key = `${provNombre}::${tel ?? ""}`;
+      const g = map.get(key) ?? { nombre: provNombre, telefono: tel, items: [] };
+      g.items.push(p);
+      map.set(key, g);
+    }
+    const groups = Array.from(map.entries()).map(([key, g]) => ({ key, ...g }));
+    groups.sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" }));
+    for (const g of groups) g.items.sort((a, b) => a.articulo.localeCompare(b.articulo, "es", { sensitivity: "base" }));
+    return groups;
+  }, [bajoMinimos]);
+
+  useEffect(() => {
+    if (!pedidoRapidoOpen) return;
+    // Inicializa cantidades sugeridas (reposicion hasta mínimo).
+    setPedidoRapidoQty((prev) => {
+      const next = { ...prev };
+      for (const p of bajoMinimos) {
+        if (next[p.id] != null && String(next[p.id]).trim() !== "") continue;
+        next[p.id] = String(cantidadSugeridaPedido(Number(p.stock_actual) || 0, Number(p.stock_minimo) || 0));
+      }
+      return next;
+    });
+    // Default provider selection: primero.
+    if (!pedidoRapidoProveedorKey && bajoMinimosPorProveedor.length) {
+      setPedidoRapidoProveedorKey(bajoMinimosPorProveedor[0]?.key ?? "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pedidoRapidoOpen]);
 
   function bucketUnidad(p: { unidad: string | null; categoria: string | null; articulo: string }): "caja" | "barril" | "gas" | null {
     const unidad = (p.unidad ?? "").trim().toLowerCase();
@@ -468,7 +522,7 @@ export function DashboardClient() {
         </div>
       </Drawer>
 
-      <Drawer open={pedidoRapidoOpen} title="Pedido rápido · Bajo mínimos" onClose={() => setPedidoRapidoOpen(false)}>
+      <Drawer open={pedidoRapidoOpen} title="Pedido Rápido de Reposición" onClose={() => setPedidoRapidoOpen(false)}>
         <div className="space-y-3 pb-4">
           <p className="text-sm text-slate-600">
             Productos bajo mínimos: <span className="font-bold text-slate-900">{bajoMinimos.length}</span>
@@ -476,44 +530,133 @@ export function DashboardClient() {
           {bajoMinimos.length === 0 ? (
             <p className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">No hay productos bajo mínimos.</p>
           ) : (
-            <ul className="space-y-2">
-              {bajoMinimos
-                .slice()
-                .sort((a, b) => a.articulo.localeCompare(b.articulo, "es", { sensitivity: "base" }))
-                .slice(0, 50)
-                .map((p) => (
-                  <li key={p.id} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-                    <div className="flex items-baseline justify-between gap-3">
-                      <p className="min-w-0 flex-1 truncate font-semibold text-slate-900">{p.articulo}</p>
-                      <p className="shrink-0 font-bold tabular-nums text-slate-900">
-                        {p.stock_actual} / {p.stock_minimo}
-                      </p>
-                    </div>
-                    <p className="mt-1 text-xs text-slate-500">Stock actual / stock mínimo</p>
-                  </li>
-                ))}
-            </ul>
+            <>
+              {bajoMinimosPorProveedor.length > 1 ? (
+                <div className="grid gap-2">
+                  <label className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Proveedor</label>
+                  <select
+                    className="premium-input"
+                    value={pedidoRapidoProveedorKey}
+                    onChange={(e) => setPedidoRapidoProveedorKey(e.currentTarget.value)}
+                  >
+                    {bajoMinimosPorProveedor.map((g) => (
+                      <option key={g.key} value={g.key}>
+                        {g.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+
+              <div className="space-y-2">
+                {bajoMinimosPorProveedor
+                  .filter((g) => !pedidoRapidoProveedorKey || g.key === pedidoRapidoProveedorKey)
+                  .map((g) => (
+                    <section key={g.key} className="space-y-2">
+                      <div className="premium-card-tight premium-topline-orange">
+                        <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">{g.nombre}</p>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          {g.telefono ? `WhatsApp: ${g.telefono}` : "Sin teléfono configurado (WhatsApp te pedirá elegir contacto)"}
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+                        <div className="grid grid-cols-[1fr_100px] gap-2 border-b border-slate-100 px-4 py-2 text-[11px] font-extrabold uppercase tracking-wide text-slate-500">
+                          <div>Producto</div>
+                          <div className="text-center">Pedir</div>
+                        </div>
+                        {g.items.map((p) => {
+                          const q = qtyNum(p.id);
+                          const min = Number(p.stock_minimo) || 0;
+                          const act = Number(p.stock_actual) || 0;
+                          return (
+                            <div key={p.id} className="grid grid-cols-[1fr_100px] items-center gap-2 border-b border-slate-100 px-4 py-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold text-slate-900">{p.articulo}</p>
+                                <p className="mt-0.5 text-xs text-slate-500">
+                                  Stock: <span className="font-bold text-slate-700">{act}</span> · Mínimo:{" "}
+                                  <span className="font-bold text-slate-700">{min}</span>
+                                </p>
+                              </div>
+                              <div className="grid grid-cols-[36px_1fr_36px] items-center gap-1">
+                                <button
+                                  type="button"
+                                  className="min-h-10 rounded-xl border border-slate-200 bg-white text-lg font-black text-slate-900 hover:bg-slate-50 disabled:opacity-40"
+                                  onClick={() => setQtyDelta(p.id, -1)}
+                                  disabled={q <= 0}
+                                  aria-label={`Restar 1 a ${p.articulo}`}
+                                >
+                                  −
+                                </button>
+                                <input
+                                  className="min-h-10 w-full rounded-xl border border-slate-200 bg-white px-2 text-center text-base font-black tabular-nums text-slate-900"
+                                  inputMode="numeric"
+                                  pattern="[0-9]*"
+                                  value={String(q)}
+                                  onChange={(e) =>
+                                    setPedidoRapidoQty((d) => ({ ...d, [p.id]: sanitizeIntString(e.currentTarget.value) }))
+                                  }
+                                  aria-label={`Cantidad a pedir de ${p.articulo}`}
+                                />
+                                <button
+                                  type="button"
+                                  className="min-h-10 rounded-xl border border-slate-200 bg-white text-lg font-black text-slate-900 hover:bg-slate-50"
+                                  onClick={() => setQtyDelta(p.id, +1)}
+                                  aria-label={`Sumar 1 a ${p.articulo}`}
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <a
+                        href={waUrlPedidoAgrupadoProveedor({
+                          nombreProveedor: g.nombre,
+                          telefonoWhatsapp: g.telefono,
+                          nombreEstablecimiento: (activeEstablishmentName ?? "").trim() || "mi local",
+                          lineas: g.items
+                            .map((p) => ({
+                              articulo: p.articulo,
+                              cantidad: qtyNum(p.id),
+                              unidad: p.unidad
+                            }))
+                            .filter((l) => (Number(l.cantidad) || 0) > 0)
+                        })}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={[
+                          "premium-btn-primary w-full justify-center inline-flex",
+                          g.items.some((p) => qtyNum(p.id) > 0) ? "" : "pointer-events-none opacity-50"
+                        ].join(" ")}
+                        onClick={() => setPedidoRapidoOpen(false)}
+                      >
+                        Enviar Pedido por WhatsApp
+                      </a>
+                    </section>
+                  ))}
+              </div>
+            </>
           )}
 
           <div className="grid grid-cols-1 gap-2 pt-2 sm:grid-cols-2">
             <Link
               href="/admin/pedidos?bajoMinimos=1"
-              className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-premium-blue px-4 text-sm font-semibold text-white hover:brightness-95"
+              className="premium-btn-secondary inline-flex w-full items-center justify-center"
               onClick={() => setPedidoRapidoOpen(false)}
             >
-              Generar pedido
+              Ver en Pedidos
             </Link>
             <Link
               href="/admin/bajo-minimos"
-              className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 hover:bg-slate-50"
+              className="premium-btn-secondary inline-flex w-full items-center justify-center"
               onClick={() => setPedidoRapidoOpen(false)}
             >
               Ver detalle
             </Link>
           </div>
-          <p className="text-xs text-slate-500">
-            “Generar pedido” abre Pedidos con filtro de bajo mínimos (sin tocar base de datos).
-          </p>
         </div>
       </Drawer>
     </div>
