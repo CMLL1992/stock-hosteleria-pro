@@ -23,6 +23,7 @@ type Reserva = {
   hora: string; // "21:30"
   prepagoEUR: number;
   notas: string;
+  estado?: "pendiente" | "confirmada" | "cancelada";
 };
 
 type Mesa = {
@@ -63,6 +64,23 @@ function todayYmd(): string {
 
 function newId(prefix: string) {
   return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
+}
+
+function normalizeWhatsAppPhone(input: string): string {
+  const trimmed = (input ?? "").trim();
+  const normalizedPrefix = trimmed.startsWith("00") ? trimmed.slice(2) : trimmed;
+  const digits = normalizedPrefix.replace(/\D/g, "");
+  return digits;
+}
+
+function nowStampEs(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${y}-${m}-${day} ${hh}:${mm}`;
 }
 
 function clamp01(n: number) {
@@ -128,6 +146,16 @@ export default function ReservasPlanoPage() {
   const [scale, setScale] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
 
+  const today = todayYmd();
+  const [selectedDate, setSelectedDate] = useState<string>(today);
+  const isToday = selectedDate === today;
+  const [viewMode, setViewMode] = useState<"plano" | "lista">("plano");
+  const [estadoFilter, setEstadoFilter] = useState<"todas" | "pendiente" | "confirmada" | "cancelada">("todas");
+  const [reservasDia, setReservasDia] = useState<
+    Array<Reserva & { mesaNumero?: number | null; zonaNombre?: string | null; mesaId?: string | null }>
+  >([]);
+  const [crmCount, setCrmCount] = useState<number | null>(null);
+
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selMesaId, setSelMesaId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -136,6 +164,7 @@ export default function ReservasPlanoPage() {
   const [horariosSaving, setHorariosSaving] = useState(false);
   const [horariosOpen, setHorariosOpen] = useState(false);
   const [horariosDirty, setHorariosDirty] = useState(false);
+  const [horariosPresetMsg, setHorariosPresetMsg] = useState<string | null>(null);
 
   const reservaIdsRef = useRef<Set<string>>(new Set());
   const audioAllowedRef = useRef(false);
@@ -164,7 +193,13 @@ export default function ReservasPlanoPage() {
     return zona.mesas.find((m) => m.id === selMesaId) ?? null;
   }, [zona, selMesaId]);
 
-  const today = todayYmd();
+  useEffect(() => {
+    // Para fechas futuras, por defecto mostramos lista (más útil para planificación).
+    if (!isToday) {
+      setEditMode(false);
+      setViewMode("lista");
+    }
+  }, [isToday]);
 
   const refreshFromDb = useCallback(async () => {
     if (!activeEstablishmentId) return;
@@ -262,9 +297,9 @@ export default function ReservasPlanoPage() {
       // 3) reservas de hoy
       const rRes = await supabase()
         .from("sala_reservas")
-        .select("id,mesa_id,fecha,nombre,telefono,pax,hora,prepago_eur,notas")
+        .select("id,mesa_id,fecha,nombre,telefono,pax,hora,prepago_eur,notas,estado")
         .eq("establecimiento_id", activeEstablishmentId)
-        .eq("fecha", today);
+        .eq("fecha", selectedDate);
       if (rRes.error) throw rRes.error;
       const resRows = (rRes.data ?? []) as Array<{
         id: string;
@@ -276,6 +311,7 @@ export default function ReservasPlanoPage() {
         hora: string;
         prepago_eur: number;
         notas: string;
+        estado: string | null;
       }>;
       const resByMesa = new Map<string, Reserva>();
       for (const r of resRows) {
@@ -287,9 +323,39 @@ export default function ReservasPlanoPage() {
           pax: Math.max(1, safeInt(r.pax, 2)),
           hora: String(r.hora ?? "21:00"),
           prepagoEUR: Math.max(0, Number(r.prepago_eur ?? 0) || 0),
-          notas: String(r.notas ?? "")
+          notas: String(r.notas ?? ""),
+          estado: (String(r.estado ?? "").trim().toLowerCase() as Reserva["estado"]) || "pendiente"
         });
       }
+
+      // Vista lista: reserva por id con metadatos de mesa/zona
+      const mesaById = new Map<string, { numero: number; zonaId: string }>();
+      for (const m of mesasRows) mesaById.set(m.id, { numero: m.numero, zonaId: m.zona_id });
+      const zonaById = new Map<string, string>();
+      for (const z of zonasRows) zonaById.set(z.id, z.nombre);
+      setReservasDia(
+        resRows
+          .map((r) => {
+            const mid = String(r.mesa_id ?? "");
+            const meta = mesaById.get(mid) ?? null;
+            const zonaNombre = meta?.zonaId ? zonaById.get(meta.zonaId) ?? null : null;
+            return {
+              id: String(r.id),
+              fecha: String(r.fecha),
+              nombre: String(r.nombre ?? ""),
+              telefono: String(r.telefono ?? ""),
+              pax: Math.max(1, safeInt(r.pax, 2)),
+              hora: String(r.hora ?? "21:00"),
+              prepagoEUR: Math.max(0, Number(r.prepago_eur ?? 0) || 0),
+              notas: String(r.notas ?? ""),
+              estado: (String(r.estado ?? "").trim().toLowerCase() as Reserva["estado"]) || "pendiente",
+              mesaNumero: meta?.numero ?? null,
+              zonaNombre,
+              mesaId: mid || null
+            };
+          })
+          .sort((a, b) => String(a.hora).localeCompare(String(b.hora)))
+      );
 
       // 4) mapear a UI
       const mesasByZona = new Map<string, Mesa[]>();
@@ -331,7 +397,7 @@ export default function ReservasPlanoPage() {
         }
       }
       reservaIdsRef.current = nextIds;
-      if (hasNew) {
+      if (hasNew && isToday) {
         beep();
         setToastOpen(true);
         setToastCount((c) => c + 1);
@@ -341,7 +407,7 @@ export default function ReservasPlanoPage() {
       setErr(supabaseErrToString(e));
       setState(defaultPlano(activeEstablishmentId));
     }
-  }, [activeEstablishmentId, today]);
+  }, [activeEstablishmentId, isToday, selectedDate]);
 
   function updateZona(zonaId: string, patch: Partial<Zona>) {
     if (!state) return;
@@ -377,6 +443,7 @@ export default function ReservasPlanoPage() {
   async function addMesa() {
     if (!zona || !state) return;
     if (!activeEstablishmentId) return;
+    if (!isToday) return;
     if (addMesaLoading) return;
     const nextNum = Math.max(0, ...zona.mesas.map((m) => m.numero)) + 1;
     try {
@@ -416,6 +483,7 @@ export default function ReservasPlanoPage() {
 
   async function removeMesa(zonaId: string, mesaId: string) {
     if (!state) return;
+    if (!isToday) return;
     const z = state.zonas.find((z) => z.id === zonaId);
     if (!z) return;
     try {
@@ -501,6 +569,7 @@ export default function ReservasPlanoPage() {
 
   async function setEstado(estado: MesaEstado) {
     if (!mesaSel || !zona) return;
+    if (!isToday) return;
     const prev = mesaSel.estado;
     const patch: Partial<Mesa> = { estado };
     if (estado === "ocupada") patch.horaCheckin = new Date().toISOString();
@@ -518,6 +587,7 @@ export default function ReservasPlanoPage() {
 
   async function upsertReservaHoy(patch: Partial<Reserva>) {
     if (!mesaSel || !zona) return;
+    if (!isToday) return;
     const base: Reserva =
       mesaSel.reservaHoy && mesaSel.reservaHoy.fecha === today
         ? mesaSel.reservaHoy
@@ -538,7 +608,8 @@ export default function ReservasPlanoPage() {
             pax: next.pax,
             hora: next.hora,
             prepago_eur: next.prepagoEUR,
-            notas: next.notas
+            notas: next.notas,
+            estado: (next.estado ?? "pendiente") as unknown as string
           } as unknown as Record<string, unknown>,
           { onConflict: "mesa_id,fecha" }
         )
@@ -576,6 +647,34 @@ export default function ReservasPlanoPage() {
     const ocupadas = mesas.filter((m) => m.estado === "ocupada").length;
     return { libres, reservadas, ocupadas };
   }, [zona?.mesas]);
+
+  // CRM: nº de reservas previas por teléfono (mismo establecimiento)
+  useEffect(() => {
+    const tel = (mesaSel?.reservaHoy?.telefono ?? "").trim();
+    if (!activeEstablishmentId || !tel) {
+      setCrmCount(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { count, error: cErr } = await supabase()
+          .from("sala_reservas")
+          .select("id", { count: "exact", head: true })
+          .eq("establecimiento_id", activeEstablishmentId)
+          .eq("telefono", tel);
+        if (cancelled) return;
+        if (cErr) throw cErr;
+        setCrmCount(Math.max(0, Number(count ?? 0) - 1));
+      } catch {
+        if (cancelled) return;
+        setCrmCount(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeEstablishmentId, mesaSel?.reservaHoy?.telefono]);
 
   const estanciaMediaMin = useMemo(() => {
     const mesas = zona?.mesas ?? [];
@@ -670,6 +769,35 @@ export default function ReservasPlanoPage() {
       return next;
     });
     setHorariosDirty(true);
+    setHorariosPresetMsg(null);
+  }
+
+  function applyPreset(preset: "restaurante" | "afterwork" | "cenas") {
+    const base: Horario[] = [
+      { diaSemana: 1, activo: true, horaInicio: "12:00", horaFin: "23:30" },
+      { diaSemana: 2, activo: true, horaInicio: "12:00", horaFin: "23:30" },
+      { diaSemana: 3, activo: true, horaInicio: "12:00", horaFin: "23:30" },
+      { diaSemana: 4, activo: true, horaInicio: "12:00", horaFin: "23:30" },
+      { diaSemana: 5, activo: true, horaInicio: "12:00", horaFin: "23:30" },
+      { diaSemana: 6, activo: true, horaInicio: "12:00", horaFin: "23:30" },
+      { diaSemana: 0, activo: true, horaInicio: "12:00", horaFin: "23:30" }
+    ];
+
+    let next = base;
+    if (preset === "cenas") {
+      next = base.map((h) => ({ ...h, horaInicio: "19:30", horaFin: "23:30", activo: true }));
+    }
+    if (preset === "afterwork") {
+      next = base.map((h) => {
+        // Martes(2) a Sábado(6) activos 17:00-02:00; Lunes(1) y Domingo(0) cerrados
+        const active = h.diaSemana >= 2 && h.diaSemana <= 6;
+        return active ? { ...h, activo: true, horaInicio: "17:00", horaFin: "02:00" } : { ...h, activo: false };
+      });
+    }
+
+    setHorarios(next);
+    setHorariosDirty(true);
+    setHorariosPresetMsg("Horario aplicado. No olvides guardar los cambios.");
   }
 
   async function saveHorarios() {
@@ -769,7 +897,7 @@ export default function ReservasPlanoPage() {
         <div className="premium-card">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Plano de sala · {today}</p>
+              <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Reservas · {selectedDate}</p>
               <div className="mt-1 flex items-center gap-2 text-slate-900">
                 <MapPin className="h-4 w-4 text-slate-500" aria-hidden />
                 <p className="truncate text-base font-black tracking-tight">{(activeEstablishmentName ?? "").trim() || "Mi local"}</p>
@@ -788,6 +916,19 @@ export default function ReservasPlanoPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="date"
+                className="premium-input min-h-11 w-auto px-3 text-sm font-semibold tabular-nums"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.currentTarget.value)}
+              />
+              <button
+                type="button"
+                className={["min-h-11 rounded-2xl px-4 text-sm font-extrabold transition-colors", viewMode === "plano" ? "bg-premium-blue text-white" : "border border-slate-200 bg-white text-slate-900 hover:bg-slate-50"].join(" ")}
+                onClick={() => setViewMode((v) => (v === "plano" ? "lista" : "plano"))}
+              >
+                {viewMode === "plano" ? "Vista Plano" : "Vista Lista"}
+              </button>
               <div className="relative">
                 <input
                   className="premium-input min-h-11 w-[220px] px-3 text-sm"
@@ -831,8 +972,9 @@ export default function ReservasPlanoPage() {
                 type="button"
                 className={["min-h-11 rounded-2xl px-4 text-sm font-extrabold transition-colors", editMode ? "bg-premium-blue text-white" : "border border-slate-200 bg-white text-slate-900 hover:bg-slate-50"].join(" ")}
                 onClick={() => setEditMode((v) => !v)}
+                disabled={!isToday}
               >
-                {editMode ? "Editar plano: ON" : "Editar plano"}
+                {isToday ? (editMode ? "Editar plano: ON" : "Editar plano") : "Modo lectura"}
               </button>
               <button
                 type="button"
@@ -856,6 +998,7 @@ export default function ReservasPlanoPage() {
             </div>
           </div>
 
+          {viewMode === "lista" ? null : (
           <div className="mt-4 grid gap-3 sm:grid-cols-4">
             {(["libre", "reservada", "ocupada", "sucia"] as MesaEstado[]).map((s) => {
               const st = estadoStyle(s);
@@ -870,7 +1013,9 @@ export default function ReservasPlanoPage() {
               );
             })}
           </div>
+          )}
 
+          {viewMode === "lista" ? null : (
           <div className="mt-4 overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 shadow-sm">
             <div
               ref={boardRef}
@@ -938,6 +1083,76 @@ export default function ReservasPlanoPage() {
               </div>
             </div>
           </div>
+          )}
+
+          {viewMode === "lista" ? (
+            <div className="mt-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-100">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Vista lista</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    Total personas para el día:{" "}
+                    <span className="font-black tabular-nums">
+                      {reservasDia.filter((r) => (r.estado ?? "pendiente") !== "cancelada").reduce((s, r) => s + (Number(r.pax) || 0), 0)}
+                    </span>
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {(["todas", "pendiente", "confirmada", "cancelada"] as const).map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      className={[
+                        "min-h-10 rounded-2xl px-3 text-xs font-extrabold transition",
+                        estadoFilter === k ? "bg-premium-blue text-white shadow-sm" : "border border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
+                      ].join(" ")}
+                      onClick={() => setEstadoFilter(k)}
+                    >
+                      {k === "todas" ? "Todas" : k === "pendiente" ? "Pendientes" : k === "confirmada" ? "Confirmadas" : "Canceladas"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-2">
+                {reservasDia
+                  .filter((r) => (estadoFilter === "todas" ? true : (r.estado ?? "pendiente") === estadoFilter))
+                  .map((r) => (
+                    <button
+                      key={r.id}
+                      type="button"
+                      className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-3 text-left shadow-sm hover:bg-slate-50"
+                      onClick={() => {
+                        if (!r.mesaId) return;
+                        const z = state?.zonas.find((zz) => zz.mesas.some((m) => m.id === r.mesaId))?.id ?? null;
+                        if (z) setZoneId(z);
+                        openMesa(r.mesaId);
+                      }}
+                    >
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-black tabular-nums text-slate-900">{r.hora}</span>
+                          <span className="text-sm font-extrabold text-slate-900">{r.nombre || "—"}</span>
+                          <span className="text-xs font-semibold text-slate-600">
+                            {r.pax} pax · {r.telefono || "—"}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-xs font-semibold text-slate-600">
+                          {r.mesaNumero != null ? `Mesa ${r.mesaNumero}` : "Mesa —"}{r.zonaNombre ? ` · ${r.zonaNombre}` : ""} ·{" "}
+                          {(r.estado ?? "pendiente") === "confirmada"
+                            ? "Confirmada"
+                            : (r.estado ?? "pendiente") === "cancelada"
+                              ? "Cancelada"
+                              : "Pendiente"}
+                        </p>
+                      </div>
+                      <span className="text-xs font-black text-slate-500">Ver</span>
+                    </button>
+                  ))}
+                {!reservasDia.length ? <p className="text-sm text-slate-600">No hay reservas para esta fecha.</p> : null}
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <Drawer open={horariosOpen} title="Configurar horarios" onClose={() => setHorariosOpen(false)}>
@@ -957,6 +1172,24 @@ export default function ReservasPlanoPage() {
                   {horariosSaving ? "Guardando…" : horariosDirty ? "Guardar" : "Guardado"}
                 </button>
               </div>
+            </div>
+
+            <div className="premium-card-tight">
+              <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Carga rápida</p>
+              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <button type="button" className="premium-btn-secondary" onClick={() => applyPreset("restaurante")}>
+                  Restaurante
+                </button>
+                <button type="button" className="premium-btn-secondary" onClick={() => applyPreset("afterwork")}>
+                  After-Work
+                </button>
+                <button type="button" className="premium-btn-secondary" onClick={() => applyPreset("cenas")}>
+                  Solo Cenas
+                </button>
+              </div>
+              {horariosPresetMsg ? (
+                <p className="mt-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">{horariosPresetMsg}</p>
+              ) : null}
             </div>
 
             {horarios?.length ? (
@@ -1038,7 +1271,7 @@ export default function ReservasPlanoPage() {
               </div>
 
               <div className="premium-card-tight premium-topline-blue">
-                <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Reserva (hoy)</p>
+                <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Reserva ({isToday ? "hoy" : selectedDate})</p>
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   <div>
                     <label className="text-xs font-semibold text-slate-600">Nombre</label>
@@ -1078,6 +1311,63 @@ export default function ReservasPlanoPage() {
                     <textarea className="premium-input mt-1 min-h-24 py-3" value={mesaSel.reservaHoy?.notas ?? ""} onChange={(e) => upsertReservaHoy({ notas: e.currentTarget.value })} />
                   </div>
                 </div>
+                <p className="mt-3 text-xs font-semibold text-slate-600">
+                  Este cliente ha reservado{" "}
+                  <span className="font-black tabular-nums text-slate-900">{crmCount ?? "—"}</span> veces anteriormente.
+                </p>
+
+                <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                  <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Comunicación</p>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      className="min-h-11 rounded-2xl bg-[#25D366] px-4 text-sm font-extrabold text-white shadow-sm hover:brightness-110 active:brightness-95 disabled:opacity-60"
+                      disabled={!normalizeWhatsAppPhone(mesaSel.reservaHoy?.telefono ?? "") || !(mesaSel.reservaHoy?.nombre ?? "").trim()}
+                      onClick={async () => {
+                        const phone = normalizeWhatsAppPhone(mesaSel.reservaHoy?.telefono ?? "");
+                        const nombre = (mesaSel.reservaHoy?.nombre ?? "").trim();
+                        const hora = mesaSel.reservaHoy?.hora ?? "—";
+                        const local = (activeEstablishmentName ?? "").trim() || "nuestro local";
+                        if (!phone || !nombre) return;
+                        const msg = `Hola ${nombre}, te confirmamos tu reserva para hoy a las ${hora} en ${local}. ¡Nos vemos pronto!`;
+                        const stamp = nowStampEs();
+                        const prevNotas = mesaSel.reservaHoy?.notas ?? "";
+                        const nextNotas = `${prevNotas}${prevNotas.trim() ? "\n" : ""}Aviso enviado por WhatsApp el ${stamp}`;
+                        await upsertReservaHoy({ notas: nextNotas });
+                        window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank", "noopener,noreferrer");
+                      }}
+                    >
+                      Recordar reserva
+                    </button>
+
+                    {mesaSel.reservaHoy?.estado === "confirmada" ? (
+                      <button
+                        type="button"
+                        className="min-h-11 rounded-2xl border border-[#25D366]/30 bg-[#25D366]/10 px-4 text-sm font-extrabold text-[#0B6B3A] shadow-sm hover:bg-[#25D366]/15 active:bg-[#25D366]/20 disabled:opacity-60"
+                        disabled={!normalizeWhatsAppPhone(mesaSel.reservaHoy?.telefono ?? "") || !(mesaSel.reservaHoy?.nombre ?? "").trim()}
+                        onClick={async () => {
+                          const phone = normalizeWhatsAppPhone(mesaSel.reservaHoy?.telefono ?? "");
+                          const nombre = (mesaSel.reservaHoy?.nombre ?? "").trim();
+                          const local = (activeEstablishmentName ?? "").trim() || "nuestro local";
+                          if (!phone || !nombre) return;
+                          const msg = `¡Hola ${nombre}! Tu mesa en ${local} ya está lista. Te esperamos.`;
+                          const stamp = nowStampEs();
+                          const prevNotas = mesaSel.reservaHoy?.notas ?? "";
+                          const nextNotas = `${prevNotas}${prevNotas.trim() ? "\n" : ""}Aviso enviado por WhatsApp el ${stamp}`;
+                          await upsertReservaHoy({ notas: nextNotas });
+                          window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank", "noopener,noreferrer");
+                        }}
+                      >
+                        Mesa lista
+                      </button>
+                    ) : (
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-600">
+                        “Mesa lista” aparece al marcar la reserva como <span className="font-black">Confirmada</span>.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <button
                     type="button"
@@ -1085,7 +1375,10 @@ export default function ReservasPlanoPage() {
                     onClick={() => {
                       // confirmación simple: marca como reservada si hay nombre/pax
                       const has = !!(mesaSel.reservaHoy?.nombre ?? "").trim();
-                      if (has) setEstado("reservada");
+                      if (has) {
+                        void upsertReservaHoy({ estado: "confirmada" });
+                        void setEstado("reservada");
+                      }
                     }}
                   >
                     Confirmar reserva

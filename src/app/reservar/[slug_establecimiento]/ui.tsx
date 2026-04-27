@@ -47,9 +47,11 @@ function hhmmOfMinutes(mins: number): string {
 function buildSlots30(openHHMM: string, closeHHMM: string): string[] {
   const a = minutesOf(openHHMM);
   const b = minutesOf(closeHHMM);
-  if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a) return [];
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return [];
+  // Permite horarios que cruzan medianoche (ej: 17:00 -> 02:00)
+  const end = b <= a ? b + 24 * 60 : b;
   const out: string[] = [];
-  for (let t = a; t <= b; t += 30) out.push(hhmmOfMinutes(t));
+  for (let t = a; t <= end; t += 30) out.push(hhmmOfMinutes(t % (24 * 60)));
   return out;
 }
 

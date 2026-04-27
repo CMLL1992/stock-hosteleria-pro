@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo } from "react";
+import { LayoutDashboard } from "lucide-react";
 import { useMyRole } from "@/lib/useMyRole";
 import { getEffectiveRole, hasPermission } from "@/lib/permissions";
 
@@ -56,14 +57,7 @@ export function BottomTabBar() {
       );
     }
     if (name === "reservas") {
-      return (
-        <svg viewBox="0 0 24 24" className={cls} aria-hidden>
-          <path d="M7 3v3M17 3v3M4 7h16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          <path d="M5 7v14a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V7" fill="none" stroke="currentColor" strokeWidth="2" />
-          <path d="M7.5 12.5h9" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          <path d="M8 17l2 2 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      );
+      return <LayoutDashboard className={cls} aria-hidden strokeWidth={2.2} />;
     }
     if (name === "stock") {
       return (

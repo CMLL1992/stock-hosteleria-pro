@@ -146,12 +146,6 @@ const SECTIONS: AdminSection[] = [
     heading: "Operaciones y movimientos",
     items: [
       {
-        id: "reservas",
-        href: "/admin/reservas",
-        title: "Reservas y plano",
-        subtitle: "Plano de sala + reservas con estados por mesa."
-      },
-      {
         id: "eventos",
         href: "/admin/eventos",
         title: "Eventos",
