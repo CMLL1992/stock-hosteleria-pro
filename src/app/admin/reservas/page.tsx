@@ -173,6 +173,19 @@ function ReservasPlanoInner() {
     }
   }, [activeEstablishmentId]);
 
+  const loadRef = useRef(load);
+  loadRef.current = load;
+
+  const realtimeReloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (realtimeReloadTimerRef.current != null) {
+        clearTimeout(realtimeReloadTimerRef.current);
+        realtimeReloadTimerRef.current = null;
+      }
+    };
+  }, []);
+
   useEffect(() => {
     void load();
   }, [load]);
@@ -180,7 +193,14 @@ function ReservasPlanoInner() {
   useCambiosGlobalesRealtime({
     establecimientoId: activeEstablishmentId,
     tables: ["sala_zonas", "sala_mesas", "sala_reservas"],
-    onChange: () => void load()
+    onChange: () => {
+      // Evita carrera: el propio UPDATE dispara Realtime y un load inmediato puede leer fila aún antigua.
+      if (realtimeReloadTimerRef.current != null) clearTimeout(realtimeReloadTimerRef.current);
+      realtimeReloadTimerRef.current = setTimeout(() => {
+        realtimeReloadTimerRef.current = null;
+        void loadRef.current();
+      }, 450);
+    }
   });
 
   useEffect(() => {
@@ -483,26 +503,47 @@ function ReservasPlanoInner() {
     if (!canDrag) return;
     setErrMsg(null);
     setMesas((prev) => prev.map((m) => (m.id === selMesa.id ? { ...m, ...patch } : m)));
+    const selectCols = ["id", ...Object.keys(patch)].join(",");
     try {
-      let res = await supabase()
+      let last = await supabase()
         .from("sala_mesas")
         .update(patch)
         .eq("id", selMesa.id)
-        .eq("establecimiento_id", activeEstablishmentId);
-      if (res.error && patch.rotacion_deg !== undefined) {
+        .eq("establecimiento_id", activeEstablishmentId)
+        .select(selectCols)
+        .single();
+      if (last.error && patch.rotacion_deg !== undefined) {
+        const rotacionErr = last.error;
         const rest = { ...patch };
         delete (rest as Record<string, unknown>).rotacion_deg;
         if (Object.keys(rest).length > 0) {
-          res = await supabase()
+          const sel2 = ["id", ...Object.keys(rest)].join(",");
+          last = await supabase()
             .from("sala_mesas")
             .update(rest)
             .eq("id", selMesa.id)
-            .eq("establecimiento_id", activeEstablishmentId);
+            .eq("establecimiento_id", activeEstablishmentId)
+            .select(sel2)
+            .single();
+        } else {
+          throw rotacionErr;
         }
       }
-      if (res.error) throw res.error;
+      if (last.error) throw last.error;
+      const updated = last.data as Partial<Mesa> | null;
+      if (updated && typeof updated === "object") {
+        setMesas((prev) => prev.map((m) => (m.id === selMesa.id ? { ...m, ...updated } : m)));
+      }
     } catch (e) {
-      setErrMsg(supabaseErrToString(e));
+      const msg = supabaseErrToString(e);
+      const rotHint =
+        patch.rotacion_deg !== undefined &&
+        (/rotacion|column|schema|42703|does not exist/i.test(msg) || msg.toLowerCase().includes("rotacion"));
+      setErrMsg(
+        rotHint
+          ? `${msg} Añade la columna ejecutando en Supabase: supabase/patches/sala-mesas-rotacion-pared.sql`
+          : msg
+      );
       void load();
     }
   }
