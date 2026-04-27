@@ -16,8 +16,6 @@ import { fetchEscandallosPrecioMapByProductIds, type EscandalloPrecioRow } from 
 import { logActivity } from "@/lib/activityLog";
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
-type ChecklistTipo = "Apertura" | "Cierre";
-type ChecklistTask = { id: string; tipo: ChecklistTipo; titulo: string; orden: number; activo: boolean; completada: boolean };
 
 export function DashboardClient() {
   const { activeEstablishmentId: establecimientoId, activeEstablishmentName, me } = useActiveEstablishment();
@@ -55,55 +53,6 @@ export function DashboardClient() {
   });
 
   const rows = useMemo(() => productosQuery.data ?? [], [productosQuery.data]);
-
-  const checklistQuery = useQuery({
-    queryKey: ["dashboard", "checklist-estado", establecimientoId],
-    enabled: !!establecimientoId,
-    queryFn: async (): Promise<ChecklistTask[]> => {
-      if (!establecimientoId) return [];
-      const tareasRes = await supabase().rpc("list_checklists_tareas", {
-        p_establecimiento_id: establecimientoId,
-        p_tipo: null,
-        p_activo_only: true
-      });
-      if (tareasRes.error) throw tareasRes.error;
-      const base = (tareasRes.data ?? []) as unknown as Array<{ id: string; tipo: string; titulo: string; orden: number; activo: boolean }>;
-      const ids = base.map((t) => String(t.id)).filter(Boolean);
-
-      const completadas = new Set<string>();
-      if (ids.length) {
-        const s = await supabase()
-          .from("checklists_tareas_estado")
-          .select("tarea_id,completada")
-          .eq("establecimiento_id", establecimientoId)
-          .in("tarea_id", ids);
-        if (!s.error) {
-          for (const row of (s.data ?? []) as unknown as Array<{ tarea_id: string; completada: boolean }>) {
-            if (row.completada) completadas.add(String(row.tarea_id));
-          }
-        }
-      }
-
-      return base.map((t) => ({
-        id: String(t.id),
-        tipo: t.tipo === "Cierre" ? "Cierre" : "Apertura",
-        titulo: String(t.titulo ?? ""),
-        orden: Math.trunc(Number(t.orden) || 0),
-        activo: Boolean(t.activo),
-        completada: completadas.has(String(t.id))
-      }));
-    },
-    staleTime: 10_000,
-    retry: 1
-  });
-
-  const checklistPendientes = useMemo(() => (checklistQuery.data ?? []).filter((t) => !t.completada), [checklistQuery.data]);
-  const checklistResumen = useMemo(() => {
-    const all = checklistQuery.data ?? [];
-    const total = all.length;
-    const done = all.filter((t) => t.completada).length;
-    return { total, done, pending: Math.max(0, total - done) };
-  }, [checklistQuery.data]);
 
   const escandallosPrecioQuery = useQuery({
     queryKey: ["dashboard", "escandallos-precio", establecimientoId, productosQuery.data],
@@ -311,52 +260,6 @@ export function DashboardClient() {
 
   return (
     <div className="w-full max-w-full space-y-6">
-      <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-        <p className="text-sm font-semibold text-slate-900">Estado del Establecimiento</p>
-        <p className="mt-1 text-sm text-slate-600">Checklist activo (en tiempo real) del local.</p>
-
-        {checklistQuery.isError ? (
-          <p className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-            {(checklistQuery.error as Error).message}
-          </p>
-        ) : (
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Completadas</p>
-              <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{checklistResumen.done}</p>
-            </div>
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Pendientes</p>
-              <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{checklistResumen.pending}</p>
-            </div>
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Total</p>
-              <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{checklistResumen.total}</p>
-            </div>
-          </div>
-        )}
-
-        {checklistPendientes.length > 0 ? (
-          <div className="mt-4">
-            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Pendientes (top)</p>
-            <ul className="mt-2 space-y-1 text-sm text-slate-700">
-              {checklistPendientes.slice(0, 6).map((t) => (
-                <li key={t.id} className="truncate">
-                  <span className="font-semibold">{t.tipo}:</span> {t.titulo}
-                </li>
-              ))}
-            </ul>
-            <p className="mt-2 text-xs text-slate-500">
-              Completa tareas desde <Link className="font-semibold underline" href="/checklist">Checklist</Link>.
-            </p>
-          </div>
-        ) : checklistQuery.data?.length ? (
-          <p className="mt-4 text-xs text-slate-500">Todo el checklist activo está completado.</p>
-        ) : (
-          <p className="mt-4 text-xs text-slate-500">No hay tareas activas configuradas para este local.</p>
-        )}
-      </section>
-
       {me?.isSuperadmin && activeEstablishmentName ? (
         <div className="w-full rounded-3xl border border-slate-100 bg-white p-4 text-base text-slate-600 shadow-sm">
           Establecimiento activo: <span className="font-semibold text-slate-900">{activeEstablishmentName}</span>

@@ -55,13 +55,6 @@ const SECTIONS: AdminSection[] = [
         title: "Auditoría de albaranes",
         subtitle: "Control de costes y revisión semanal.",
         superadminOnly: true
-      },
-      {
-        id: "checklists-historial",
-        href: "/admin/checklists",
-        title: "Checklists",
-        subtitle: "Historial de aperturas y cierres por local.",
-        superadminOnly: true
       }
     ]
   },
@@ -117,12 +110,6 @@ const SECTIONS: AdminSection[] = [
         href: "/admin/movimientos",
         title: "Movimientos",
         subtitle: "Histórico de entradas y salidas de stock."
-      },
-      {
-        id: "checklists-tareas",
-        href: "/admin/checklists/tareas",
-        title: "Tareas checklist",
-        subtitle: "Apertura y cierre de tu local."
       }
     ]
   }

@@ -8,9 +8,7 @@ type RealtimeTable =
   | "pedidos"
   | "usuarios"
   | "escandallos"
-  | "checklists_tareas"
-  | "checklists_tareas_estado"
-  | "checklists_registros";
+  ;
 
 /**
  * Suscripción Realtime "global" por establecimiento.
@@ -51,8 +49,7 @@ export function useCambiosGlobalesRealtime(opts: {
   useEffect(() => {
     if (!establecimientoId) return;
 
-    const watchTables: RealtimeTable[] =
-      tables ?? ["movimientos", "productos", "pedidos", "usuarios", "escandallos", "checklists_tareas", "checklists_tareas_estado", "checklists_registros"];
+    const watchTables: RealtimeTable[] = tables ?? ["movimientos", "productos", "pedidos", "usuarios", "escandallos"];
     const channel = supabase().channel(`cambios-globales:${establecimientoId}:${instanceIdRef.current}`);
 
     for (const table of watchTables) {

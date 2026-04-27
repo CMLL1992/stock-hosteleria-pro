@@ -170,7 +170,7 @@ export default function PedidoRapidoPage() {
       <main className="mx-auto w-full max-w-3xl p-4 pb-28 text-slate-900">
         <div className="mb-4">
           <h1 className="text-xl font-semibold text-slate-900">Pedido y recepción</h1>
-          <p className="text-sm text-slate-500">Checklist de llegadas y ajuste rápido de stock ({totals} productos)</p>
+          <p className="text-sm text-slate-500">Ajuste rápido de stock ({totals} productos)</p>
         </div>
 
         {err ? (
