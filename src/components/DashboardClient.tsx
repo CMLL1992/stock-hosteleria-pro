@@ -24,6 +24,7 @@ export function DashboardClient() {
   const canManageEnvases = hasPermission(role, "admin");
   const queryClient = useQueryClient();
   const [envasesOpen, setEnvasesOpen] = useState(false);
+  const [pedidoRapidoOpen, setPedidoRapidoOpen] = useState(false);
   const [confirmProd, setConfirmProd] = useState<null | { id: string; articulo: string; stock_vacios: number }>(null);
   const [confirming, setConfirming] = useState(false);
   const [envasesErr, setEnvasesErr] = useState<string | null>(null);
@@ -284,34 +285,36 @@ export function DashboardClient() {
       ) : null}
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Link
-          href="/admin/bajo-minimos"
-          className="block rounded-3xl border-2 border-red-200 bg-white p-6 shadow-md ring-2 ring-red-100 transition hover:bg-slate-50"
-          aria-label="Bajo mínimos"
+        <button
+          type="button"
+          onClick={() => setPedidoRapidoOpen(true)}
+          className="block rounded-3xl border-2 border-premium-orange/30 bg-white p-6 text-left shadow-md ring-2 ring-premium-orange/15 transition hover:bg-slate-50"
+          aria-label="Bajo mínimos (pedido rápido)"
         >
           <p className="text-center text-xs font-bold uppercase tracking-wide text-red-700">Bajo mínimos</p>
           <p className="mt-1 text-center text-[11px] text-red-600/90">Stock actual ≤ stock mínimo</p>
           <p className="mt-4 text-center text-5xl font-black tabular-nums tracking-tight text-red-600">{bajoMinimos.length}</p>
-        </Link>
+          <p className="mt-3 text-center text-xs font-semibold text-slate-600">Toca para Pedido Rápido</p>
+        </button>
         <button
           type="button"
           onClick={() => setEnvasesOpen(true)}
-          className="block rounded-3xl border border-slate-200 bg-white p-6 text-left text-sm text-slate-600 shadow-sm hover:bg-slate-50"
+          className="block rounded-3xl border-2 border-premium-green/30 bg-gradient-to-br from-premium-green/10 via-white to-white p-6 text-left text-sm text-slate-700 shadow-md ring-1 ring-premium-green/20 hover:bg-slate-50"
         >
-          <p className="font-semibold text-slate-900">Envases para devolver</p>
-          <p className="mt-2 text-sm text-slate-600">Total en stock de vacíos (solo positivos).</p>
+          <p className="text-sm font-black tracking-tight text-slate-900">Envases para devolver</p>
+          <p className="mt-1 text-sm text-slate-700">Dinero a recuperar + control de vacíos.</p>
           <div className="mt-4 grid grid-cols-3 gap-2">
-            <div className="rounded-2xl bg-slate-50 p-3 text-center">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Cajas</p>
-              <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{vacios.cajas}</p>
+            <div className="rounded-2xl border border-premium-green/15 bg-white/70 p-3 text-center shadow-sm">
+              <p className="text-[10px] font-extrabold uppercase tracking-wide text-slate-600">Cajas</p>
+              <p className="mt-1 text-3xl font-black tabular-nums text-slate-900">{vacios.cajas}</p>
             </div>
-            <div className="rounded-2xl bg-slate-50 p-3 text-center">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Barriles</p>
-              <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{vacios.barriles}</p>
+            <div className="rounded-2xl border border-premium-green/15 bg-white/70 p-3 text-center shadow-sm">
+              <p className="text-[10px] font-extrabold uppercase tracking-wide text-slate-600">Barriles</p>
+              <p className="mt-1 text-3xl font-black tabular-nums text-slate-900">{vacios.barriles}</p>
             </div>
-            <div className="rounded-2xl bg-slate-50 p-3 text-center">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Gas</p>
-              <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{vacios.gas}</p>
+            <div className="rounded-2xl border border-premium-green/15 bg-white/70 p-3 text-center shadow-sm">
+              <p className="text-[10px] font-extrabold uppercase tracking-wide text-slate-600">Gas</p>
+              <p className="mt-1 text-3xl font-black tabular-nums text-slate-900">{vacios.gas}</p>
             </div>
           </div>
           {vaciosDetalleTop.length > 0 ? (
@@ -332,6 +335,25 @@ export function DashboardClient() {
             <p className="mt-4 text-xs text-slate-500">Sin envases pendientes.</p>
           )}
         </button>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Link
+          href="/admin/pedidos/recepcion"
+          className="rounded-3xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:bg-slate-50"
+        >
+          <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Gestión</p>
+          <p className="mt-1 text-lg font-black tracking-tight text-slate-900">GESTIONAR RECEPCIÓN</p>
+          <p className="mt-1 text-sm text-slate-600">Confirmar pedido llegado (pendiente/parcial).</p>
+        </Link>
+        <Link
+          href="/admin/pedidos"
+          className="rounded-3xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:bg-slate-50"
+        >
+          <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Pedidos</p>
+          <p className="mt-1 text-lg font-black tracking-tight text-slate-900">IR A PEDIDOS ACTIVOS</p>
+          <p className="mt-1 text-sm text-slate-600">Preparar y enviar por proveedor.</p>
+        </Link>
       </div>
 
       <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -443,6 +465,55 @@ export function DashboardClient() {
               </div>
             </div>
           ) : null}
+        </div>
+      </Drawer>
+
+      <Drawer open={pedidoRapidoOpen} title="Pedido rápido · Bajo mínimos" onClose={() => setPedidoRapidoOpen(false)}>
+        <div className="space-y-3 pb-4">
+          <p className="text-sm text-slate-600">
+            Productos bajo mínimos: <span className="font-bold text-slate-900">{bajoMinimos.length}</span>
+          </p>
+          {bajoMinimos.length === 0 ? (
+            <p className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">No hay productos bajo mínimos.</p>
+          ) : (
+            <ul className="space-y-2">
+              {bajoMinimos
+                .slice()
+                .sort((a, b) => a.articulo.localeCompare(b.articulo, "es", { sensitivity: "base" }))
+                .slice(0, 50)
+                .map((p) => (
+                  <li key={p.id} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <p className="min-w-0 flex-1 truncate font-semibold text-slate-900">{p.articulo}</p>
+                      <p className="shrink-0 font-bold tabular-nums text-slate-900">
+                        {p.stock_actual} / {p.stock_minimo}
+                      </p>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">Stock actual / stock mínimo</p>
+                  </li>
+                ))}
+            </ul>
+          )}
+
+          <div className="grid grid-cols-1 gap-2 pt-2 sm:grid-cols-2">
+            <Link
+              href="/admin/pedidos?bajoMinimos=1"
+              className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-premium-blue px-4 text-sm font-semibold text-white hover:brightness-95"
+              onClick={() => setPedidoRapidoOpen(false)}
+            >
+              Generar pedido
+            </Link>
+            <Link
+              href="/admin/bajo-minimos"
+              className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 hover:bg-slate-50"
+              onClick={() => setPedidoRapidoOpen(false)}
+            >
+              Ver detalle
+            </Link>
+          </div>
+          <p className="text-xs text-slate-500">
+            “Generar pedido” abre Pedidos con filtro de bajo mínimos (sin tocar base de datos).
+          </p>
         </div>
       </Drawer>
     </div>

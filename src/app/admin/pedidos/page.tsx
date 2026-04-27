@@ -16,6 +16,7 @@ import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { Search } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useCambiosGlobalesRealtime } from "@/lib/useCambiosGlobalesRealtime";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -31,6 +32,8 @@ type ProductoPedido = {
   unidad: string | null;
   proveedor_id: string | null;
   categoria: string | null;
+  stock_actual: number;
+  stock_minimo: number | null;
 };
 
 function parseQty(raw: string): number {
@@ -48,7 +51,7 @@ function parseQty(raw: string): number {
 async function loadData(establecimientoId: string): Promise<{ proveedores: ProveedorRow[]; productos: ProductoPedido[] }> {
   const col = await resolveProductoTituloColumn(establecimientoId);
   const t = tituloColSql(col);
-  const prodSelect = `id,${t},proveedor_id,unidad,categoria,proveedor:proveedores(nombre,telefono_whatsapp)`;
+  const prodSelect = `id,${t},proveedor_id,unidad,categoria,stock_actual,stock_minimo,proveedor:proveedores(nombre,telefono_whatsapp)`;
 
   const provRes = await supabase()
     .from("proveedores")
@@ -70,7 +73,9 @@ async function loadData(establecimientoId: string): Promise<{ proveedores: Prove
       articulo: String(r[t] ?? r.articulo ?? r.nombre ?? "").trim() || "—",
       unidad: r.unidad != null ? String(r.unidad) : null,
       proveedor_id: r.proveedor_id != null ? String(r.proveedor_id) : null,
-      categoria: r.categoria != null ? String(r.categoria) : null
+      categoria: r.categoria != null ? String(r.categoria) : null,
+      stock_actual: Number(r.stock_actual ?? 0) || 0,
+      stock_minimo: r.stock_minimo != null ? Number(r.stock_minimo) : null
     }));
     return { proveedores: (provRes.data as ProveedorRow[]) ?? [], productos };
   }
@@ -83,7 +88,7 @@ async function loadData(establecimientoId: string): Promise<{ proveedores: Prove
 
   const fb = await supabase()
     .from("productos")
-    .select(`id,${t},proveedor_id,unidad,categoria` as "*")
+    .select(`id,${t},proveedor_id,unidad,categoria,stock_actual,stock_minimo` as "*")
     .eq("establecimiento_id", establecimientoId)
     .order(t, { ascending: true });
   if (fb.error) throw fb.error;
@@ -92,7 +97,9 @@ async function loadData(establecimientoId: string): Promise<{ proveedores: Prove
     articulo: String(r[t] ?? r.articulo ?? r.nombre ?? "").trim() || "—",
     unidad: r.unidad != null ? String(r.unidad) : null,
     proveedor_id: r.proveedor_id != null ? String(r.proveedor_id) : null,
-    categoria: r.categoria != null ? String(r.categoria) : null
+    categoria: r.categoria != null ? String(r.categoria) : null,
+    stock_actual: Number(r.stock_actual ?? 0) || 0,
+    stock_minimo: r.stock_minimo != null ? Number(r.stock_minimo) : null
   }));
   return { proveedores: (provRes.data as ProveedorRow[]) ?? [], productos };
 }
@@ -132,6 +139,8 @@ function readEvtValue(
 
 export default function PedidosPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const soloBajoMinimos = (searchParams.get("bajoMinimos") ?? "") === "1";
   const queryClient = useQueryClient();
   const [role, setRole] = useState<AppRole | null>(null);
   const canAccessRecepcion = hasPermission(role, "staff");
@@ -388,7 +397,13 @@ export default function PedidosPage() {
               const productosFiltrados = (() => {
                 try {
                   const searchKey = normSearch(search[key]);
-                  const base = Array.isArray(g.productos) ? g.productos : [];
+                  const baseAll = Array.isArray(g.productos) ? g.productos : [];
+                  const base = soloBajoMinimos
+                    ? baseAll.filter((p) => {
+                        const min = typeof p.stock_minimo === "number" && Number.isFinite(p.stock_minimo) ? p.stock_minimo : 0;
+                        return (Number(p.stock_actual) || 0) <= min;
+                      })
+                    : baseAll;
                   if (!searchKey) return base;
                   return base.filter((p) => normSearch(p.articulo).includes(searchKey));
                 } catch (e) {
