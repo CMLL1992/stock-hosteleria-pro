@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { AppRole } from "@/lib/session";
 import { fetchMyRole } from "@/lib/session";
@@ -137,7 +137,7 @@ function readEvtValue(
   }
 }
 
-export default function PedidosPage() {
+function PedidosPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const soloBajoMinimos = (searchParams.get("bajoMinimos") ?? "") === "1";
@@ -608,5 +608,13 @@ export default function PedidosPage() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+export default function PedidosPage() {
+  return (
+    <Suspense fallback={<main className="p-4 text-sm text-slate-600">Cargando…</main>}>
+      <PedidosPageInner />
+    </Suspense>
   );
 }
