@@ -123,7 +123,7 @@ export function useActiveEstablishment() {
   const activePublicBookingUrl = useMemo(() => {
     if (!activeSlug) return null;
     const base = getBaseUrl();
-    return `${base}/reservar/${activeSlug}`;
+    return `${base}/reservar/${encodeURIComponent(activeSlug)}`;
   }, [activeSlug]);
 
   function setActiveId(id: string | null) {
