@@ -15,7 +15,7 @@ import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { fetchEscandallosPrecioMapByProductIds, type EscandalloPrecioRow } from "@/lib/fetchEscandallosPrecioMap";
 import { logActivity } from "@/lib/activityLog";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
-import { Building2 } from "lucide-react";
+import { Building2, ChevronDown, ChevronRight } from "lucide-react";
 // wa.me directo (mensaje propio) para reposición
 
 
@@ -151,6 +151,18 @@ export function DashboardClient() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pedidoRapidoOpen]);
+
+  const [pedidoRapidoOpenProv, setPedidoRapidoOpenProv] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    if (!pedidoRapidoOpen) return;
+    // Estado inicial: limpio (colapsado). Abrimos el primero si existe para guiar el flujo.
+    setPedidoRapidoOpenProv(() => {
+      const next: Record<string, boolean> = {};
+      const firstKey = bajoMinimosPorProveedor[0]?.key ?? "";
+      for (const g of bajoMinimosPorProveedor) next[g.key] = g.key === firstKey;
+      return next;
+    });
+  }, [bajoMinimosPorProveedor, pedidoRapidoOpen]);
 
   function bucketUnidad(p: { unidad: string | null; categoria: string | null; articulo: string }): "caja" | "barril" | "gas" | null {
     const unidad = (p.unidad ?? "").trim().toLowerCase();
@@ -561,56 +573,82 @@ export function DashboardClient() {
                 {bajoMinimosPorProveedor
                   .map((g) => (
                     <section key={g.key} className="space-y-2">
-                      <div className="premium-card-tight premium-topline-orange">
-                        <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">{g.nombre}</p>
-                        <p className="mt-0.5 text-xs text-slate-500">
-                          {g.telefono ? `WhatsApp: ${g.telefono}` : "Sin teléfono configurado (WhatsApp te pedirá elegir contacto)"}
-                        </p>
-                      </div>
-
-                      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-                        <div className="grid grid-cols-[1fr_160px] gap-2 border-b border-slate-100 px-4 py-2 text-[11px] font-extrabold uppercase tracking-wide text-slate-500">
-                          <div>Producto</div>
-                          <div className="text-center">Pedir</div>
+                      <button
+                        type="button"
+                        className="w-full text-left"
+                        onClick={() =>
+                          setPedidoRapidoOpenProv((prev) => ({
+                            ...prev,
+                            [g.key]: !prev[g.key]
+                          }))
+                        }
+                        aria-expanded={!!pedidoRapidoOpenProv[g.key]}
+                      >
+                        <div className="premium-card-tight premium-topline-orange flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-xs font-extrabold uppercase tracking-wide text-slate-600">
+                              {g.nombre}{" "}
+                              <span className="font-black text-slate-500">
+                                · {g.items.length} {g.items.length === 1 ? "producto" : "productos"} bajo mínimos
+                              </span>
+                            </p>
+                            <p className="mt-0.5 truncate text-xs text-slate-500">
+                              {g.telefono ? `WhatsApp: ${g.telefono}` : "Sin teléfono configurado (WhatsApp te pedirá elegir contacto)"}
+                            </p>
+                          </div>
+                          <span className="shrink-0 text-slate-400">
+                            {pedidoRapidoOpenProv[g.key] ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+                          </span>
                         </div>
-                        {g.items.map((p) => {
-                          const min = Number(p.stock_minimo) || 0;
-                          const act = Number(p.stock_actual) || 0;
-                          return (
-                            <div key={p.id} className="grid grid-cols-[1fr_160px] items-center gap-2 border-b border-slate-100 px-4 py-3">
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-semibold text-slate-900">{p.articulo}</p>
-                                <p className="mt-0.5 text-xs text-slate-500">
-                                  Stock: <span className="font-bold text-slate-700">{act}</span> · Mínimo:{" "}
-                                  <span className="font-bold text-slate-700">{min}</span>
-                                </p>
+                      </button>
+
+                      {pedidoRapidoOpenProv[g.key] ? (
+                        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+                          <div className="grid grid-cols-[1fr_148px] gap-2 border-b border-slate-100 px-4 py-2 text-[11px] font-extrabold uppercase tracking-wide text-slate-500">
+                            <div>Producto</div>
+                            <div className="text-center">Pedir</div>
+                          </div>
+                          {g.items.map((p) => {
+                            const min = Number(p.stock_minimo) || 0;
+                            const act = Number(p.stock_actual) || 0;
+                            return (
+                              <div key={p.id} className="grid grid-cols-[1fr_148px] items-center gap-2 border-b border-slate-100 px-4 py-2">
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-slate-900">{p.articulo}</p>
+                                  <p className="mt-0.5 text-[11px] text-slate-500">
+                                    Stock: <span className="font-bold text-slate-700">{act}</span> · Mínimo:{" "}
+                                    <span className="font-bold text-slate-700">{min}</span>
+                                  </p>
+                                </div>
+                                <div className="flex items-center justify-center">
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    step={1}
+                                    className={[
+                                      "min-h-11 w-full min-w-24 rounded-2xl border border-slate-200 bg-white px-3 text-center text-lg font-bold tabular-nums text-slate-900 shadow-sm ring-1 ring-slate-100",
+                                      "focus:outline-none focus:ring-2 focus:ring-premium-blue/20"
+                                    ].join(" ")}
+                                    inputMode="numeric"
+                                    value={pedidoRapidoQty[p.id] ?? "0"}
+                                    onChange={(e) =>
+                                      setPedidoRapidoQty((d) => ({ ...d, [p.id]: sanitizeIntString(e.currentTarget.value) }))
+                                    }
+                                    onBlur={() =>
+                                      setPedidoRapidoQty((d) => {
+                                        const curr = String(d[p.id] ?? "").trim();
+                                        if (curr !== "") return d;
+                                        return { ...d, [p.id]: "0" };
+                                      })
+                                    }
+                                    aria-label={`Cantidad a pedir de ${p.articulo}`}
+                                  />
+                                </div>
                               </div>
-                              <div className="flex items-center justify-center">
-                                <input
-                                  type="number"
-                                  min={0}
-                                  step={1}
-                                  className={[
-                                    "min-h-12 w-full min-w-24 rounded-2xl border border-slate-200 bg-white px-3 text-center text-xl font-bold tabular-nums text-slate-900 shadow-sm ring-1 ring-slate-100",
-                                    "focus:outline-none focus:ring-2 focus:ring-premium-blue/20"
-                                  ].join(" ")}
-                                  inputMode="numeric"
-                                  value={pedidoRapidoQty[p.id] ?? "0"}
-                                  onChange={(e) => setPedidoRapidoQty((d) => ({ ...d, [p.id]: sanitizeIntString(e.currentTarget.value) }))}
-                                  onBlur={() =>
-                                    setPedidoRapidoQty((d) => {
-                                      const curr = String(d[p.id] ?? "").trim();
-                                      if (curr !== "") return d;
-                                      return { ...d, [p.id]: "0" };
-                                    })
-                                  }
-                                  aria-label={`Cantidad a pedir de ${p.articulo}`}
-                                />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                            );
+                          })}
+                        </div>
+                      ) : null}
 
                       <button
                         type="button"
