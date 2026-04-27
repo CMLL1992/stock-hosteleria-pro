@@ -217,7 +217,9 @@ export function DashboardClient() {
 
   const envasesCatalogoQuery = useQuery({
     queryKey: ["catalogo", "envases", establecimientoId],
-    enabled: !!establecimientoId && rows.some((p) => !!(p.envase_catalogo_id ?? "").trim() && (p.envase_coste ?? null) == null),
+    // Importante: debe poder cargar incluso si aún no hay productos enlazados,
+    // para que Admin/Staff vean el catálogo global + del local sin “pantalla vacía”.
+    enabled: !!establecimientoId,
     queryFn: async () => {
       const { data, error } = await supabase()
         .from("envases_catalogo")

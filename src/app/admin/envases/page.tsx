@@ -27,6 +27,7 @@ function toNum(v: string): number {
 export default function CatalogoEnvasesPage() {
   const { data: me, isLoading: meLoading } = useMyRole();
   const role = getEffectiveRole(me ?? null);
+  const canView = hasPermission(role, "staff");
   const canManage = hasPermission(role, "admin");
   const { activeEstablishmentId } = useActiveEstablishment();
   const queryClient = useQueryClient();
@@ -51,7 +52,8 @@ export default function CatalogoEnvasesPage() {
       const { data, error } = await supabase()
         .from("envases_catalogo")
         .select("id,nombre,coste")
-        .eq("establecimiento_id", activeEstablishmentId)
+        // Envases del local + envases globales del sistema (establecimiento_id NULL)
+        .or(`establecimiento_id.eq.${activeEstablishmentId},establecimiento_id.is.null`)
         .order("nombre", { ascending: true });
       if (error) throw error;
       setRows(((data ?? []) as unknown as EnvaseRow[]) ?? []);
@@ -64,10 +66,10 @@ export default function CatalogoEnvasesPage() {
   }
 
   useEffect(() => {
-    if (!canManage) return;
+    if (!canView) return;
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canManage, activeEstablishmentId]);
+  }, [canView, activeEstablishmentId]);
 
   useEffect(() => {
     if (!canManage) return;
@@ -177,7 +179,7 @@ export default function CatalogoEnvasesPage() {
   }
 
   if (meLoading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
-  if (!canManage) {
+  if (!canView) {
     return (
       <div className="min-h-dvh bg-slate-50">
         <MobileHeader title="Catálogo de envases" showBack backHref="/admin" />
@@ -199,45 +201,52 @@ export default function CatalogoEnvasesPage() {
 
         {err ? <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{err}</p> : null}
 
-        <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-sm font-semibold text-slate-900">Nuevo envase (vinculado a producto)</p>
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <label className="sm:col-span-2">
-              <span className="block text-xs font-bold uppercase tracking-wide text-slate-600">Producto (obligatorio)</span>
-              <select
-                className="mt-1 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900"
-                value={productoId}
-                onChange={(e) => setProductoId(e.currentTarget.value)}
-              >
-                <option value="">(Selecciona…)</option>
-                {productosByCat.cats.map((cat) => (
-                  <optgroup key={cat} label={cat}>
-                    {(productosByCat.map.get(cat) ?? []).map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.articulo}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-              <p className="mt-1 text-xs text-slate-600">El nombre del envase será el del producto.</p>
-            </label>
-            <label>
-              <span className="block text-xs font-bold uppercase tracking-wide text-slate-600">Coste (€)</span>
-              <input
-                className="mt-1 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base tabular-nums text-slate-900"
-                value={coste}
-                onChange={(e) => setCoste(e.currentTarget.value)}
-                inputMode="decimal"
-              />
-            </label>
-          </div>
-          <div className="mt-3">
-            <Button onClick={crear} disabled={disabled}>
-              {saving ? "Creando…" : "Crear envase"}
-            </Button>
-          </div>
-        </section>
+        {canManage ? (
+          <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-sm font-semibold text-slate-900">Nuevo envase (vinculado a producto)</p>
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <label className="sm:col-span-2">
+                <span className="block text-xs font-bold uppercase tracking-wide text-slate-600">Producto (obligatorio)</span>
+                <select
+                  className="mt-1 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900"
+                  value={productoId}
+                  onChange={(e) => setProductoId(e.currentTarget.value)}
+                >
+                  <option value="">(Selecciona…)</option>
+                  {productosByCat.cats.map((cat) => (
+                    <optgroup key={cat} label={cat}>
+                      {(productosByCat.map.get(cat) ?? []).map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.articulo}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-slate-600">El nombre del envase será el del producto.</p>
+              </label>
+              <label>
+                <span className="block text-xs font-bold uppercase tracking-wide text-slate-600">Coste (€)</span>
+                <input
+                  className="mt-1 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base tabular-nums text-slate-900"
+                  value={coste}
+                  onChange={(e) => setCoste(e.currentTarget.value)}
+                  inputMode="decimal"
+                />
+              </label>
+            </div>
+            <div className="mt-3">
+              <Button onClick={crear} disabled={disabled}>
+                {saving ? "Creando…" : "Crear envase"}
+              </Button>
+            </div>
+          </section>
+        ) : (
+          <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-sm font-semibold text-slate-900">Catálogo de envases</p>
+            <p className="mt-1 text-sm text-slate-600">Solo lectura. Solo Admin/Superadmin puede crear/eliminar envases.</p>
+          </section>
+        )}
 
         <section className="mt-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-2">
@@ -262,14 +271,16 @@ export default function CatalogoEnvasesPage() {
                     <span className="font-mono text-sm font-bold tabular-nums text-slate-900">
                       {(Number(r.coste ?? 0) || 0).toFixed(2)} €
                     </span>
-                    <button
-                      type="button"
-                      className="min-h-10 rounded-xl border border-red-200 bg-white px-3 text-xs font-bold text-red-700 hover:bg-red-50 disabled:opacity-50"
-                      onClick={() => void eliminarEnvase(r.id, r.nombre)}
-                      disabled={saving}
-                    >
-                      Eliminar
-                    </button>
+                    {canManage ? (
+                      <button
+                        type="button"
+                        className="min-h-10 rounded-xl border border-red-200 bg-white px-3 text-xs font-bold text-red-700 hover:bg-red-50 disabled:opacity-50"
+                        onClick={() => void eliminarEnvase(r.id, r.nombre)}
+                        disabled={saving}
+                      >
+                        Eliminar
+                      </button>
+                    ) : null}
                   </div>
                 </li>
               ))}
