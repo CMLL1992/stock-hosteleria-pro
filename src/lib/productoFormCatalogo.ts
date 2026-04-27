@@ -36,10 +36,10 @@ export const UNIDAD_OPTIONS: ReadonlyArray<{
 
 /** Clase Tailwind: ≥48px de alto y 16px de fuente (evita zoom en iOS). */
 export const FORM_CONTROL_CLASS =
-  "min-h-[48px] w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10";
+  "min-h-[48px] w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-premium-blue/20";
 
 export const FORM_CONTROL_CLASS_GRAY =
-  "min-h-[48px] w-full rounded-2xl border border-gray-100 bg-gray-50 px-4 text-base text-gray-900 focus:outline-none focus:ring-2 focus:ring-black/10";
+  "min-h-[48px] w-full rounded-2xl border border-gray-100 bg-gray-50 px-4 text-base text-gray-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-premium-blue/20";
 
 function norm(s: string | null | undefined): string {
   return (s ?? "")

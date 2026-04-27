@@ -390,7 +390,7 @@ export default function NuevoEscandalloCocinaPage() {
               <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
                 Multiplicador
                 <input
-                  className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                  className="premium-input"
                   inputMode="decimal"
                   value={multiplicador}
                   onChange={(e) => setMultiplicador(readInputOrSelectValue(e))}
@@ -399,7 +399,7 @@ export default function NuevoEscandalloCocinaPage() {
               <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
                 IVA final (%)
                 <input
-                  className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                  className="premium-input"
                   inputMode="numeric"
                   value={ivaFinal}
                   onChange={(e) => setIvaFinal(readInputOrSelectValue(e))}
@@ -445,7 +445,7 @@ export default function NuevoEscandalloCocinaPage() {
                       <tr key={it.id} className="border-t border-slate-100">
                         <td className="px-2 py-2 align-top">
                           <input
-                            className="min-h-11 min-w-[9.5rem] w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                            className="premium-input min-h-11 min-w-[9.5rem] px-3 text-sm"
                             value={it.nombre_ingrediente}
                             onChange={(e) => {
                               const v = readInputOrSelectValue(e);
@@ -458,7 +458,7 @@ export default function NuevoEscandalloCocinaPage() {
                         </td>
                         <td className="px-2 py-2 align-top">
                           <input
-                            className="min-h-11 min-w-[6.25rem] w-full rounded-2xl border border-slate-200 bg-white px-3 text-right text-sm text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-black/10"
+                            className="premium-input min-h-11 min-w-[6.25rem] px-3 text-right text-sm tabular-nums"
                             inputMode="decimal"
                             value={it.cantidad_gramos_ml}
                             onChange={(e) => {
@@ -471,7 +471,7 @@ export default function NuevoEscandalloCocinaPage() {
                         </td>
                         <td className="px-2 py-2 align-top">
                           <input
-                            className="min-h-11 min-w-[6.25rem] w-full rounded-2xl border border-slate-200 bg-white px-3 text-right text-sm text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-black/10"
+                            className="premium-input min-h-11 min-w-[6.25rem] px-3 text-right text-sm tabular-nums"
                             inputMode="decimal"
                             value={it.precio_compra_sin_iva}
                             onChange={(e) => {
@@ -484,7 +484,7 @@ export default function NuevoEscandalloCocinaPage() {
                         </td>
                         <td className="px-2 py-2 align-top">
                           <input
-                            className="min-h-11 min-w-[5rem] w-full rounded-2xl border border-slate-200 bg-white px-3 text-right text-sm text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-black/10"
+                            className="premium-input min-h-11 min-w-[5rem] px-3 text-right text-sm tabular-nums"
                             inputMode="decimal"
                             value={it.porcentaje_merma}
                             onChange={(e) => {
@@ -497,7 +497,7 @@ export default function NuevoEscandalloCocinaPage() {
                         </td>
                         <td className="px-2 py-2 align-top">
                           <input
-                            className="min-h-11 min-w-[5rem] w-full rounded-2xl border border-slate-200 bg-white px-3 text-right text-sm text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-black/10"
+                            className="premium-input min-h-11 min-w-[5rem] px-3 text-right text-sm tabular-nums"
                             inputMode="numeric"
                             value={it.iva_ingrediente}
                             onChange={(e) => {

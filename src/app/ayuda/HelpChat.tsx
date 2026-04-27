@@ -78,7 +78,7 @@ export function HelpChat() {
 
       <div className="mt-3 flex gap-2">
         <input
-          className="min-h-12 min-w-0 flex-1 rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+          className="premium-input min-w-0 flex-1 px-3 text-sm"
           placeholder="Ej: ¿Cómo registro una salida de stock?"
           value={input}
           onChange={(e) => setInput(e.currentTarget.value)}

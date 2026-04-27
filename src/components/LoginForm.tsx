@@ -48,7 +48,7 @@ export function LoginForm({ onSuccessHref = "/" }: { onSuccessHref?: string }) {
           <div className="space-y-1">
             <label className="text-sm font-semibold text-slate-900">Email</label>
             <input
-              className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-black/10"
+              className="premium-input placeholder:text-slate-400"
               type="email"
               value={email}
               onChange={(e: ChangeEvent<HTMLInputElement>) => setEmail(e.currentTarget.value)}
@@ -59,7 +59,7 @@ export function LoginForm({ onSuccessHref = "/" }: { onSuccessHref?: string }) {
           <div className="space-y-1">
             <label className="text-sm font-semibold text-slate-900">Contraseña</label>
             <input
-              className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-black/10"
+              className="premium-input placeholder:text-slate-400"
               type="password"
               value={password}
               onChange={(e: ChangeEvent<HTMLInputElement>) => setPassword(e.currentTarget.value)}
