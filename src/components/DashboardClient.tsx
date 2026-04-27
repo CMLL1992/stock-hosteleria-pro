@@ -399,14 +399,6 @@ export function DashboardClient() {
           <p className="mt-1 text-lg font-black tracking-tight text-slate-900">GESTIONAR RECEPCIÓN</p>
           <p className="mt-1 text-sm text-slate-600">Confirmar pedido llegado (pendiente/parcial).</p>
         </Link>
-        <Link
-          href="/admin/pedidos"
-          className="rounded-3xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:bg-slate-50"
-        >
-          <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Pedidos</p>
-          <p className="mt-1 text-lg font-black tracking-tight text-slate-900">IR A PEDIDOS ACTIVOS</p>
-          <p className="mt-1 text-sm text-slate-600">Preparar y enviar por proveedor.</p>
-        </Link>
       </div>
 
       <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -457,9 +449,6 @@ export function DashboardClient() {
 
         <p className="mt-3 text-xs text-slate-500">
           Total: <span className="font-semibold text-slate-700">{formatEUR(valorEconomicoInventario.totalEUR)}</span>
-        </p>
-        <p className="mt-2 text-xs text-slate-500">
-          Configura envases en <span className="font-semibold">Panel → Catálogo de envases</span>.
         </p>
       </section>
 
@@ -588,7 +577,7 @@ export function DashboardClient() {
                                   −
                                 </button>
                                 <input
-                                  className="min-h-12 w-full min-w-16 rounded-2xl border border-slate-200 bg-white px-2 text-center text-lg font-black tabular-nums text-slate-900"
+                                  className="min-h-12 w-full min-w-24 rounded-2xl border border-slate-200 bg-white px-3 text-center text-xl font-bold tabular-nums text-slate-900"
                                   inputMode="numeric"
                                   pattern="[0-9]*"
                                   value={String(q)}

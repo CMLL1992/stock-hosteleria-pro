@@ -363,7 +363,7 @@ function PedidosPageInner() {
           {canAccessRecepcion ? (
             <Link
               href="/admin/pedidos/recepcion"
-              className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-black px-4 text-sm font-semibold text-white hover:bg-slate-900"
+              className="premium-btn-primary inline-flex min-h-12 items-center justify-center px-5 text-sm font-extrabold"
             >
               Gestión de Recepción
             </Link>
@@ -391,9 +391,10 @@ function PedidosPageInner() {
           </p>
         ) : canAccessPedidosAdmin ? (
           <ul className="flex flex-col gap-3">
-            {grupos.map((g) => {
+            {grupos.map((g, idx) => {
               const key = g.id;
               const expanded = !!open[key];
+              const accent = idx % 3 === 0 ? "#1D4ED8" : idx % 3 === 1 ? "#F97316" : "#10B981";
               const productosFiltrados = (() => {
                 try {
                   const searchKey = normSearch(search[key]);
@@ -433,14 +434,18 @@ function PedidosPageInner() {
               const cats = Array.from(porCat.keys()).sort(sortCats);
 
               return (
-                <li key={key} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-100">
+                <li
+                  key={key}
+                  className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-100"
+                  style={{ borderLeftWidth: 4, borderLeftColor: accent }}
+                >
                   <button
                     type="button"
                     className="flex w-full min-h-14 items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-slate-50"
                     onClick={() => setOpen((o) => ({ ...o, [key]: !expanded }))}
                     aria-expanded={expanded}
                   >
-                    <span className="min-w-0 flex-1 font-bold text-slate-900">{g.nombre}</span>
+                    <span className="min-w-0 flex-1 text-lg font-black tracking-tight text-slate-900">{g.nombre}</span>
                     <span className="shrink-0 text-slate-500">
                       {expanded ? <ChevronDown className="h-6 w-6" /> : <ChevronRight className="h-6 w-6" />}
                     </span>
