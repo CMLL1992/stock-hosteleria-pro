@@ -221,20 +221,30 @@ export function DashboardClient() {
     // para que Admin/Staff vean el catálogo global + del local sin “pantalla vacía”.
     enabled: !!establecimientoId,
     queryFn: async () => {
-      const { data, error } = await supabase()
-        .from("envases_catalogo")
-        .select("id,coste")
-        // Envases del local + envases globales del sistema (establecimiento_id NULL)
-        .or(`establecimiento_id.eq.${establecimientoId as string},establecimiento_id.is.null`);
-      if (error) throw error;
-      const map = new Map<string, number>();
-      for (const r of ((data ?? []) as unknown as Array<Record<string, unknown>>)) {
-        const id = String(r.id ?? "").trim();
-        if (!id) continue;
-        const c = Number(r.coste ?? 0);
-        map.set(id, Number.isFinite(c) ? c : 0);
+      try {
+        const { data, error } = await supabase()
+          .from("envases_catalogo")
+          .select("id,coste")
+          // Envases del local + envases globales del sistema (establecimiento_id NULL)
+          .or(`establecimiento_id.eq.${establecimientoId as string},establecimiento_id.is.null`);
+        if (error) throw error;
+        const map = new Map<string, number>();
+        for (const r of ((data ?? []) as unknown as Array<Record<string, unknown>>)) {
+          const id = String(r.id ?? "").trim();
+          if (!id) continue;
+          const c = Number(r.coste ?? 0);
+          map.set(id, Number.isFinite(c) ? c : 0);
+        }
+        return map;
+      } catch (e) {
+        try {
+          // eslint-disable-next-line no-console
+          console.error("[dashboard] envases_catalogo no accesible (RLS/tabla). Usando fallback vacío.", e);
+        } catch {
+          // ignore
+        }
+        return new Map<string, number>();
       }
-      return map;
     },
     staleTime: 30_000,
     retry: 1
@@ -475,7 +485,7 @@ export function DashboardClient() {
                     <span className="mt-1 inline-flex h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: it.color }} aria-hidden />
                   </div>
 
-                  <div className="relative mt-3 h-36 w-full">
+                  <div className="relative mt-3 h-36 w-full min-w-0">
                     <ResponsiveContainer width="100%" height="100%" style={{ pointerEvents: "none" }}>
                       <PieChart>
                         <Pie

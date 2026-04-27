@@ -126,12 +126,30 @@ function ReservasPlanoInner() {
       setZonas(zs);
       setZonaId((prev) => prev ?? zs[0]?.id ?? null);
 
-      const m = await supabase()
-        .from("sala_mesas")
-        .select("id,zona_id,numero,pax_max,forma,es_decorativo,nombre,x,y,estado,hora_checkin,updated_at")
-        .eq("establecimiento_id", activeEstablishmentId);
-      if (m.error) throw m.error;
-      setMesas(((m.data ?? []) as unknown as Mesa[]) ?? []);
+      // Compatibilidad de esquema:
+      // Algunas instalaciones aún no tienen `es_decorativo`/`nombre` y el select falla (400).
+      // Hacemos fallback automático sin bloquear la pantalla.
+      try {
+        const m = await supabase()
+          .from("sala_mesas")
+          .select("id,zona_id,numero,pax_max,forma,es_decorativo,nombre,x,y,estado,hora_checkin,updated_at")
+          .eq("establecimiento_id", activeEstablishmentId);
+        if (m.error) throw m.error;
+        setMesas(((m.data ?? []) as unknown as Mesa[]) ?? []);
+      } catch (e) {
+        try {
+          // eslint-disable-next-line no-console
+          console.error("[reservas] select con es_decorativo/nombre falló; fallback sin columnas", e);
+        } catch {
+          // ignore
+        }
+        const m2 = await supabase()
+          .from("sala_mesas")
+          .select("id,zona_id,numero,pax_max,forma,x,y,estado,hora_checkin,updated_at")
+          .eq("establecimiento_id", activeEstablishmentId);
+        if (m2.error) throw m2.error;
+        setMesas(((m2.data ?? []) as unknown as Mesa[]) ?? []);
+      }
     } catch (e) {
       setErrMsg(supabaseErrToString(e));
     }
