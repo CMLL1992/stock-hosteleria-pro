@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MapPin, Minus, Plus, Trash2, Users } from "lucide-react";
 import { MobileHeader } from "@/components/MobileHeader";
 import { Drawer } from "@/components/ui/Drawer";
+import { supabase } from "@/lib/supabase";
 import { useMyRole } from "@/lib/useMyRole";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { getEffectiveRole, hasPermission } from "@/lib/permissions";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
+import { useCambiosGlobalesRealtime } from "@/lib/useCambiosGlobalesRealtime";
 
 type MesaEstado = "libre" | "reservada" | "ocupada" | "sucia";
 type MesaForma = "rect" | "round";
@@ -40,11 +42,7 @@ type Zona = {
   mesas: Mesa[];
 };
 
-type PlanoState = {
-  version: 1;
-  establecimientoId: string;
-  zonas: Zona[];
-};
+type PlanoState = { version: 1; establecimientoId: string; zonas: Zona[] };
 
 function todayYmd(): string {
   const d = new Date();
@@ -56,10 +54,6 @@ function todayYmd(): string {
 
 function newId(prefix: string) {
   return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
-}
-
-function lsKey(estId: string) {
-  return `ops_plano_sala_v1:${estId}`;
 }
 
 function clamp01(n: number) {
@@ -91,26 +85,6 @@ function defaultPlano(estId: string): PlanoState {
   };
 }
 
-function loadPlano(estId: string): PlanoState {
-  try {
-    const raw = localStorage.getItem(lsKey(estId));
-    if (!raw) return defaultPlano(estId);
-    const parsed = JSON.parse(raw) as PlanoState;
-    if (!parsed || parsed.establecimientoId !== estId || !Array.isArray(parsed.zonas)) return defaultPlano(estId);
-    return parsed;
-  } catch {
-    return defaultPlano(estId);
-  }
-}
-
-function savePlano(estId: string, state: PlanoState) {
-  try {
-    localStorage.setItem(lsKey(estId), JSON.stringify(state));
-  } catch {
-    // ignore
-  }
-}
-
 function estadoStyle(estado: MesaEstado) {
   switch (estado) {
     case "libre":
@@ -137,7 +111,7 @@ export default function ReservasPlanoPage() {
   const canAdmin = hasPermission(role, "admin");
   const { activeEstablishmentId, activeEstablishmentName } = useActiveEstablishment();
 
-  const [err] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
   const [zoneId, setZoneId] = useState<string>("zona_sala");
   const [state, setState] = useState<PlanoState | null>(null);
 
@@ -147,6 +121,7 @@ export default function ReservasPlanoPage() {
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selMesaId, setSelMesaId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
   const boardRef = useRef<HTMLDivElement | null>(null);
   const draggingMesaRef = useRef<{ mesaId: string; startClientX: number; startClientY: number; startX: number; startY: number } | null>(null);
@@ -154,15 +129,11 @@ export default function ReservasPlanoPage() {
 
   useEffect(() => {
     if (!activeEstablishmentId) return;
-    const s = loadPlano(activeEstablishmentId);
+    // Estado inicial “skeleton” para evitar parpadeo mientras carga de DB
+    const s = defaultPlano(activeEstablishmentId);
     setState(s);
     setZoneId(s.zonas[0]?.id ?? "zona_sala");
   }, [activeEstablishmentId]);
-
-  useEffect(() => {
-    if (!activeEstablishmentId || !state) return;
-    savePlano(activeEstablishmentId, state);
-  }, [activeEstablishmentId, state]);
 
   const zona = useMemo(() => {
     const z = state?.zonas.find((z) => z.id === zoneId) ?? state?.zonas[0] ?? null;
@@ -176,12 +147,146 @@ export default function ReservasPlanoPage() {
 
   const today = todayYmd();
 
+  const refreshFromDb = useCallback(async () => {
+    if (!activeEstablishmentId) return;
+    setErr(null);
+    try {
+      // 1) leer zonas
+      const zRes = await supabase()
+        .from("sala_zonas")
+        .select("id,nombre,sort")
+        .eq("establecimiento_id", activeEstablishmentId)
+        .order("sort", { ascending: true })
+        .order("created_at", { ascending: true });
+
+      if (zRes.error) throw zRes.error;
+      let zonasRows = (zRes.data ?? []) as Array<{ id: string; nombre: string; sort: number }>;
+
+      // Bootstrap (primera vez): crear zonas + mesas demo si está vacío
+      if (!zonasRows.length) {
+        const insZ = await supabase()
+          .from("sala_zonas")
+          .insert([
+            { establecimiento_id: activeEstablishmentId, nombre: "Sala Principal", sort: 0 },
+            { establecimiento_id: activeEstablishmentId, nombre: "Terraza", sort: 1 },
+            { establecimiento_id: activeEstablishmentId, nombre: "VIP", sort: 2 }
+          ])
+          .select("id,nombre,sort");
+        if (insZ.error) throw insZ.error;
+        zonasRows = (insZ.data ?? []) as Array<{ id: string; nombre: string; sort: number }>;
+        const sala = zonasRows[0];
+        if (sala?.id) {
+          const insM = await supabase().from("sala_mesas").insert([
+            { establecimiento_id: activeEstablishmentId, zona_id: sala.id, numero: 1, pax_max: 4, forma: "rect", x: 0.15, y: 0.2, estado: "libre" },
+            { establecimiento_id: activeEstablishmentId, zona_id: sala.id, numero: 2, pax_max: 2, forma: "round", x: 0.55, y: 0.25, estado: "libre" },
+            { establecimiento_id: activeEstablishmentId, zona_id: sala.id, numero: 3, pax_max: 6, forma: "rect", x: 0.3, y: 0.55, estado: "libre" }
+          ]);
+          if (insM.error) throw insM.error;
+        }
+      }
+
+      // 2) leer mesas
+      const mRes = await supabase()
+        .from("sala_mesas")
+        .select("id,zona_id,numero,pax_max,forma,x,y,estado,hora_checkin")
+        .eq("establecimiento_id", activeEstablishmentId)
+        .order("numero", { ascending: true });
+      if (mRes.error) throw mRes.error;
+      const mesasRows = (mRes.data ?? []) as Array<{
+        id: string;
+        zona_id: string;
+        numero: number;
+        pax_max: number;
+        forma: MesaForma;
+        x: number;
+        y: number;
+        estado: MesaEstado;
+        hora_checkin: string | null;
+      }>;
+
+      // 3) reservas de hoy
+      const rRes = await supabase()
+        .from("sala_reservas")
+        .select("id,mesa_id,fecha,nombre,telefono,pax,hora,prepago_eur,notas")
+        .eq("establecimiento_id", activeEstablishmentId)
+        .eq("fecha", today);
+      if (rRes.error) throw rRes.error;
+      const resRows = (rRes.data ?? []) as Array<{
+        id: string;
+        mesa_id: string;
+        fecha: string;
+        nombre: string;
+        telefono: string;
+        pax: number;
+        hora: string;
+        prepago_eur: number;
+        notas: string;
+      }>;
+      const resByMesa = new Map<string, Reserva>();
+      for (const r of resRows) {
+        resByMesa.set(String(r.mesa_id), {
+          id: String(r.id),
+          fecha: String(r.fecha),
+          nombre: String(r.nombre ?? ""),
+          telefono: String(r.telefono ?? ""),
+          pax: Math.max(1, safeInt(r.pax, 2)),
+          hora: String(r.hora ?? "21:00"),
+          prepagoEUR: Math.max(0, Number(r.prepago_eur ?? 0) || 0),
+          notas: String(r.notas ?? "")
+        });
+      }
+
+      // 4) mapear a UI
+      const mesasByZona = new Map<string, Mesa[]>();
+      for (const m of mesasRows) {
+        const mesa: Mesa = {
+          id: m.id,
+          numero: Math.max(1, safeInt(m.numero, 1)),
+          paxMax: Math.max(1, safeInt(m.pax_max, 4)),
+          forma: m.forma ?? "rect",
+          x: clamp01(Number(m.x ?? 0.2) || 0.2),
+          y: clamp01(Number(m.y ?? 0.2) || 0.2),
+          estado: (m.estado as MesaEstado) ?? "libre",
+          reservaHoy: resByMesa.get(m.id) ?? null
+        };
+        mesasByZona.set(m.zona_id, [...(mesasByZona.get(m.zona_id) ?? []), mesa]);
+      }
+
+      const zonas: Zona[] = zonasRows.map((z) => ({
+        id: z.id,
+        nombre: z.nombre,
+        mesas: (mesasByZona.get(z.id) ?? []).slice().sort((a, b) => a.numero - b.numero)
+      }));
+
+      const next: PlanoState = { version: 1, establecimientoId: activeEstablishmentId, zonas };
+      setState(next);
+      setZoneId((curr) => (zonas.some((z) => z.id === curr) ? curr : zonas[0]?.id ?? curr));
+    } catch (e) {
+      setErr(supabaseErrToString(e));
+      setState(defaultPlano(activeEstablishmentId));
+    }
+  }, [activeEstablishmentId, today]);
+
   function updateZona(zonaId: string, patch: Partial<Zona>) {
     if (!state) return;
     setState({
       ...state,
       zonas: state.zonas.map((z) => (z.id === zonaId ? { ...z, ...patch } : z))
     });
+  }
+
+  async function updateMesaDb(mesaId: string, patch: Partial<Mesa>) {
+    if (!activeEstablishmentId) return;
+    const payload: Record<string, unknown> = {};
+    if (patch.numero != null) payload.numero = patch.numero;
+    if (patch.paxMax != null) payload.pax_max = patch.paxMax;
+    if (patch.forma != null) payload.forma = patch.forma;
+    if (patch.x != null) payload.x = patch.x;
+    if (patch.y != null) payload.y = patch.y;
+    if (patch.estado != null) payload.estado = patch.estado;
+    if ((patch as { hora_checkin?: string | null }).hora_checkin !== undefined) payload.hora_checkin = (patch as { hora_checkin?: string | null }).hora_checkin;
+    const up = await supabase().from("sala_mesas").update(payload).eq("id", mesaId).eq("establecimiento_id", activeEstablishmentId);
+    if (up.error) throw up.error;
   }
 
   function updateMesa(zonaId: string, mesaId: string, patch: Partial<Mesa>) {
@@ -191,28 +296,53 @@ export default function ReservasPlanoPage() {
     });
   }
 
-  function addMesa() {
+  async function addMesa() {
     if (!zona || !state) return;
     const nextNum = Math.max(0, ...zona.mesas.map((m) => m.numero)) + 1;
-    const mesa: Mesa = {
-      id: newId("mesa"),
-      numero: nextNum,
-      paxMax: 4,
-      forma: "rect",
-      x: 0.2,
-      y: 0.2,
-      estado: "libre",
-      reservaHoy: null
-    };
-    updateZona(zona.id, { mesas: [...zona.mesas, mesa] });
+    try {
+      setErr(null);
+      const ins = await supabase()
+        .from("sala_mesas")
+        .insert({
+          establecimiento_id: activeEstablishmentId,
+          zona_id: zona.id,
+          numero: nextNum,
+          pax_max: 4,
+          forma: "rect",
+          x: 0.2,
+          y: 0.2,
+          estado: "libre"
+        } as unknown as Record<string, unknown>)
+        .select("id,numero,pax_max,forma,x,y,estado")
+        .maybeSingle();
+      if (ins.error) throw ins.error;
+      const row = ins.data as unknown as { id: string; numero: number; pax_max: number; forma: MesaForma; x: number; y: number; estado: MesaEstado } | null;
+      if (row?.id) {
+        updateZona(zona.id, {
+          mesas: [
+            ...zona.mesas,
+            { id: row.id, numero: row.numero, paxMax: row.pax_max, forma: row.forma, x: row.x, y: row.y, estado: row.estado, reservaHoy: null }
+          ]
+        });
+      }
+    } catch (e) {
+      setErr(supabaseErrToString(e));
+    }
   }
 
-  function removeMesa(zonaId: string, mesaId: string) {
+  async function removeMesa(zonaId: string, mesaId: string) {
     if (!state) return;
     const z = state.zonas.find((z) => z.id === zonaId);
     if (!z) return;
-    updateZona(zonaId, { mesas: z.mesas.filter((m) => m.id !== mesaId) });
-    if (selMesaId === mesaId) setSelMesaId(null);
+    try {
+      setErr(null);
+      const del = await supabase().from("sala_mesas").delete().eq("id", mesaId).eq("establecimiento_id", activeEstablishmentId);
+      if (del.error) throw del.error;
+      updateZona(zonaId, { mesas: z.mesas.filter((m) => m.id !== mesaId) });
+      if (selMesaId === mesaId) setSelMesaId(null);
+    } catch (e) {
+      setErr(supabaseErrToString(e));
+    }
   }
 
   function openMesa(mesaId: string) {
@@ -256,9 +386,19 @@ export default function ReservasPlanoPage() {
     }
   }
 
-  function onPointerUp() {
+  async function onPointerUp() {
+    const drag = draggingMesaRef.current;
     draggingMesaRef.current = null;
     panningRef.current = null;
+    if (!drag || !zona) return;
+    const mesa = zona.mesas.find((m) => m.id === drag.mesaId);
+    if (!mesa) return;
+    try {
+      await updateMesaDb(mesa.id, { x: mesa.x, y: mesa.y });
+    } catch (e) {
+      setErr(supabaseErrToString(e));
+      void refreshFromDb();
+    }
   }
 
   function onPointerDownBoard(e: React.PointerEvent) {
@@ -273,19 +413,101 @@ export default function ReservasPlanoPage() {
     setPan({ x: 0, y: 0 });
   }
 
-  function setEstado(estado: MesaEstado) {
+  async function setEstado(estado: MesaEstado) {
     if (!mesaSel || !zona) return;
-    updateMesa(zona.id, mesaSel.id, { estado });
+    const patch: Partial<Mesa> & { hora_checkin?: string | null } = { estado };
+    if (estado === "ocupada") patch.hora_checkin = new Date().toISOString();
+    updateMesa(zona.id, mesaSel.id, patch);
+    try {
+      setErr(null);
+      await updateMesaDb(mesaSel.id, patch);
+    } catch (e) {
+      setErr(supabaseErrToString(e));
+      void refreshFromDb();
+    }
   }
 
-  function upsertReservaHoy(patch: Partial<Reserva>) {
+  async function upsertReservaHoy(patch: Partial<Reserva>) {
     if (!mesaSel || !zona) return;
     const base: Reserva =
       mesaSel.reservaHoy && mesaSel.reservaHoy.fecha === today
         ? mesaSel.reservaHoy
         : { id: newId("res"), fecha: today, nombre: "", telefono: "", pax: 2, hora: "21:00", prepagoEUR: 0, notas: "" };
     updateMesa(zona.id, mesaSel.id, { reservaHoy: { ...base, ...patch } });
+    try {
+      setErr(null);
+      const next = { ...base, ...patch };
+      const up = await supabase()
+        .from("sala_reservas")
+        .upsert(
+          {
+            establecimiento_id: activeEstablishmentId,
+            mesa_id: mesaSel.id,
+            fecha: today,
+            nombre: next.nombre,
+            telefono: next.telefono,
+            pax: next.pax,
+            hora: next.hora,
+            prepago_eur: next.prepagoEUR,
+            notas: next.notas
+          } as unknown as Record<string, unknown>,
+          { onConflict: "mesa_id,fecha" }
+        )
+        .select("id")
+        .maybeSingle();
+      if (up.error) throw up.error;
+    } catch (e) {
+      setErr(supabaseErrToString(e));
+      void refreshFromDb();
+    }
   }
+
+  const searchResults = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q || !state) return [];
+    const out: Array<{ zonaId: string; mesa: Mesa }> = [];
+    for (const z of state.zonas) {
+      for (const m of z.mesas) {
+        const r = m.reservaHoy;
+        if (!r) continue;
+        const hay =
+          (r.nombre ?? "").toLowerCase().includes(q) ||
+          (r.telefono ?? "").toLowerCase().includes(q);
+        if (hay) out.push({ zonaId: z.id, mesa: m });
+      }
+    }
+    return out.slice(0, 8);
+  }, [search, state]);
+
+  async function clearReservaHoy() {
+    if (!activeEstablishmentId || !zona || !mesaSel) return;
+    updateMesa(zona.id, mesaSel.id, { reservaHoy: null, estado: "libre" });
+    try {
+      setErr(null);
+      const del = await supabase()
+        .from("sala_reservas")
+        .delete()
+        .eq("establecimiento_id", activeEstablishmentId)
+        .eq("mesa_id", mesaSel.id)
+        .eq("fecha", today);
+      if (del.error) throw del.error;
+      await updateMesaDb(mesaSel.id, { estado: "libre" });
+    } catch (e) {
+      setErr(supabaseErrToString(e));
+      void refreshFromDb();
+    }
+  }
+
+  useEffect(() => {
+    if (!activeEstablishmentId || !canAdmin) return;
+    void refreshFromDb();
+  }, [activeEstablishmentId, canAdmin, refreshFromDb]);
+
+  useCambiosGlobalesRealtime({
+    establecimientoId: activeEstablishmentId,
+    onChange: () => void refreshFromDb(),
+    tables: ["sala_zonas", "sala_mesas", "sala_reservas"]
+  });
 
   if (meLoading) return <main className="p-4 text-sm text-slate-600">Cargando…</main>;
   if (error) return <main className="p-4 text-sm text-red-700">{supabaseErrToString(error)}</main>;
@@ -343,6 +565,38 @@ export default function ReservasPlanoPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <input
+                  className="premium-input min-h-11 w-[220px] px-3 text-sm"
+                  placeholder="Buscar reserva (nombre o teléfono)…"
+                  value={search}
+                  onChange={(e) => setSearch(e.currentTarget.value)}
+                />
+                {searchResults.length ? (
+                  <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-20 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
+                    {searchResults.map((r) => (
+                      <button
+                        key={r.mesa.id}
+                        type="button"
+                        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-slate-50"
+                        onClick={() => {
+                          setZoneId(r.zonaId);
+                          openMesa(r.mesa.id);
+                          setSearch("");
+                        }}
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-extrabold text-slate-900">Mesa {r.mesa.numero}</span>
+                          <span className="block truncate text-xs font-semibold text-slate-600">
+                            {(r.mesa.reservaHoy?.nombre ?? "").trim() || "Sin nombre"} · {(r.mesa.reservaHoy?.telefono ?? "").trim() || "—"}
+                          </span>
+                        </span>
+                        <span className="text-xs font-black tabular-nums text-slate-700">{r.mesa.reservaHoy?.hora ?? ""}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
               <select className="premium-input min-h-11 w-auto px-3 text-sm" value={zoneId} onChange={(e) => setZoneId(e.currentTarget.value)}>
                 {state.zonas.map((z) => (
                   <option key={z.id} value={z.id}>
@@ -352,10 +606,10 @@ export default function ReservasPlanoPage() {
               </select>
               <button
                 type="button"
-                className={["min-h-11 rounded-2xl px-4 text-sm font-extrabold", editMode ? "bg-premium-blue text-white" : "border border-slate-200 bg-white text-slate-900 hover:bg-slate-50"].join(" ")}
+                className={["min-h-11 rounded-2xl px-4 text-sm font-extrabold transition-colors", editMode ? "bg-premium-blue text-white" : "border border-slate-200 bg-white text-slate-900 hover:bg-slate-50"].join(" ")}
                 onClick={() => setEditMode((v) => !v)}
               >
-                {editMode ? "Modo edición" : "Modo edición"}
+                {editMode ? "Editar plano: ON" : "Editar plano"}
               </button>
               <button type="button" className="min-h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-extrabold text-slate-900 hover:bg-slate-50" onClick={resetView}>
                 Reset vista
@@ -534,7 +788,7 @@ export default function ReservasPlanoPage() {
                     type="button"
                     className="premium-btn-secondary"
                     onClick={() => {
-                      updateMesa(zona.id, mesaSel.id, { reservaHoy: null, estado: "libre" });
+                      void clearReservaHoy();
                     }}
                   >
                     Limpiar reserva
@@ -552,7 +806,14 @@ export default function ReservasPlanoPage() {
                       className="premium-input mt-1 text-center font-bold tabular-nums"
                       value={String(mesaSel.numero)}
                       min={1}
-                      onChange={(e) => updateMesa(zona.id, mesaSel.id, { numero: Math.max(1, safeInt(e.currentTarget.value, mesaSel.numero)) })}
+                      onChange={(e) => {
+                        const numero = Math.max(1, safeInt(e.currentTarget.value, mesaSel.numero));
+                        updateMesa(zona.id, mesaSel.id, { numero });
+                        void updateMesaDb(mesaSel.id, { numero }).catch((err) => {
+                          setErr(supabaseErrToString(err));
+                          void refreshFromDb();
+                        });
+                      }}
                     />
                   </div>
                   <div>
@@ -562,12 +823,30 @@ export default function ReservasPlanoPage() {
                       className="premium-input mt-1 text-center font-bold tabular-nums"
                       value={String(mesaSel.paxMax)}
                       min={1}
-                      onChange={(e) => updateMesa(zona.id, mesaSel.id, { paxMax: Math.max(1, safeInt(e.currentTarget.value, mesaSel.paxMax)) })}
+                      onChange={(e) => {
+                        const paxMax = Math.max(1, safeInt(e.currentTarget.value, mesaSel.paxMax));
+                        updateMesa(zona.id, mesaSel.id, { paxMax });
+                        void updateMesaDb(mesaSel.id, { paxMax }).catch((err) => {
+                          setErr(supabaseErrToString(err));
+                          void refreshFromDb();
+                        });
+                      }}
                     />
                   </div>
                   <div className="sm:col-span-2">
                     <label className="text-xs font-semibold text-slate-600">Forma</label>
-                    <select className="premium-input mt-1" value={mesaSel.forma} onChange={(e) => updateMesa(zona.id, mesaSel.id, { forma: e.currentTarget.value as MesaForma })}>
+                    <select
+                      className="premium-input mt-1"
+                      value={mesaSel.forma}
+                      onChange={(e) => {
+                        const forma = e.currentTarget.value as MesaForma;
+                        updateMesa(zona.id, mesaSel.id, { forma });
+                        void updateMesaDb(mesaSel.id, { forma }).catch((err) => {
+                          setErr(supabaseErrToString(err));
+                          void refreshFromDb();
+                        });
+                      }}
+                    >
                       <option value="rect">Cuadrada</option>
                       <option value="round">Redonda</option>
                     </select>
