@@ -238,10 +238,10 @@ export default function RecepcionPedidosPage() {
         } satisfies PedidoItemRow;
       });
       setItems(rows);
-      // UX: el input representa el TOTAL recibido (editable).
+      // UX: el input representa SOLO lo que entra hoy (delta), no el total.
       setDraft(() => {
         const next: Record<string, string> = {};
-        for (const it of rows) next[it.producto_id] = String(Math.max(0, toInt(it.cantidad_recibida)));
+        for (const it of rows) next[it.producto_id] = "0";
         return next;
       });
     } catch (e) {
@@ -265,11 +265,13 @@ export default function RecepcionPedidosPage() {
         throw new Error(`usuario_id inválido (no es UUID): "${String(uid)}"`);
       }
 
-      // a) Delta por línea: total_nuevo - total_prev
+      // a) Delta por línea: el input es "entra ahora" (se suma a ya recibido)
       const deltas = items
         .map((it) => {
-          const nuevoTotal = Math.max(0, toInt(draft[it.producto_id] ?? ""));
+          const entrada = Math.max(0, toInt(draft[it.producto_id] ?? ""));
           const previo = Math.max(0, toInt(it.cantidad_recibida));
+          const pedido = Math.max(0, toInt(it.cantidad_pedida));
+          const nuevoTotal = Math.min(pedido, previo + entrada);
           const delta = Math.max(0, nuevoTotal - previo);
           return { it, nuevoTotal, previo, delta };
         })
@@ -319,7 +321,12 @@ export default function RecepcionPedidosPage() {
       // 4) estado pedido (consecuencia)
       const nextRows = items.map((x) => ({
         ...x,
-        cantidad_recibida: Math.max(0, toInt(draft[x.producto_id] ?? String(x.cantidad_recibida)))
+        cantidad_recibida: (() => {
+          const entrada = Math.max(0, toInt(draft[x.producto_id] ?? ""));
+          const previo = Math.max(0, toInt(x.cantidad_recibida));
+          const pedido = Math.max(0, toInt(x.cantidad_pedida));
+          return Math.min(pedido, previo + entrada);
+        })()
       }));
       const allReceived = nextRows.every((x) => Math.max(0, toInt(x.cantidad_recibida)) >= Math.max(0, toInt(x.cantidad_pedida)));
       const anyReceived = nextRows.some((x) => Math.max(0, toInt(x.cantidad_recibida)) > 0);
@@ -335,6 +342,12 @@ export default function RecepcionPedidosPage() {
 
       // UI local: reflejar totales recibidos
       setItems(nextRows);
+      // Reset inputs (delta) a 0 para siguiente recepción
+      setDraft(() => {
+        const next: Record<string, string> = {};
+        for (const it of nextRows) next[it.producto_id] = "0";
+        return next;
+      });
       setSel((prev) => (prev ? { ...prev, estado: pedidoEstado } : prev));
       setPedidos((prev) => prev.map((p) => (p.id === sel.id ? { ...p, estado: pedidoEstado } : p)));
 
@@ -591,7 +604,7 @@ export default function RecepcionPedidosPage() {
             <>
               <div className="grid grid-cols-[1fr_96px] gap-2 px-1 text-xs font-bold uppercase tracking-wide text-slate-600">
                 <span>Producto</span>
-                <span className="text-center">Recibido</span>
+                <span className="text-center">Recibido (hoy)</span>
               </div>
               <ul className="flex flex-col gap-2">
                 {items.map((it) => (
@@ -599,18 +612,23 @@ export default function RecepcionPedidosPage() {
                     <div className="grid grid-cols-[1fr_96px] items-center gap-2">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-bold text-slate-900">{it.articulo}</p>
-                        <p className="mt-0.5 text-xs text-slate-600">
-                          Pedido: <span className="font-mono font-semibold tabular-nums">{it.cantidad_pedida}</span>
-                          {" · "}
-                          Ya recibido: <span className="font-mono font-semibold tabular-nums">{it.cantidad_recibida}</span>
-                          {" · "}
-                          Faltan:{" "}
-                          <span className="font-mono font-semibold tabular-nums">
-                            {Math.max(0, Math.max(0, toInt(it.cantidad_pedida)) - Math.max(0, toInt(it.cantidad_recibida)))}
-                          </span>
-                          {" · "}
-                          {it.unidad ?? "—"}
-                        </p>
+                        <div className="mt-2 grid grid-cols-3 gap-2">
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-2 py-2">
+                            <p className="text-[10px] font-extrabold uppercase tracking-wide text-slate-500">Pedido</p>
+                            <p className="mt-0.5 font-mono text-base font-black tabular-nums text-slate-900">{it.cantidad_pedida}</p>
+                          </div>
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-2 py-2">
+                            <p className="text-[10px] font-extrabold uppercase tracking-wide text-slate-500">Ya recibido</p>
+                            <p className="mt-0.5 font-mono text-base font-black tabular-nums text-slate-900">{it.cantidad_recibida}</p>
+                          </div>
+                          <div className="rounded-2xl border border-slate-200 bg-white px-2 py-2 ring-1 ring-slate-100">
+                            <p className="text-[10px] font-extrabold uppercase tracking-wide text-slate-500">Faltan</p>
+                            <p className="mt-0.5 font-mono text-base font-black tabular-nums text-slate-900">
+                              {Math.max(0, Math.max(0, toInt(it.cantidad_pedida)) - Math.max(0, toInt(it.cantidad_recibida)))}
+                            </p>
+                          </div>
+                        </div>
+                        <p className="mt-1 text-xs font-semibold text-slate-500">{it.unidad ?? "—"}</p>
                       </div>
                       <input
                         type="text"
@@ -624,7 +642,7 @@ export default function RecepcionPedidosPage() {
                           setDraft((prev) => ({ ...prev, [it.producto_id]: digitsOnly(raw) }));
                         }}
                         disabled={saving}
-                        aria-label={`Cantidad total recibida para ${it.articulo}`}
+                        aria-label={`Cantidad recibida hoy para ${it.articulo}`}
                       />
                     </div>
                   </li>
