@@ -9,6 +9,7 @@ import {
   ChevronRight,
   ClipboardList,
   Package,
+  MapPin,
   Shield,
   ShoppingBag,
   Truck,
@@ -54,6 +55,8 @@ function itemIcon(id: string) {
       return ClipboardList;
     case "eventos":
       return CalendarDays;
+    case "reservas":
+      return MapPin;
     case "pedidos":
       return ShoppingBag;
     case "proveedores":
@@ -142,6 +145,12 @@ const SECTIONS: AdminSection[] = [
     id: "operaciones",
     heading: "Operaciones y movimientos",
     items: [
+      {
+        id: "reservas",
+        href: "/admin/reservas",
+        title: "Reservas y plano",
+        subtitle: "Plano de sala + reservas con estados por mesa."
+      },
       {
         id: "eventos",
         href: "/admin/eventos",
