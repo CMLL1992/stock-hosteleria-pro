@@ -15,7 +15,7 @@ import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { fetchEscandallosPrecioMapByProductIds, type EscandalloPrecioRow } from "@/lib/fetchEscandallosPrecioMap";
 import { logActivity } from "@/lib/activityLog";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
-import { cantidadSugeridaPedido, waUrlPedidoAgrupadoProveedor } from "@/lib/whatsappPedido";
+import { waUrlPedidoAgrupadoProveedor } from "@/lib/whatsappPedido";
 
 
 export function DashboardClient() {
@@ -105,12 +105,11 @@ export function DashboardClient() {
 
   useEffect(() => {
     if (!pedidoRapidoOpen) return;
-    // Inicializa cantidades sugeridas (reposicion hasta mínimo).
+    // Por defecto, siempre arrancamos a 0 (el usuario decide cuánto pedir).
     setPedidoRapidoQty((prev) => {
       const next = { ...prev };
       for (const p of bajoMinimos) {
-        if (next[p.id] != null && String(next[p.id]).trim() !== "") continue;
-        next[p.id] = String(cantidadSugeridaPedido(Number(p.stock_actual) || 0, Number(p.stock_minimo) || 0));
+        next[p.id] = "0";
       }
       return next;
     });
@@ -561,7 +560,7 @@ export function DashboardClient() {
                       </div>
 
                       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-                        <div className="grid grid-cols-[1fr_100px] gap-2 border-b border-slate-100 px-4 py-2 text-[11px] font-extrabold uppercase tracking-wide text-slate-500">
+                        <div className="grid grid-cols-[1fr_160px] gap-2 border-b border-slate-100 px-4 py-2 text-[11px] font-extrabold uppercase tracking-wide text-slate-500">
                           <div>Producto</div>
                           <div className="text-center">Pedir</div>
                         </div>
@@ -570,7 +569,7 @@ export function DashboardClient() {
                           const min = Number(p.stock_minimo) || 0;
                           const act = Number(p.stock_actual) || 0;
                           return (
-                            <div key={p.id} className="grid grid-cols-[1fr_100px] items-center gap-2 border-b border-slate-100 px-4 py-3">
+                            <div key={p.id} className="grid grid-cols-[1fr_160px] items-center gap-2 border-b border-slate-100 px-4 py-3">
                               <div className="min-w-0">
                                 <p className="truncate text-sm font-semibold text-slate-900">{p.articulo}</p>
                                 <p className="mt-0.5 text-xs text-slate-500">
@@ -578,10 +577,10 @@ export function DashboardClient() {
                                   <span className="font-bold text-slate-700">{min}</span>
                                 </p>
                               </div>
-                              <div className="grid grid-cols-[36px_1fr_36px] items-center gap-1">
+                              <div className="grid grid-cols-[44px_1fr_44px] items-center gap-2">
                                 <button
                                   type="button"
-                                  className="min-h-10 rounded-xl border border-slate-200 bg-white text-lg font-black text-slate-900 hover:bg-slate-50 disabled:opacity-40"
+                                  className="min-h-12 min-w-12 rounded-2xl border border-slate-200 bg-white text-2xl font-black leading-none text-slate-900 hover:bg-slate-50 disabled:opacity-40"
                                   onClick={() => setQtyDelta(p.id, -1)}
                                   disabled={q <= 0}
                                   aria-label={`Restar 1 a ${p.articulo}`}
@@ -589,7 +588,7 @@ export function DashboardClient() {
                                   −
                                 </button>
                                 <input
-                                  className="min-h-10 w-full rounded-xl border border-slate-200 bg-white px-2 text-center text-base font-black tabular-nums text-slate-900"
+                                  className="min-h-12 w-full min-w-16 rounded-2xl border border-slate-200 bg-white px-2 text-center text-lg font-black tabular-nums text-slate-900"
                                   inputMode="numeric"
                                   pattern="[0-9]*"
                                   value={String(q)}
@@ -600,7 +599,7 @@ export function DashboardClient() {
                                 />
                                 <button
                                   type="button"
-                                  className="min-h-10 rounded-xl border border-slate-200 bg-white text-lg font-black text-slate-900 hover:bg-slate-50"
+                                  className="min-h-12 min-w-12 rounded-2xl border border-slate-200 bg-white text-2xl font-black leading-none text-slate-900 hover:bg-slate-50"
                                   onClick={() => setQtyDelta(p.id, +1)}
                                   aria-label={`Sumar 1 a ${p.articulo}`}
                                 >
