@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Circle, Lock, Square } from "lucide-react";
+import { ArrowLeft, Circle, LayoutGrid, Lock, Minus, RotateCw, Square } from "lucide-react";
 import { Drawer } from "@/components/ui/Drawer";
 import { supabase } from "@/lib/supabase";
 import { useMyRole } from "@/lib/useMyRole";
@@ -25,6 +25,8 @@ type Mesa = {
   estado: MesaEstado;
   hora_checkin?: string | null;
   updated_at?: string | null;
+  /** Grados; paredes y decorativos (columna opcional en BD antigua). */
+  rotacion_deg?: number | null;
 };
 
 type Zona = { id: string; nombre: string; sort: number };
@@ -119,7 +121,7 @@ function ReservasPlanoInner() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [selMesaId, setSelMesaId] = useState<string | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
-  const [creatingMesa, setCreatingMesa] = useState<null | "rect" | "round">(null);
+  const [creatingMesa, setCreatingMesa] = useState<null | "rect" | "round" | "pared">(null);
   const [deletingMesa, setDeletingMesa] = useState(false);
   const [mergeMode, setMergeMode] = useState(false);
   const [zonaNameDraft, setZonaNameDraft] = useState("");
@@ -127,6 +129,11 @@ function ReservasPlanoInner() {
   const selMesa = useMemo(() => mesas.find((m) => m.id === selMesaId) ?? null, [mesas, selMesaId]);
   const mesasZona = useMemo(() => mesas.filter((m) => m.zona_id === (zonaId ?? "")), [mesas, zonaId]);
   const selIsDecor = useMemo(() => isDecorativo(selMesa), [selMesa]);
+  /** Pared y otros decor rect.; no barras (suelen ser horizontales). */
+  const selPuedeGirarDecor = useMemo(
+    () => selIsDecor && decorKind(selMesa) !== "barra",
+    [selIsDecor, selMesa]
+  );
 
   const load = useCallback(async () => {
     if (!activeEstablishmentId) return;
@@ -145,27 +152,22 @@ function ReservasPlanoInner() {
       // Compatibilidad de esquema:
       // Algunas instalaciones aún no tienen `es_decorativo`/`nombre` y el select falla (400).
       // Hacemos fallback automático sin bloquear la pantalla.
-      try {
-        const m = await supabase()
-          .from("sala_mesas")
-          .select("id,zona_id,numero,pax_max,forma,es_decorativo,nombre,x,y,estado,hora_checkin,updated_at")
-          .eq("establecimiento_id", activeEstablishmentId);
-        if (m.error) throw m.error;
-        setMesas(((m.data ?? []) as unknown as Mesa[]) ?? []);
-      } catch (e) {
-        try {
-          // eslint-disable-next-line no-console
-          console.error("[reservas] select con es_decorativo/nombre falló; fallback sin columnas", e);
-        } catch {
-          // ignore
+      const selects = [
+        "id,zona_id,numero,pax_max,forma,es_decorativo,nombre,x,y,estado,hora_checkin,updated_at,rotacion_deg",
+        "id,zona_id,numero,pax_max,forma,es_decorativo,nombre,x,y,estado,hora_checkin,updated_at",
+        "id,zona_id,numero,pax_max,forma,x,y,estado,hora_checkin,updated_at"
+      ] as const;
+      let lastErr: unknown = null;
+      for (const sel of selects) {
+        const m = await supabase().from("sala_mesas").select(sel).eq("establecimiento_id", activeEstablishmentId);
+        if (!m.error) {
+          setMesas(((m.data ?? []) as unknown as Mesa[]) ?? []);
+          lastErr = null;
+          break;
         }
-        const m2 = await supabase()
-          .from("sala_mesas")
-          .select("id,zona_id,numero,pax_max,forma,x,y,estado,hora_checkin,updated_at")
-          .eq("establecimiento_id", activeEstablishmentId);
-        if (m2.error) throw m2.error;
-        setMesas(((m2.data ?? []) as unknown as Mesa[]) ?? []);
+        lastErr = m.error;
       }
+      if (lastErr) throw lastErr;
     } catch (e) {
       setErrMsg(supabaseErrToString(e));
     }
@@ -245,6 +247,31 @@ function ReservasPlanoInner() {
     }
   }
 
+  async function createNuevaZona() {
+    if (!activeEstablishmentId || !canDrag) return;
+    setErrMsg(null);
+    try {
+      const maxSort = zonas.reduce((acc, z) => Math.max(acc, z.sort), -1);
+      const nextSort = maxSort + 1;
+      const nombre = `Sala ${zonas.length + 1}`;
+      const res = await supabase()
+        .from("sala_zonas")
+        .insert({ establecimiento_id: activeEstablishmentId, nombre, sort: nextSort })
+        .select("id")
+        .single();
+      if (res.error) throw res.error;
+      const newId = (res.data as unknown as { id: string } | null)?.id ?? null;
+      if (newId) {
+        setZonaId(newId);
+        setZonaNameDraft(nombre);
+        haptic(50);
+      }
+      await load();
+    } catch (e) {
+      setErrMsg(supabaseErrToString(e));
+    }
+  }
+
   function centerOfViewportToWorld01(): { x: number; y: number } {
     const el = boardRef.current;
     if (!el) return { x: 0.5, y: 0.5 };
@@ -255,7 +282,7 @@ function ReservasPlanoInner() {
     return { x: clamp01(worldPxX / rect.width), y: clamp01(worldPxY / rect.height) };
   }
 
-  async function createMesa(kind: "rect" | "round") {
+  async function createMesa(kind: "rect" | "round" | "pared") {
     if (!activeEstablishmentId || !zonaId) return;
     if (!canDrag || !planoUnlocked) return;
     if (creatingMesa) return;
@@ -263,49 +290,64 @@ function ReservasPlanoInner() {
     setCreatingMesa(kind);
     try {
       const { x, y } = centerOfViewportToWorld01();
+      const isPared = kind === "pared";
       const forma = kind === "round" ? "round" : "rect";
       const maxPos = mesasZona.reduce((acc, m) => Math.max(acc, m.numero || 0), 0);
-      const nextNumero = maxPos + 1;
+      const minNum = mesasZona.reduce((acc, m) => Math.min(acc, m.numero || 0), 0);
+      const nextNumero = isPared ? Math.min(-1, minNum - 1) : maxPos + 1;
 
       const payload: Record<string, unknown> = {
         establecimiento_id: activeEstablishmentId,
         zona_id: zonaId,
         numero: nextNumero,
-        pax_max: 4,
+        pax_max: isPared ? 0 : 4,
         forma,
         x,
         y,
         estado: "libre",
-        es_decorativo: false,
-        nombre: null
+        es_decorativo: isPared,
+        nombre: isPared ? "Pared" : null,
+        rotacion_deg: 0
       };
 
       let newId: string | null = null;
-      // Compatibilidad: si `es_decorativo`/`nombre` no existen aún, reintentamos sin ellos.
-      try {
-        const res = await supabase().from("sala_mesas").insert(payload).select("id").single();
+      // Compatibilidad: columnas opcionales según migración aplicada.
+      const tryInsert = async (data: Record<string, unknown>) => {
+        const res = await supabase().from("sala_mesas").insert(data).select("id").single();
         if (res.error) throw res.error;
-        newId = (res.data as unknown as { id: string } | null)?.id ?? null;
+        return (res.data as unknown as { id: string } | null)?.id ?? null;
+      };
+      try {
+        newId = await tryInsert(payload);
       } catch (e) {
         try {
           // eslint-disable-next-line no-console
-          console.error("[reservas] insert mesa failed; fallback without es_decorativo/nombre", e);
+          console.error("[reservas] insert mesa failed; fallback columnas", e);
         } catch {
           // ignore
         }
         const fallback = { ...payload };
-        delete (fallback as Record<string, unknown>).es_decorativo;
-        delete (fallback as Record<string, unknown>).nombre;
-        const res2 = await supabase().from("sala_mesas").insert(fallback).select("id").single();
-        if (res2.error) throw res2.error;
-        newId = (res2.data as unknown as { id: string } | null)?.id ?? null;
+        delete (fallback as Record<string, unknown>).rotacion_deg;
+        try {
+          newId = await tryInsert(fallback);
+        } catch (e2) {
+          try {
+            // eslint-disable-next-line no-console
+            console.error("[reservas] insert fallback 2", e2);
+          } catch {
+            // ignore
+          }
+          delete (fallback as Record<string, unknown>).es_decorativo;
+          delete (fallback as Record<string, unknown>).nombre;
+          newId = await tryInsert(fallback);
+        }
       }
 
       haptic(50);
       if (newId) {
         setSelMesaId(newId);
         setSheetOpen(true);
-        setManageOpen(false);
+        setManageOpen(isPared);
       }
       // El realtime traerá la nueva mesa; refrescamos por si acaso.
       void load();
@@ -328,7 +370,7 @@ function ReservasPlanoInner() {
   function onPointerDownMesa(e: React.PointerEvent, mesa: Mesa) {
     if (!canDrag) return;
     if (!planoUnlocked) return;
-    if (mesa.es_decorativo) {
+    if (isDecorativo(mesa)) {
       // Decorativos se pueden mover igual, sin bloqueos extra
     }
     e.preventDefault();
@@ -436,17 +478,28 @@ function ReservasPlanoInner() {
     }
   }
 
-  async function updateMesaFields(patch: Partial<Pick<Mesa, "numero" | "pax_max">>) {
+  async function updateMesaFields(patch: Partial<Pick<Mesa, "numero" | "pax_max" | "rotacion_deg">>) {
     if (!selMesa || !activeEstablishmentId) return;
     if (!canDrag) return;
     setErrMsg(null);
     setMesas((prev) => prev.map((m) => (m.id === selMesa.id ? { ...m, ...patch } : m)));
     try {
-      const res = await supabase()
+      let res = await supabase()
         .from("sala_mesas")
         .update(patch)
         .eq("id", selMesa.id)
         .eq("establecimiento_id", activeEstablishmentId);
+      if (res.error && patch.rotacion_deg !== undefined) {
+        const rest = { ...patch };
+        delete (rest as Record<string, unknown>).rotacion_deg;
+        if (Object.keys(rest).length > 0) {
+          res = await supabase()
+            .from("sala_mesas")
+            .update(rest)
+            .eq("id", selMesa.id)
+            .eq("establecimiento_id", activeEstablishmentId);
+        }
+      }
       if (res.error) throw res.error;
     } catch (e) {
       setErrMsg(supabaseErrToString(e));
@@ -463,7 +516,7 @@ function ReservasPlanoInner() {
     const target = mesas.find((m) => m.id === targetMesaId) ?? null;
     if (!target) return;
     if (target.id === selMesa.id) return;
-    if (target.es_decorativo || selMesa.es_decorativo) return;
+    if (isDecorativo(target) || isDecorativo(selMesa)) return;
     const ok = typeof window !== "undefined" ? window.confirm(`¿Fusionar Mesa ${selMesa.numero} con Mesa ${target.numero}?`) : false;
     if (!ok) return;
     setErrMsg(null);
@@ -565,6 +618,17 @@ function ReservasPlanoInner() {
                     ))}
                     </select>
                   )}
+                  {canDrag && planoUnlocked ? (
+                    <button
+                      type="button"
+                      className="inline-flex min-h-9 items-center gap-1 rounded-2xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-700 shadow-sm hover:bg-slate-50"
+                      onClick={() => void createNuevaZona()}
+                      title="Crear una nueva sala (zona) en el plano"
+                    >
+                      <LayoutGrid className="h-4 w-4 shrink-0" aria-hidden />
+                      Nueva sala
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="min-h-9 rounded-2xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-700 shadow-sm hover:bg-slate-50"
@@ -644,6 +708,16 @@ function ReservasPlanoInner() {
                 </button>
                 <button
                   type="button"
+                  className="grid h-12 w-12 place-items-center rounded-full border border-slate-200 bg-white text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+                  onClick={() => void createMesa("pared")}
+                  disabled={!!creatingMesa || !zonaId}
+                  aria-label="Añadir pared"
+                  title="Pared"
+                >
+                  <Minus className="h-5 w-5" />
+                </button>
+                <button
+                  type="button"
                   className="ml-2 min-h-12 rounded-full bg-blue-600 px-4 text-xs font-extrabold text-white shadow-sm hover:bg-blue-700"
                   onClick={() => setPlanoUnlocked(false)}
                 >
@@ -685,12 +759,19 @@ function ReservasPlanoInner() {
                   const isVip = (m.forma ?? "rect") === "rect" && (m.pax_max ?? 0) >= 6;
                   const left = `${m.x * 100}%`;
                   const top = `${m.y * 100}%`;
-                  const mesaStyle: React.CSSProperties = planoUnlocked && canDrag ? { left, top, touchAction: "none" } : { left, top };
+                  const puedeGirar = decor && dk !== "barra";
+                  const rotDeg = puedeGirar ? Number(m.rotacion_deg ?? 0) || 0 : 0;
+                  const mesaStyle: React.CSSProperties = {
+                    left,
+                    top,
+                    transform: puedeGirar ? `translate(-50%, -50%) rotate(${rotDeg}deg)` : "translate(-50%, -50%)",
+                    ...(planoUnlocked && canDrag ? { touchAction: "none" } : {})
+                  };
                   return (
                     <div
                       key={m.id}
                       className={[
-                        "absolute -translate-x-1/2 -translate-y-1/2 select-none",
+                        "absolute select-none",
                         "grid place-items-center",
                         decor ? (dk === "pared" ? "h-5 w-44 rounded-xl" : dk === "barra" ? "h-16 w-44 rounded-2xl" : "h-10 w-36 rounded-2xl") : isVip ? "h-20 w-36" : "h-24 w-24",
                         decor ? "border border-slate-300" : isRound ? "rounded-full" : "rounded-2xl",
@@ -862,8 +943,28 @@ function ReservasPlanoInner() {
                       </>
                     ) : (
                       <div className="rounded-3xl border border-slate-200 bg-white p-3">
-                        <p className="text-sm font-semibold text-slate-900">Elemento estructural</p>
-                        <p className="mt-1 text-sm text-slate-600">Solo se puede mover o eliminar.</p>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {decorKind(selMesa) === "pared" ? "Pared" : decorKind(selMesa) === "barra" ? "Barra" : "Elemento estructural"}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-600">
+                          {selPuedeGirarDecor
+                            ? "Puedes moverlo, girarlo o eliminarlo."
+                            : "Solo se puede mover o eliminar."}
+                        </p>
+                        {selPuedeGirarDecor && canDrag ? (
+                          <button
+                            type="button"
+                            className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white text-sm font-extrabold text-slate-900 hover:bg-slate-50"
+                            onClick={() => {
+                              haptic(25);
+                              const cur = Number(selMesa.rotacion_deg ?? 0) || 0;
+                              void updateMesaFields({ rotacion_deg: (cur + 90) % 360 });
+                            }}
+                          >
+                            <RotateCw className="h-5 w-5" aria-hidden />
+                            Girar 90°
+                          </button>
+                        ) : null}
                       </div>
                     )}
 
