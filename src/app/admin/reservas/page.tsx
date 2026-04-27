@@ -93,6 +93,7 @@ function ReservasPlanoInner() {
   const [planoUnlocked, setPlanoUnlocked] = useState(false);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [scale, setScale] = useState(1);
+  const [isInteracting, setIsInteracting] = useState(false);
 
   const boardRef = useRef<HTMLDivElement | null>(null);
   const draggingRef = useRef<null | { mesaId: string; startClientX: number; startClientY: number; startX: number; startY: number }>(null);
@@ -154,6 +155,22 @@ function ReservasPlanoInner() {
       document.body.style.overflow = prev;
     };
   }, [isDesktop]);
+
+  // iOS Safari / Android: asegura que `preventDefault()` funcione en movimientos táctiles.
+  useEffect(() => {
+    const el = boardRef.current;
+    if (!el) return;
+    const onTouchMove = (ev: TouchEvent) => {
+      if (draggingRef.current || panningRef.current) {
+        ev.preventDefault();
+        ev.stopPropagation();
+      }
+    };
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    return () => {
+      el.removeEventListener("touchmove", onTouchMove as EventListener);
+    };
+  }, []);
 
   function openMesa(mesaId: string) {
     setSelMesaId(mesaId);
@@ -273,6 +290,7 @@ function ReservasPlanoInner() {
     if (draggingRef.current) return;
     e.preventDefault();
     e.stopPropagation();
+    setIsInteracting(true);
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     panningRef.current = { startClientX: e.clientX, startClientY: e.clientY, startPanX: pan.x, startPanY: pan.y };
   }
@@ -285,7 +303,14 @@ function ReservasPlanoInner() {
     }
     e.preventDefault();
     e.stopPropagation();
+    setIsInteracting(true);
     haptic(20);
+    try {
+      // eslint-disable-next-line no-console
+      console.log("Interacción detectada en mesa:", mesa.id);
+    } catch {
+      // ignore
+    }
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     draggingRef.current = { mesaId: mesa.id, startClientX: e.clientX, startClientY: e.clientY, startX: mesa.x, startY: mesa.y };
     mergeHoverRef.current = null;
@@ -347,6 +372,7 @@ function ReservasPlanoInner() {
     draggingRef.current = null;
     panningRef.current = null;
     mergeHoverRef.current = null;
+    setIsInteracting(false);
     if (!drag) return;
     const mesa = mesas.find((m) => m.id === drag.mesaId) ?? null;
     if (!mesa) return;
@@ -512,10 +538,9 @@ function ReservasPlanoInner() {
         </div>
       ) : (
         <main className="relative h-dvh w-full overflow-hidden">
-          <style>{`.plano-touch-none{touch-action:none !important; overscroll-behavior: none !important;}`}</style>
           {/* Fondo puntos */}
           <div
-            className="absolute inset-0"
+            className="pointer-events-none absolute inset-0"
             style={{
               backgroundColor: "#0A0A0C",
               backgroundImage: "radial-gradient(circle at 1px 1px, rgba(255,255,255,0.08) 1px, transparent 0)",
@@ -611,10 +636,22 @@ function ReservasPlanoInner() {
             {planoUnlocked ? <LockOpen className="h-6 w-6 text-[#A349F2]" /> : <Lock className="h-6 w-6 text-white" />}
           </button>
 
+          {/* FAB reset vista */}
+          <button
+            type="button"
+            className="absolute bottom-6 left-6 z-[999] min-h-10 rounded-full border border-white/10 bg-white/5 px-4 text-xs font-extrabold text-white backdrop-blur hover:bg-white/10"
+            onClick={() => {
+              setPan({ x: 0, y: 0 });
+              setScale(1);
+            }}
+          >
+            Centrar plano
+          </button>
+
           {/* Toolbar creación (solo en modo edición) */}
           {canDrag && planoUnlocked ? (
-            <div className="absolute bottom-6 left-1/2 z-50 -translate-x-1/2">
-              <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 p-2 shadow-2xl backdrop-blur">
+            <div className="pointer-events-auto absolute bottom-6 left-1/2 z-[999] -translate-x-1/2">
+              <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-white/10 bg-white/5 p-2 shadow-2xl backdrop-blur">
                 <button
                   type="button"
                   className="grid h-12 w-12 place-items-center rounded-full border border-white/10 bg-white/5 text-white hover:bg-white/10 disabled:opacity-50"
@@ -673,8 +710,11 @@ function ReservasPlanoInner() {
           <div className="absolute inset-x-0 bottom-0 top-0 pt-14">
             <div
               ref={boardRef}
-              className="plano-touch-none relative h-[calc(100dvh-56px)] w-full touch-none"
-              style={{ touchAction: "none" }}
+              className="relative h-[calc(100dvh-56px)] w-full"
+              style={{
+                touchAction: isInteracting || (canDrag && planoUnlocked) ? "none" : "manipulation",
+                overscrollBehavior: "none"
+              }}
               onPointerDown={onPointerDownBoard}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
@@ -697,6 +737,7 @@ function ReservasPlanoInner() {
                   const isDecor = !!m.es_decorativo;
                   const left = `${m.x * 100}%`;
                   const top = `${m.y * 100}%`;
+                  const mesaStyle: React.CSSProperties = planoUnlocked && canDrag ? { left, top, touchAction: "none" } : { left, top };
                   return (
                     <div
                       key={m.id}
@@ -714,7 +755,7 @@ function ReservasPlanoInner() {
                         "active:scale-105",
                         planoUnlocked ? "cursor-grab active:cursor-grabbing border-dashed animate-pulse" : "cursor-pointer"
                       ].join(" ")}
-                      style={{ left, top }}
+                      style={mesaStyle}
                       role="button"
                       tabIndex={0}
                       onClick={() => {
