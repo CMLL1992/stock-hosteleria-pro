@@ -197,7 +197,6 @@ export function ProductList() {
   // Recargar neveras (salida multiproducto + devolución de vacíos al almacén)
   const [recargaOpen, setRecargaOpen] = useState(false);
   const [recargaSearch, setRecargaSearch] = useState("");
-  const [recargaPickedIds, setRecargaPickedIds] = useState<Set<string>>(() => new Set());
   const [recargaQty, setRecargaQty] = useState<Record<string, string>>({});
   const [recargaVacios, setRecargaVacios] = useState<Record<string, string>>({});
   const [recargaBusy, setRecargaBusy] = useState(false);
@@ -291,9 +290,13 @@ export function ProductList() {
   void activeEstablishmentName;
 
   const recargaPicked = useMemo(() => {
-    const list = (data ?? []).filter((p) => recargaPickedIds.has(p.id));
+    const list = (data ?? []).filter((p) => {
+      const q = Math.max(0, Math.trunc(Number(recargaQty[p.id] ?? "0") || 0));
+      const v = Math.max(0, Math.trunc(Number(recargaVacios[p.id] ?? "0") || 0));
+      return q > 0 || v > 0;
+    });
     return list.slice().sort((a, b) => a.articulo.localeCompare(b.articulo, "es", { sensitivity: "base" }));
-  }, [data, recargaPickedIds]);
+  }, [data, recargaQty, recargaVacios]);
 
   const modPicked = useMemo(() => {
     const list = (data ?? []).filter((p) => modPickedIds.has(p.id));
@@ -303,28 +306,9 @@ export function ProductList() {
   function openRecarga() {
     setRecargaErr(null);
     setRecargaSearch("");
-    setRecargaPickedIds(new Set());
     setRecargaQty({});
     setRecargaVacios({});
     setRecargaOpen(true);
-  }
-
-  function addToRecarga(p: Producto) {
-    setRecargaPickedIds((prev) => {
-      const n = new Set(prev);
-      n.add(p.id);
-      return n;
-    });
-    setRecargaQty((prev) => ({ ...prev, [p.id]: prev[p.id] ?? "1" }));
-    setRecargaVacios((prev) => ({ ...prev, [p.id]: prev[p.id] ?? "0" }));
-  }
-
-  function removeFromRecarga(id: string) {
-    setRecargaPickedIds((prev) => {
-      const n = new Set(prev);
-      n.delete(id);
-      return n;
-    });
   }
 
   function openModificarStock(opts?: { preselect?: Producto | null }) {
@@ -361,6 +345,58 @@ export function ProductList() {
   function sanitizeIntString(raw: string): string {
     const cleaned = String(raw ?? "").replace(/[^\d]/g, "");
     return cleaned === "" ? "" : String(Math.max(0, Math.trunc(Number(cleaned) || 0)));
+  }
+
+  function familyLabel(p: { categoria: string | null; tipo: string | null }): string {
+    const fam = (p.categoria ?? p.tipo ?? "Otros").toString().trim();
+    return fam || "Otros";
+  }
+
+  const recargaFamilies = useMemo(() => {
+    const q = recargaSearch.trim().toLowerCase();
+    const list = (data ?? [])
+      .filter((p) => {
+        if (!q) return true;
+        return (p.articulo ?? "").toLowerCase().includes(q);
+      })
+      .slice()
+      .sort((a, b) => {
+        const fa = familyLabel(a).toLowerCase();
+        const fb = familyLabel(b).toLowerCase();
+        if (fa !== fb) return fa.localeCompare(fb, "es", { sensitivity: "base" });
+        return a.articulo.localeCompare(b.articulo, "es", { sensitivity: "base" });
+      });
+
+    const map = new Map<string, Producto[]>();
+    for (const p of list) {
+      const fam = familyLabel(p);
+      map.set(fam, [...(map.get(fam) ?? []), p]);
+    }
+
+    const families = Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b, "es", { sensitivity: "base" }));
+    return families;
+  }, [data, recargaSearch]);
+
+  function recargaQtyNum(id: string): number {
+    return Math.max(0, Math.trunc(Number(recargaQty[id] ?? "0") || 0));
+  }
+  function recargaVaciosNum(id: string): number {
+    return Math.max(0, Math.trunc(Number(recargaVacios[id] ?? "0") || 0));
+  }
+
+  function setRecargaQtyDelta(id: string, delta: number) {
+    setRecargaQty((prev) => {
+      const curr = Math.max(0, Math.trunc(Number(prev[id] ?? "0") || 0));
+      const next = Math.max(0, curr + delta);
+      return { ...prev, [id]: String(next) };
+    });
+  }
+  function setRecargaVaciosDelta(id: string, delta: number) {
+    setRecargaVacios((prev) => {
+      const curr = Math.max(0, Math.trunc(Number(prev[id] ?? "0") || 0));
+      const next = Math.max(0, curr + delta);
+      return { ...prev, [id]: String(next) };
+    });
   }
 
   async function commitRecargaNeveras() {
@@ -754,82 +790,131 @@ export function ProductList() {
 
           <input
             className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-            placeholder="Buscar y añadir producto…"
+            placeholder="Buscar producto… (filtra familias)"
             value={recargaSearch}
             onChange={(e) => setRecargaSearch(e.currentTarget.value)}
           />
 
-          <div className="max-h-[30vh] overflow-auto rounded-2xl border border-slate-200 bg-white">
-            {(data ?? [])
-              .filter((p) => {
-                const q = recargaSearch.trim().toLowerCase();
-                if (!q) return false;
-                if (recargaPickedIds.has(p.id)) return false;
-                return (p.articulo ?? "").toLowerCase().includes(q);
-              })
-              .slice(0, 30)
-              .map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  disabled={recargaBusy}
-                  onClick={() => addToRecarga(p)}
-                  className="flex w-full items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-left hover:bg-slate-50 disabled:opacity-50"
-                >
-                  <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">{p.articulo}</span>
-                  <span className="shrink-0 text-xs font-semibold text-slate-600">Añadir</span>
-                </button>
-              ))}
-            {!recargaSearch.trim() ? <p className="p-4 text-sm text-slate-600">Escribe para buscar productos.</p> : null}
-          </div>
+          <div className="space-y-3">
+            {recargaFamilies.map(([fam, items]) => {
+              const open = !!recargaSearch.trim();
+              return (
+                <details key={fam} open={open} className="rounded-3xl border border-slate-200 bg-slate-50">
+                  <summary className="cursor-pointer list-none rounded-3xl px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-extrabold uppercase tracking-wide text-slate-900">{fam}</p>
+                      <p className="text-xs font-semibold text-slate-500">{items.length}</p>
+                    </div>
+                  </summary>
+                  <div className="border-t border-slate-200 bg-white px-3 py-2">
+                    <div className="space-y-2">
+                      {items.map((p) => {
+                        const q = recargaQtyNum(p.id);
+                        const v = recargaVaciosNum(p.id);
+                        return (
+                          <div key={p.id} className="rounded-2xl border border-slate-200 bg-white p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-bold text-slate-900">{p.articulo}</p>
+                                <p className="mt-0.5 text-xs text-slate-500">
+                                  Stock: {Math.max(0, Math.trunc(Number(p.stock_actual) || 0))} · Vacíos:{" "}
+                                  {Math.max(0, Math.trunc(Number(p.stock_vacios) || 0))}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                disabled={recargaBusy || (q === 0 && v === 0)}
+                                onClick={() => {
+                                  setRecargaQty((prev) => ({ ...prev, [p.id]: "0" }));
+                                  setRecargaVacios((prev) => ({ ...prev, [p.id]: "0" }));
+                                }}
+                                className="min-h-10 shrink-0 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                                aria-label={`Reset ${p.articulo}`}
+                              >
+                                Reset
+                              </button>
+                            </div>
 
-          {recargaPicked.length ? (
-            <div className="rounded-2xl border border-slate-200 bg-white">
-              <div className="grid grid-cols-[1fr_104px_124px_44px] gap-2 border-b border-slate-100 px-4 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                <div>Producto</div>
-                <div className="text-center">A neveras</div>
-                <div className="text-center">Vacíos almacén</div>
-                <div />
-              </div>
-              {recargaPicked.map((p) => (
-                <div key={p.id} className="grid grid-cols-[1fr_104px_124px_44px] items-center gap-2 border-b border-slate-100 px-4 py-2">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-slate-900">{p.articulo}</p>
-                    <p className="truncate text-xs text-slate-500">Stock: {Math.max(0, Math.trunc(Number(p.stock_actual) || 0))}</p>
+                            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                              <div className="rounded-2xl bg-slate-50 p-3">
+                                <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-600">Cant. a Neveras</p>
+                                <div className="mt-2 grid grid-cols-[44px_1fr_44px] items-center gap-2">
+                                  <button
+                                    type="button"
+                                    className="min-h-11 rounded-2xl border border-slate-200 bg-white text-xl font-black text-slate-900 hover:bg-slate-50 disabled:opacity-40"
+                                    disabled={recargaBusy || q <= 0}
+                                    onClick={() => setRecargaQtyDelta(p.id, -1)}
+                                    aria-label={`Restar 1 a neveras (${p.articulo})`}
+                                  >
+                                    −
+                                  </button>
+                                  <input
+                                    className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-center text-lg font-black tabular-nums text-slate-900"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    value={String(q)}
+                                    onChange={(e) => setRecargaQty((d) => ({ ...d, [p.id]: sanitizeIntString(e.currentTarget.value) }))}
+                                    disabled={recargaBusy}
+                                    aria-label={`Cantidad a neveras de ${p.articulo}`}
+                                  />
+                                  <button
+                                    type="button"
+                                    className="min-h-11 rounded-2xl border border-slate-200 bg-white text-xl font-black text-slate-900 hover:bg-slate-50 disabled:opacity-40"
+                                    disabled={recargaBusy}
+                                    onClick={() => setRecargaQtyDelta(p.id, +1)}
+                                    aria-label={`Sumar 1 a neveras (${p.articulo})`}
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="rounded-2xl bg-slate-50 p-3">
+                                <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-600">Envases Vacíos (al almacén)</p>
+                                <div className="mt-2 grid grid-cols-[44px_1fr_44px] items-center gap-2">
+                                  <button
+                                    type="button"
+                                    className="min-h-11 rounded-2xl border border-slate-200 bg-white text-xl font-black text-slate-900 hover:bg-slate-50 disabled:opacity-40"
+                                    disabled={recargaBusy || v <= 0}
+                                    onClick={() => setRecargaVaciosDelta(p.id, -1)}
+                                    aria-label={`Restar 1 vacío (${p.articulo})`}
+                                  >
+                                    −
+                                  </button>
+                                  <input
+                                    className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-center text-lg font-black tabular-nums text-slate-900"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    value={String(v)}
+                                    onChange={(e) => setRecargaVacios((d) => ({ ...d, [p.id]: sanitizeIntString(e.currentTarget.value) }))}
+                                    disabled={recargaBusy}
+                                    aria-label={`Vacíos al almacén de ${p.articulo}`}
+                                  />
+                                  <button
+                                    type="button"
+                                    className="min-h-11 rounded-2xl border border-slate-200 bg-white text-xl font-black text-slate-900 hover:bg-slate-50 disabled:opacity-40"
+                                    disabled={recargaBusy}
+                                    onClick={() => setRecargaVaciosDelta(p.id, +1)}
+                                    aria-label={`Sumar 1 vacío (${p.articulo})`}
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <input
-                    className="min-h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-center text-base font-bold tabular-nums text-slate-900"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    value={recargaQty[p.id] ?? ""}
-                    onChange={(e) => setRecargaQty((d) => ({ ...d, [p.id]: sanitizeIntString(e.currentTarget.value) }))}
-                    disabled={recargaBusy}
-                    aria-label={`Cantidad a neveras de ${p.articulo}`}
-                  />
-                  <input
-                    className="min-h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-center text-base font-bold tabular-nums text-slate-900"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    value={recargaVacios[p.id] ?? ""}
-                    onChange={(e) => setRecargaVacios((d) => ({ ...d, [p.id]: sanitizeIntString(e.currentTarget.value) }))}
-                    disabled={recargaBusy}
-                    aria-label={`Vacíos al almacén de ${p.articulo}`}
-                  />
-                  <button
-                    type="button"
-                    className="min-h-10 w-full rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                    disabled={recargaBusy}
-                    onClick={() => removeFromRecarga(p.id)}
-                    aria-label={`Quitar ${p.articulo}`}
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-slate-600">Añade productos arriba para preparar la recarga.</p>
-          )}
+                </details>
+              );
+            })}
+
+            {!recargaFamilies.length ? (
+              <p className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">No hay productos que coincidan.</p>
+            ) : null}
+          </div>
 
           <Button onClick={() => void commitRecargaNeveras()} disabled={recargaBusy || !recargaPicked.length}>
             {recargaBusy ? "Procesando…" : "Confirmar"}
