@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Lock, LogOut, User } from "lucide-react";
+import { ArrowLeft, Link as LinkIcon, Lock, LogOut, QrCode, User } from "lucide-react";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -8,6 +8,8 @@ import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { supabase } from "@/lib/supabase";
 import { getEffectiveRole } from "@/lib/permissions";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
+import { Drawer } from "@/components/ui/Drawer";
+import { QRCodeCanvas } from "qrcode.react";
 
 export function MobileHeader({
   title,
@@ -25,17 +27,49 @@ export function MobileHeader({
     establishments,
     activeEstablishmentId,
     activeEstablishmentName,
+    activeEstablishmentSlug,
+    activePublicBookingUrl,
     activeEstablishmentLogoUrl,
     setActiveEstablishmentId
   } = useActiveEstablishment();
 
   const [perfilOpen, setPerfilOpen] = useState(false);
+  const [bookingLinkOpen, setBookingLinkOpen] = useState(false);
+  const [bookingCopied, setBookingCopied] = useState<string | null>(null);
+  const [bookingQrOpen, setBookingQrOpen] = useState(false);
   const [perfilNombre, setPerfilNombre] = useState("");
   const [perfilSaving, setPerfilSaving] = useState(false);
   const [perfilErr, setPerfilErr] = useState<string | null>(null);
   const [perfilOk, setPerfilOk] = useState<string | null>(null);
 
   const effectiveRole = getEffectiveRole(me);
+  const canAdmin = effectiveRole === "admin" || effectiveRole === "superadmin";
+
+  async function copyBookingUrl() {
+    const url = (activePublicBookingUrl ?? "").trim();
+    if (!url) return;
+    setBookingCopied(null);
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+      } else {
+        const ta = document.createElement("textarea");
+        ta.value = url;
+        ta.style.position = "fixed";
+        ta.style.top = "-1000px";
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        document.execCommand("copy");
+        ta.remove();
+      }
+      setBookingCopied("Copiado ✓");
+      window.setTimeout(() => setBookingCopied(null), 1400);
+    } catch {
+      setBookingCopied("No se pudo copiar");
+      window.setTimeout(() => setBookingCopied(null), 1400);
+    }
+  }
 
   useEffect(() => {
     if (!perfilOpen) return;
@@ -136,6 +170,17 @@ export function MobileHeader({
           ) : null}
         </div>
         <div className="flex items-center gap-2">
+          {canAdmin && activePublicBookingUrl ? (
+            <button
+              type="button"
+              onClick={() => setBookingLinkOpen(true)}
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-slate-200 bg-white shadow-sm hover:bg-slate-50"
+              aria-label="Enlace de reservas"
+              title="Enlace de reservas"
+            >
+              <LinkIcon className="h-5 w-5 text-slate-700" />
+            </button>
+          ) : null}
           <Link
             href="/ayuda"
             className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-slate-200 bg-white text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50"
@@ -167,6 +212,59 @@ export function MobileHeader({
           </button>
         </div>
       </div>
+
+      <Drawer open={bookingLinkOpen} title="Enlace de reservas" onClose={() => setBookingLinkOpen(false)}>
+        <div className="space-y-3 pb-4">
+          <p className="text-sm text-slate-700">
+            Tu URL pública de reservas{activeEstablishmentSlug ? ` (${activeEstablishmentSlug})` : ""}:
+          </p>
+          <div className="rounded-2xl border border-slate-200 bg-white p-3">
+            <p className="break-all text-sm font-semibold text-slate-900">{activePublicBookingUrl ?? "—"}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void copyBookingUrl()}
+              className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-premium-blue px-4 text-sm font-extrabold text-white shadow-sm hover:brightness-110 active:brightness-95"
+              disabled={!activePublicBookingUrl}
+            >
+              {bookingCopied ?? "Copiar link"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setBookingQrOpen(true)}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-extrabold text-slate-900 shadow-sm hover:bg-slate-50"
+              disabled={!activePublicBookingUrl}
+            >
+              <QrCode className="h-4 w-4" aria-hidden />
+              Generar QR
+            </button>
+          </div>
+          <p className="text-xs text-slate-500">Pégalo en WhatsApp, Instagram, Google Maps o en tu bio.</p>
+        </div>
+      </Drawer>
+
+      <Drawer open={bookingQrOpen} title="QR del enlace" onClose={() => setBookingQrOpen(false)}>
+        <div className="space-y-4 pb-4">
+          <div className="flex items-center justify-center rounded-3xl border border-slate-200 bg-white p-6">
+            {activePublicBookingUrl ? (
+              <QRCodeCanvas value={activePublicBookingUrl} size={220} includeMargin />
+            ) : (
+              <p className="text-sm text-slate-600">No hay URL disponible.</p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setBookingQrOpen(false);
+              setBookingLinkOpen(true);
+            }}
+            className="inline-flex min-h-11 w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-extrabold text-slate-900 shadow-sm hover:bg-slate-50"
+          >
+            Volver al enlace
+          </button>
+        </div>
+      </Drawer>
 
       {perfilOpen ? (
         <div

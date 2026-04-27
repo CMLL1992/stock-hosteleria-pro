@@ -98,7 +98,7 @@ export async function GET(req: Request) {
 
     const full = await service
       .from("establecimientos")
-      .select("id,nombre,plan_suscripcion,logo_url,created_at")
+      .select("id,nombre,slug,plan_suscripcion,logo_url,created_at")
       .order("nombre", { ascending: true });
 
     if (!full.error) {
@@ -107,13 +107,16 @@ export async function GET(req: Request) {
 
     const msg = full.error.message.toLowerCase();
     const missingPlan = msg.includes("plan_suscripcion") && msg.includes("could not find");
+    const missingSlug = msg.includes("slug") && msg.includes("could not find");
     if (!missingPlan) {
+      if (!missingSlug) {
       return adminError(full.error.message, 400);
+      }
     }
 
     const fb = await service
       .from("establecimientos")
-      .select("id,nombre,logo_url,created_at")
+      .select(missingSlug ? "id,nombre,logo_url,created_at" : "id,nombre,slug,logo_url,created_at")
       .order("nombre", { ascending: true });
     if (fb.error) return adminError(fb.error.message, 400);
     return NextResponse.json({ items: (fb.data as EstablecimientoRow[]) ?? [] });

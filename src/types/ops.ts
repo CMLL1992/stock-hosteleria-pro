@@ -8,6 +8,7 @@ export type UsuarioRol = "superadmin" | "admin" | "staff";
 export type EstablecimientoRow = {
   id: string;
   nombre: string;
+  slug?: string | null;
   plan_suscripcion?: string | null;
   logo_url?: string | null;
   created_at?: string;

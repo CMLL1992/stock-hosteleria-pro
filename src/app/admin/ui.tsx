@@ -8,6 +8,7 @@ import {
   CalendarDays,
   ChevronRight,
   ClipboardList,
+  Link as LinkIcon,
   Package,
   MapPin,
   Shield,
@@ -37,6 +38,8 @@ type AdminSection = {
 
 function itemIcon(id: string) {
   switch (id) {
+    case "url-reservas":
+      return LinkIcon;
     case "establecimientos":
       return Building2;
     case "usuarios":
@@ -76,6 +79,18 @@ function accentByIndex(i: number): { bar: string; bg: string; text: string } {
 }
 
 const SECTIONS: AdminSection[] = [
+  {
+    id: "local",
+    heading: "Establecimiento",
+    items: [
+      {
+        id: "url-reservas",
+        href: "/admin/establecimiento",
+        title: "Enlace de reservas",
+        subtitle: "Copiar URL pública y generar QR para mesas."
+      }
+    ]
+  },
   {
     id: "institucional",
     heading: "Usuarios y accesos",

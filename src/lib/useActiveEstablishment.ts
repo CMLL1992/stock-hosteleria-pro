@@ -6,6 +6,7 @@ import { fetchAdminEstablecimientosList } from "@/lib/fetchAdminEstablecimientos
 import { supabase } from "@/lib/supabase";
 import { useMyRole } from "@/lib/useMyRole";
 import type { EstablecimientoRow } from "@/types/ops";
+import { getBaseUrl } from "@/lib/baseUrl";
 
 export type Establecimiento = EstablecimientoRow;
 
@@ -41,18 +42,19 @@ async function fetchEstablecimientosForSuperadmin(): Promise<Establecimiento[]> 
 async function fetchEstablecimiento(id: string): Promise<Establecimiento | null> {
   const { data, error } = await supabase()
     .from("establecimientos")
-    .select("id,nombre,plan_suscripcion,logo_url")
+    .select("id,nombre,slug,plan_suscripcion,logo_url")
     .eq("id", id)
     .maybeSingle();
   if (!error) return (data as unknown as Establecimiento) ?? null;
 
   const msg = (error as { message?: string }).message?.toLowerCase() ?? "";
   const missingPlan = msg.includes("plan_suscripcion") && msg.includes("could not find");
-  if (!missingPlan) throw error;
+  const missingSlug = msg.includes("slug") && msg.includes("could not find");
+  if (!missingPlan && !missingSlug) throw error;
 
   const fallback = await supabase()
     .from("establecimientos")
-    .select("id,nombre,logo_url")
+    .select(missingSlug ? "id,nombre,logo_url" : "id,nombre,slug,logo_url")
     .eq("id", id)
     .maybeSingle();
   if (fallback.error) throw fallback.error;
@@ -99,6 +101,16 @@ export function useActiveEstablishment() {
     retry: 1
   });
 
+  const activeSlug = useMemo(() => {
+    if (!activeId) return null;
+    if (isSuperadmin) {
+      const list = estQuery.data ?? [];
+      const row = list.find((x) => x.id === activeId) ?? null;
+      return (row?.slug ?? null) as string | null;
+    }
+    return (activeDetailQuery.data?.slug ?? null) as string | null;
+  }, [activeDetailQuery.data?.slug, activeId, estQuery.data, isSuperadmin]);
+
   const activeLogoUrl = useMemo(() => {
     if (!activeId) return null;
     if (isSuperadmin) {
@@ -107,6 +119,12 @@ export function useActiveEstablishment() {
     }
     return activeDetailQuery.data?.logo_url ?? null;
   }, [activeDetailQuery.data?.logo_url, activeId, estQuery.data, isSuperadmin]);
+
+  const activePublicBookingUrl = useMemo(() => {
+    if (!activeSlug) return null;
+    const base = getBaseUrl();
+    return `${base}/reservar/${activeSlug}`;
+  }, [activeSlug]);
 
   function setActiveId(id: string | null) {
     setOverrideId(id);
@@ -121,6 +139,8 @@ export function useActiveEstablishment() {
     establishmentsLoading: estQuery.isLoading,
     activeEstablishmentId: activeId,
     activeEstablishmentName: activeName,
+    activeEstablishmentSlug: activeSlug,
+    activePublicBookingUrl,
     activeEstablishmentLogoUrl: activeLogoUrl,
     setActiveEstablishmentId: setActiveId
   };

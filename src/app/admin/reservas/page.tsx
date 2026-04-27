@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { MapPin, Minus, Plus, Trash2, Users } from "lucide-react";
 import { MobileHeader } from "@/components/MobileHeader";
 import { Drawer } from "@/components/ui/Drawer";
@@ -133,6 +134,7 @@ function fmtEstado(estado: MesaEstado) {
 }
 
 export default function ReservasPlanoPage() {
+  const sp = useSearchParams();
   const { data: me, isLoading: meLoading, error } = useMyRole();
   const role = getEffectiveRole(me ?? null);
   const canAdmin = hasPermission(role, "admin");
@@ -167,6 +169,17 @@ export default function ReservasPlanoPage() {
   const [horariosDirty, setHorariosDirty] = useState(false);
   const [horariosPresetMsg, setHorariosPresetMsg] = useState<string | null>(null);
 
+  // Deep-links desde "Más": /admin/reservas?vista=lista y /admin/reservas?horarios=1
+  useEffect(() => {
+    const vista = (sp.get("vista") ?? "").trim().toLowerCase();
+    const horariosParam = (sp.get("horarios") ?? "").trim().toLowerCase();
+    if (vista === "lista") setViewMode("lista");
+    if (vista === "plano") setViewMode("plano");
+    if (horariosParam === "1" || horariosParam === "true") setHorariosOpen(true);
+    // Solo inicial (si el usuario cambia querystring luego, no queremos “pelear” con su estado)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const reservaIdsRef = useRef<Set<string>>(new Set());
   const audioAllowedRef = useRef(false);
   const [toastOpen, setToastOpen] = useState(false);
@@ -198,20 +211,24 @@ export default function ReservasPlanoPage() {
     // Para fechas futuras, por defecto mostramos lista (más útil para planificación).
     if (!isToday) {
       setEditMode(false);
-      setPlanoUnlocked(false);
       setViewMode("lista");
     }
   }, [isToday]);
 
   useEffect(() => {
-    // Cuando el plano está desbloqueado, desactivamos el scroll del body para evitar “guerra” de gestos.
+    // En modo plano, el plano es la interfaz principal: desactivamos scroll del body.
     if (typeof document === "undefined") return;
     const prev = document.body.style.overflow;
-    if (planoUnlocked) document.body.style.overflow = "hidden";
+    if (viewMode === "plano") document.body.style.overflow = "hidden";
     else document.body.style.overflow = prev || "";
     return () => {
       document.body.style.overflow = prev;
     };
+  }, [viewMode]);
+
+  useEffect(() => {
+    // UX: “Desbloquear” habilita mover mesas (sin doble modo).
+    setEditMode(planoUnlocked);
   }, [planoUnlocked]);
 
   const refreshFromDb = useCallback(async () => {
@@ -881,7 +898,14 @@ export default function ReservasPlanoPage() {
   return (
     <div className="min-h-dvh bg-slate-50">
       <MobileHeader title="Reservas" showBack backHref="/admin" />
-      <main className="mx-auto w-full max-w-5xl p-4 pb-28" onPointerDown={allowAudio} onClick={allowAudio}>
+      <main
+        className={[
+          "w-full",
+          viewMode === "plano" ? "max-w-none p-0 pb-0" : "mx-auto max-w-5xl p-4 pb-28"
+        ].join(" ")}
+        onPointerDown={allowAudio}
+        onClick={allowAudio}
+      >
         {err ? <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{err}</p> : null}
         {toastOpen ? (
           <div className="mb-3 overflow-hidden rounded-2xl border border-premium-blue/20 bg-premium-blue/5 p-3 shadow-sm">
@@ -907,7 +931,7 @@ export default function ReservasPlanoPage() {
           </div>
         ) : null}
 
-        <div className="premium-card">
+        <div className={["premium-card", viewMode === "plano" ? "rounded-none border-x-0 border-t-0" : ""].join(" ")}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Reservas · {selectedDate}</p>
@@ -952,7 +976,6 @@ export default function ReservasPlanoPage() {
                   onClick={() => {
                     if (!isToday) return;
                     setPlanoUnlocked((v) => !v);
-                    setEditMode(false);
                   }}
                   disabled={!isToday}
                   aria-label={planoUnlocked ? "Bloquear plano" : "Desbloquear plano"}
@@ -999,14 +1022,7 @@ export default function ReservasPlanoPage() {
                   </option>
                 ))}
               </select>
-              <button
-                type="button"
-                className={["min-h-11 rounded-2xl px-4 text-sm font-extrabold transition-colors", editMode ? "bg-premium-blue text-white" : "border border-slate-200 bg-white text-slate-900 hover:bg-slate-50"].join(" ")}
-                onClick={() => setEditMode((v) => !v)}
-                disabled={!isToday || !planoUnlocked}
-              >
-                {!isToday ? "Modo lectura" : planoUnlocked ? (editMode ? "Editar plano: ON" : "Editar plano") : "Plano bloqueado"}
-              </button>
+              {/* “Editar plano” eliminado: desbloquear = mover mesas */}
               <button
                 type="button"
                 className="min-h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-extrabold text-slate-900 hover:bg-slate-50"
@@ -1055,11 +1071,11 @@ export default function ReservasPlanoPage() {
           <div className="mt-4 overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 shadow-sm">
             <div
               ref={boardRef}
-              className={["relative h-[64vh] min-h-[420px] w-full", planoUnlocked ? "touch-none" : "touch-auto"].join(" ")}
-              onPointerDown={planoUnlocked ? onPointerDownBoard : undefined}
-              onPointerMove={planoUnlocked ? onPointerMove : undefined}
-              onPointerUp={planoUnlocked ? onPointerUp : undefined}
-              onPointerCancel={planoUnlocked ? onPointerUp : undefined}
+              className="relative h-[calc(100dvh-260px)] min-h-[460px] w-full touch-none"
+              onPointerDown={onPointerDownBoard}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerCancel={onPointerUp}
             >
               <div
                 className="absolute inset-0"
@@ -1093,7 +1109,7 @@ export default function ReservasPlanoPage() {
                     st.bg,
                     "ring-2",
                     st.ring,
-                    planoUnlocked && editMode ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
+                    planoUnlocked ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
                   ].join(" ");
                   return (
                     <div
@@ -1103,7 +1119,7 @@ export default function ReservasPlanoPage() {
                       role="button"
                       tabIndex={0}
                       onClick={() => openMesa(m.id)}
-                      onPointerDown={planoUnlocked && editMode ? (e) => onPointerDownMesa(e, m) : undefined}
+                      onPointerDown={planoUnlocked ? (e) => onPointerDownMesa(e, m) : undefined}
                       aria-label={`Mesa ${m.numero}`}
                     >
                       <div className="text-center">

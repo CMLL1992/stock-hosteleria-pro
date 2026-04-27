@@ -572,6 +572,13 @@ export function ProductList() {
   const openGestionar = (p: Producto) => openModificarStock({ preselect: p });
 
   if (me?.role === null && !me?.profileReady) return <p className="text-sm text-slate-600">Cargando perfil…</p>;
+  if (!establecimientoId) {
+    return (
+      <p className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+        No hay establecimiento activo. Revisa tu perfil/rol o selecciona un establecimiento (superadmin) para cargar el catálogo.
+      </p>
+    );
+  }
   if (isLoading) return <p className="text-sm text-slate-600">Cargando stock…</p>;
   if (error) {
     return (

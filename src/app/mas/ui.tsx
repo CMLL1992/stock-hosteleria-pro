@@ -35,6 +35,18 @@ export function MoreClient() {
       ) : null}
       <div className="grid gap-2 sm:grid-cols-2">
         <Link
+          href="/admin/reservas?vista=lista"
+          className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50"
+        >
+          Historial de Reservas
+        </Link>
+        <Link
+          href="/admin/reservas?horarios=1"
+          className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50"
+        >
+          Configuración de Horarios
+        </Link>
+        <Link
           href="/ayuda"
           className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50"
         >

@@ -27,7 +27,7 @@ export function DashboardClient() {
   const queryClient = useQueryClient();
   const [envasesOpen, setEnvasesOpen] = useState(false);
   const [pedidoRapidoOpen, setPedidoRapidoOpen] = useState(false);
-  const [pedidoRapidoProveedorKey, setPedidoRapidoProveedorKey] = useState<string>("");
+  // Nota UX: el modal muestra TODOS los productos bajo mínimos (sin filtrar por proveedor).
   const [pedidoRapidoQty, setPedidoRapidoQty] = useState<Record<string, string>>({});
   const [confirmProd, setConfirmProd] = useState<null | { id: string; articulo: string; stock_vacios: number }>(null);
   const [confirming, setConfirming] = useState(false);
@@ -149,10 +149,6 @@ export function DashboardClient() {
       }
       return next;
     });
-    // Default provider selection: primero.
-    if (!pedidoRapidoProveedorKey && bajoMinimosPorProveedor.length) {
-      setPedidoRapidoProveedorKey(bajoMinimosPorProveedor[0]?.key ?? "");
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pedidoRapidoOpen]);
 
@@ -434,16 +430,7 @@ export function DashboardClient() {
         </button>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Link
-          href="/admin/pedidos/recepcion"
-          className="rounded-3xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:bg-slate-50"
-        >
-          <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Gestión</p>
-          <p className="mt-1 text-lg font-black tracking-tight text-slate-900">GESTIONAR RECEPCIÓN</p>
-          <p className="mt-1 text-sm text-slate-600">Confirmar pedido llegado (pendiente/parcial).</p>
-        </Link>
-      </div>
+      {/* Acceso a Pedidos eliminado: ahora está en la barra inferior */}
 
       <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
         <p className="text-sm font-semibold text-slate-900">Valor económico del inventario</p>
@@ -570,26 +557,8 @@ export function DashboardClient() {
             <p className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">No hay productos bajo mínimos.</p>
           ) : (
             <>
-              {bajoMinimosPorProveedor.length > 1 ? (
-                <div className="grid gap-2">
-                  <label className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Proveedor</label>
-                  <select
-                    className="premium-input"
-                    value={pedidoRapidoProveedorKey}
-                    onChange={(e) => setPedidoRapidoProveedorKey(e.currentTarget.value)}
-                  >
-                    {bajoMinimosPorProveedor.map((g) => (
-                      <option key={g.key} value={g.key}>
-                        {g.nombre}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ) : null}
-
               <div className="space-y-2">
                 {bajoMinimosPorProveedor
-                  .filter((g) => !pedidoRapidoProveedorKey || g.key === pedidoRapidoProveedorKey)
                   .map((g) => (
                     <section key={g.key} className="space-y-2">
                       <div className="premium-card-tight premium-topline-orange">
