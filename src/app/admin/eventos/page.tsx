@@ -195,23 +195,36 @@ export default function EventosPage() {
   function ensureLinea(ev: Evento, p: DashboardProducto): EventoLinea {
     const existing = ev.lineas.find((l) => l.productoId === p.id);
     if (existing) return existing;
+    const precioEnvaseAuto = Number.isFinite(Number(p.envase_coste)) ? Math.max(0, Number(p.envase_coste) || 0) : 0;
     return {
       productoId: p.id,
       articulo: p.articulo,
       unidad: p.unidad,
       stockEvento: 0,
       recibidoQty: 0,
-      recibidoPrecioEnvase: 0,
+      recibidoPrecioEnvase: precioEnvaseAuto,
       devueltoQty: 0,
-      devueltoPrecioEnvase: 0
+      devueltoPrecioEnvase: precioEnvaseAuto
     };
   }
 
   function addProductoToEvento(ev: Evento, p: DashboardProducto) {
+    const existing = ev.lineas.find((l) => l.productoId === p.id);
+    const precioEnvaseAuto = Number.isFinite(Number(p.envase_coste)) ? Math.max(0, Number(p.envase_coste) || 0) : 0;
+    if (existing) {
+      // Si ya estaba añadido, solo autocompleta si siguen en 0 (no pisa cambios manuales).
+      const shouldFillRec = (Number(existing.recibidoPrecioEnvase) || 0) <= 0;
+      const shouldFillDev = (Number(existing.devueltoPrecioEnvase) || 0) <= 0;
+      if (precioEnvaseAuto > 0 && (shouldFillRec || shouldFillDev)) {
+        updateLinea(ev, p.id, {
+          recibidoPrecioEnvase: shouldFillRec ? precioEnvaseAuto : existing.recibidoPrecioEnvase,
+          devueltoPrecioEnvase: shouldFillDev ? precioEnvaseAuto : existing.devueltoPrecioEnvase
+        });
+      }
+      return;
+    }
     const linea = ensureLinea(ev, p);
-    updateEvento(ev.id, {
-      lineas: ev.lineas.some((l) => l.productoId === p.id) ? ev.lineas : [...ev.lineas, linea]
-    });
+    updateEvento(ev.id, { lineas: [...ev.lineas, linea] });
   }
 
   function updateLinea(ev: Evento, productoId: string, patch: Partial<EventoLinea>) {
@@ -279,7 +292,7 @@ export default function EventosPage() {
   if (!activeEstablishmentId) {
     return (
       <div className="min-h-dvh bg-slate-50">
-        <MobileHeader title="EVENTOS" showBack backHref="/admin" />
+        <MobileHeader title="Eventos" showBack backHref="/admin" />
         <main className="mx-auto max-w-3xl p-4 pb-28">
           <p className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm">
             Selecciona un establecimiento para usar Eventos.
@@ -291,7 +304,7 @@ export default function EventosPage() {
   if (!canAccess) {
     return (
       <div className="min-h-dvh bg-slate-50">
-        <MobileHeader title="EVENTOS" showBack backHref="/admin" />
+        <MobileHeader title="Eventos" showBack backHref="/admin" />
         <main className="mx-auto max-w-3xl p-4 pb-28">
           <p className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm">
             Acceso denegado. (Solo Admin/Superadmin)
@@ -303,7 +316,7 @@ export default function EventosPage() {
 
   return (
     <div className="min-h-dvh bg-slate-50">
-      <MobileHeader title="EVENTOS" showBack backHref="/admin" />
+      <MobileHeader title="Eventos" showBack backHref="/admin" />
       <main className="mx-auto w-full max-w-5xl p-4 pb-28">
         {err ? (
           <p className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{err}</p>
