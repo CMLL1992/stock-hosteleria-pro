@@ -10,7 +10,7 @@ import { getEffectiveRole, hasPermission } from "@/lib/permissions";
 type Tab = {
   href: string;
   label: string;
-  icon: "home" | "reservas" | "stock" | "vacios" | "pedidos" | "panel";
+  icon: "home" | "reservas" | "stock" | "pedidos" | "panel" | "perfil";
 };
 
 function tabActive(pathname: string, href: string): boolean {
@@ -66,24 +66,31 @@ export function BottomTabBar() {
         </svg>
       );
     }
-    if (name === "vacios") {
-      return (
-        <svg viewBox="0 0 24 24" className={cls} aria-hidden>
-          <path
-            d="M9 3h6l-1 3v3l2 2v10a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V11l2-2V6L9 3z"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinejoin="round"
-          />
-        </svg>
-      );
-    }
     if (name === "pedidos") {
       return (
         <svg viewBox="0 0 24 24" className={cls} aria-hidden>
           <path d="M7 3h10v18H7z" fill="none" stroke="currentColor" strokeWidth="2" />
           <path d="M9 7h6M9 11h6M9 15h6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      );
+    }
+    if (name === "perfil") {
+      return (
+        <svg viewBox="0 0 24 24" className={cls} aria-hidden>
+          <path
+            d="M20 21a8 8 0 0 0-16 0"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+          <path
+            d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4z"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinejoin="round"
+          />
         </svg>
       );
     }
@@ -100,7 +107,7 @@ export function BottomTabBar() {
         { href: "/", label: "INICIO", icon: "home" },
         { href: "/admin/reservas", label: "Reservas", icon: "reservas" },
         { href: "/stock", label: "STOCK", icon: "stock" },
-        { href: "/stock?vacios=1", label: "VACÍOS", icon: "vacios" }
+        { href: "/mas", label: "PERFIL", icon: "perfil" }
       ];
     }
     return [

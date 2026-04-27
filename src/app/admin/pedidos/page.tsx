@@ -163,6 +163,14 @@ function PedidosPageInner() {
   const { activeEstablishmentId, activeEstablishmentName } = useActiveEstablishment();
   const nombreLocal = activeEstablishmentName?.trim() || "Piqui Blinders";
 
+  // Staff: sin acceso a Pedidos (compra/gasto). Redirigimos al Dashboard.
+  useEffect(() => {
+    if (!role) return;
+    if (!canAccessPedidosAdmin) {
+      router.replace("/admin/dashboard");
+    }
+  }, [canAccessPedidosAdmin, role, router]);
+
   const refresh = useCallback(async () => {
     if (!activeEstablishmentId) {
       setProveedores([]);

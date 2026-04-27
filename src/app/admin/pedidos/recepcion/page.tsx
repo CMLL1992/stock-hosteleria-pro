@@ -62,6 +62,14 @@ export default function RecepcionPedidosPage() {
   const canAdmin = hasPermission(role, "admin");
   const isSuperadmin = !!me?.isSuperadmin;
 
+  // Staff: sin acceso a Pedidos. Redirigimos al Dashboard.
+  useEffect(() => {
+    if (!role) return;
+    if (!canAdmin) {
+      router.replace("/admin/dashboard");
+    }
+  }, [canAdmin, role, router]);
+
   const { activeEstablishmentId } = useActiveEstablishment();
   const queryClient = useQueryClient();
 

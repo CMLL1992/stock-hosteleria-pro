@@ -24,6 +24,7 @@ export function DashboardClient() {
   const role = getEffectiveRole(me);
   const canSeePrices = hasPermission(role, "admin");
   const canManageEnvases = hasPermission(role, "admin");
+  const canOrder = hasPermission(role, "admin");
   const queryClient = useQueryClient();
   const [envasesOpen, setEnvasesOpen] = useState(false);
   const [pedidoRapidoOpen, setPedidoRapidoOpen] = useState(false);
@@ -566,6 +567,11 @@ export function DashboardClient() {
           <p className="text-sm text-slate-600">
             Productos bajo mínimos: <span className="font-bold text-slate-900">{bajoMinimos.length}</span>
           </p>
+          {!canOrder ? (
+            <p className="rounded-2xl border border-slate-200 bg-white p-3 text-sm text-slate-700">
+              Visualización: Staff puede consultar bajo mínimos, pero el envío de pedidos (WhatsApp) está reservado a Admin/Superadmin.
+            </p>
+          ) : null}
           {bajoMinimos.length === 0 ? (
             <p className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">No hay productos bajo mínimos.</p>
           ) : (
@@ -671,9 +677,11 @@ export function DashboardClient() {
                             type="button"
                             className={[
                               "premium-btn-primary w-full justify-center inline-flex mt-2",
-                              g.items.some((p) => qtyNum(p.id) > 0) ? "" : "pointer-events-none opacity-50"
+                              canOrder && g.items.some((p) => qtyNum(p.id) > 0) ? "" : "pointer-events-none opacity-50"
                             ].join(" ")}
+                            aria-disabled={!canOrder}
                             onClick={async () => {
+                              if (!canOrder) return;
                               if (!establecimientoId) return;
                               const ok = window.confirm("¿Deseas enviar este pedido al proveedor por WhatsApp?");
                               if (!ok) return;
@@ -728,13 +736,15 @@ export function DashboardClient() {
           )}
 
           <div className="grid grid-cols-1 gap-2 pt-2 sm:grid-cols-2">
-            <Link
-              href="/admin/pedidos?bajoMinimos=1"
-              className="premium-btn-secondary inline-flex w-full items-center justify-center"
-              onClick={() => setPedidoRapidoOpen(false)}
-            >
-              Ver en Pedidos
-            </Link>
+            {canOrder ? (
+              <Link
+                href="/admin/pedidos?bajoMinimos=1"
+                className="premium-btn-secondary inline-flex w-full items-center justify-center"
+                onClick={() => setPedidoRapidoOpen(false)}
+              >
+                Ver en Pedidos
+              </Link>
+            ) : null}
             <Link
               href="/admin/bajo-minimos"
               className="premium-btn-secondary inline-flex w-full items-center justify-center"
