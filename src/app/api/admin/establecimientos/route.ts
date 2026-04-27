@@ -116,7 +116,9 @@ export async function GET(req: Request) {
 
     const fb = await service
       .from("establecimientos")
-      .select(missingSlug ? "id,nombre,logo_url,created_at" : "id,nombre,slug,logo_url,created_at")
+      // Nota TS: select condicional rompe el parser de tipos de Supabase (ParserError[]).
+      // Forzamos el tipo del select para evitar fallo de build en Next/Vercel.
+      .select((missingSlug ? "id,nombre,logo_url,created_at" : "id,nombre,slug,logo_url,created_at") as "*")
       .order("nombre", { ascending: true });
     if (fb.error) return adminError(fb.error.message, 400);
     return NextResponse.json({ items: (fb.data as EstablecimientoRow[]) ?? [] });

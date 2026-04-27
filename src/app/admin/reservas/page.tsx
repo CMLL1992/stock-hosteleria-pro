@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { MapPin, Minus, Plus, Trash2, Users } from "lucide-react";
 import { MobileHeader } from "@/components/MobileHeader";
@@ -134,6 +134,14 @@ function fmtEstado(estado: MesaEstado) {
 }
 
 export default function ReservasPlanoPage() {
+  return (
+    <Suspense fallback={<main className="p-4 text-sm text-slate-600">Cargando…</main>}>
+      <ReservasPlanoInner />
+    </Suspense>
+  );
+}
+
+function ReservasPlanoInner() {
   const sp = useSearchParams();
   const { data: me, isLoading: meLoading, error } = useMyRole();
   const role = getEffectiveRole(me ?? null);

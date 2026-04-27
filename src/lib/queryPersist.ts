@@ -5,6 +5,10 @@ import { del, get, set } from "idb-keyval";
 
 const KEY = "rq-cache-v1";
 
+export async function clearPersistedQueryCache(): Promise<void> {
+  await del(KEY);
+}
+
 export function createIdbPersister(): Persister {
   return {
     persistClient: async (client) => {

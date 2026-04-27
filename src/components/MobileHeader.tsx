@@ -27,16 +27,14 @@ export function MobileHeader({
     establishments,
     activeEstablishmentId,
     activeEstablishmentName,
-    activeEstablishmentSlug,
     activePublicBookingUrl,
     activeEstablishmentLogoUrl,
     setActiveEstablishmentId
   } = useActiveEstablishment();
 
   const [perfilOpen, setPerfilOpen] = useState(false);
-  const [bookingLinkOpen, setBookingLinkOpen] = useState(false);
-  const [bookingCopied, setBookingCopied] = useState<string | null>(null);
   const [bookingQrOpen, setBookingQrOpen] = useState(false);
+  const [bookingToast, setBookingToast] = useState<string | null>(null);
   const [perfilNombre, setPerfilNombre] = useState("");
   const [perfilSaving, setPerfilSaving] = useState(false);
   const [perfilErr, setPerfilErr] = useState<string | null>(null);
@@ -48,7 +46,7 @@ export function MobileHeader({
   async function copyBookingUrl() {
     const url = (activePublicBookingUrl ?? "").trim();
     if (!url) return;
-    setBookingCopied(null);
+    setBookingToast(null);
     try {
       if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(url);
@@ -63,11 +61,11 @@ export function MobileHeader({
         document.execCommand("copy");
         ta.remove();
       }
-      setBookingCopied("Copiado ✓");
-      window.setTimeout(() => setBookingCopied(null), 1400);
+      setBookingToast("¡Enlace de reserva copiado!");
+      window.setTimeout(() => setBookingToast(null), 1600);
     } catch {
-      setBookingCopied("No se pudo copiar");
-      window.setTimeout(() => setBookingCopied(null), 1400);
+      setBookingToast("No se pudo copiar el enlace");
+      window.setTimeout(() => setBookingToast(null), 1600);
     }
   }
 
@@ -173,12 +171,23 @@ export function MobileHeader({
           {canAdmin && activePublicBookingUrl ? (
             <button
               type="button"
-              onClick={() => setBookingLinkOpen(true)}
+              onClick={() => void copyBookingUrl()}
               className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-slate-200 bg-white shadow-sm hover:bg-slate-50"
               aria-label="Enlace de reservas"
               title="Enlace de reservas"
             >
               <LinkIcon className="h-5 w-5 text-slate-700" />
+            </button>
+          ) : null}
+          {canAdmin && activePublicBookingUrl ? (
+            <button
+              type="button"
+              onClick={() => setBookingQrOpen(true)}
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-slate-200 bg-white shadow-sm hover:bg-slate-50"
+              aria-label="QR del enlace de reservas"
+              title="QR del enlace"
+            >
+              <QrCode className="h-5 w-5 text-slate-700" />
             </button>
           ) : null}
           <Link
@@ -213,36 +222,13 @@ export function MobileHeader({
         </div>
       </div>
 
-      <Drawer open={bookingLinkOpen} title="Enlace de reservas" onClose={() => setBookingLinkOpen(false)}>
-        <div className="space-y-3 pb-4">
-          <p className="text-sm text-slate-700">
-            Tu URL pública de reservas{activeEstablishmentSlug ? ` (${activeEstablishmentSlug})` : ""}:
-          </p>
-          <div className="rounded-2xl border border-slate-200 bg-white p-3">
-            <p className="break-all text-sm font-semibold text-slate-900">{activePublicBookingUrl ?? "—"}</p>
+      {bookingToast ? (
+        <div className="mx-auto max-w-3xl px-4 pb-2">
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-900 shadow-sm">
+            {bookingToast}
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => void copyBookingUrl()}
-              className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-premium-blue px-4 text-sm font-extrabold text-white shadow-sm hover:brightness-110 active:brightness-95"
-              disabled={!activePublicBookingUrl}
-            >
-              {bookingCopied ?? "Copiar link"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setBookingQrOpen(true)}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-extrabold text-slate-900 shadow-sm hover:bg-slate-50"
-              disabled={!activePublicBookingUrl}
-            >
-              <QrCode className="h-4 w-4" aria-hidden />
-              Generar QR
-            </button>
-          </div>
-          <p className="text-xs text-slate-500">Pégalo en WhatsApp, Instagram, Google Maps o en tu bio.</p>
         </div>
-      </Drawer>
+      ) : null}
 
       <Drawer open={bookingQrOpen} title="QR del enlace" onClose={() => setBookingQrOpen(false)}>
         <div className="space-y-4 pb-4">
@@ -253,16 +239,7 @@ export function MobileHeader({
               <p className="text-sm text-slate-600">No hay URL disponible.</p>
             )}
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              setBookingQrOpen(false);
-              setBookingLinkOpen(true);
-            }}
-            className="inline-flex min-h-11 w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-extrabold text-slate-900 shadow-sm hover:bg-slate-50"
-          >
-            Volver al enlace
-          </button>
+          <p className="break-all text-xs font-semibold text-slate-600">{activePublicBookingUrl ?? ""}</p>
         </div>
       </Drawer>
 
