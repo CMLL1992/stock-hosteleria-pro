@@ -14,7 +14,7 @@ import { supabase } from "@/lib/supabase";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { fetchEscandallosPrecioMapByProductIds, type EscandalloPrecioRow } from "@/lib/fetchEscandallosPrecioMap";
 import { logActivity } from "@/lib/activityLog";
-import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 
 export function DashboardClient() {
@@ -33,7 +33,6 @@ export function DashboardClient() {
     queryClient,
     queryKeys: [
       ["dashboard", "productos", establecimientoId],
-      ["dashboard", "checklist-estado", establecimientoId],
       ["dashboard", "escandallos-precio", establecimientoId],
       ["productos", establecimientoId],
       ["movimientos", establecimientoId],
@@ -117,28 +116,6 @@ export function DashboardClient() {
       .sort((a, b) => Number(b.stock_vacios ?? 0) - Number(a.stock_vacios ?? 0));
   }, [rows]);
 
-  const valorStock = useMemo(() => {
-    // Valor del stock actual a coste neto SIN IVA:
-    // coste = tarifa - descuento (%,€) - rappel
-    let total = 0;
-    const escById = escandallosPrecioQuery.data ?? new Map<string, EscandalloPrecioRow>();
-    for (const p of rows) {
-      const esc = escById.get(p.id) ?? null;
-      const tarifa = Math.max(0, esc?.precio_tarifa ?? 0);
-      const descVal = Math.max(0, esc?.descuento_valor ?? 0);
-      const rappel = Math.max(0, esc?.rappel_valor ?? 0);
-      const descTipo = esc?.descuento_tipo ?? "%";
-      const afterDesc = descTipo === "%" ? tarifa * (1 - descVal / 100) : tarifa - descVal;
-      const coste = Math.max(0, afterDesc - rappel);
-      // Contabilidad SaaS: el valor de stock solo refleja stock físico.
-      // Excluimos unidades pendientes de pedidos (pendiente/parcial) hasta que existan movimientos de entrada.
-      const pendientes = Math.max(0, Number((p as { unidades_pendientes?: unknown }).unidades_pendientes ?? 0) || 0);
-      const qty = Math.max(0, (Number(p.stock_actual ?? 0) || 0) - pendientes);
-      total += qty * coste;
-    }
-    return total;
-  }, [escandallosPrecioQuery.data, rows]);
-
   const envasesCatalogoQuery = useQuery({
     queryKey: ["catalogo", "envases", establecimientoId],
     enabled: !!establecimientoId && rows.some((p) => !!(p.envase_catalogo_id ?? "").trim() && (p.envase_coste ?? null) == null),
@@ -161,29 +138,63 @@ export function DashboardClient() {
     retry: 1
   });
 
-  const valorEnvases = useMemo(() => {
+  const valorEconomicoInventario = useMemo(() => {
     const catalogo = envasesCatalogoQuery.data ?? new Map<string, number>();
-    let total = 0;
+    const escById = escandallosPrecioQuery.data ?? new Map<string, EscandalloPrecioRow>();
+
+    let envasesVaciosEUR = 0;
+    let envasesLlenosEUR = 0;
+    let stockRealSinEnvaseEUR = 0;
+
     for (const p of rows) {
-      const envaseKey = (p.envase_catalogo_id ?? "").trim();
-      // Sin vínculo al catálogo: no inventamos valor (sin fallback al sistema antiguo).
-      if (!envaseKey) continue;
+      const envaseKey = String(p.envase_catalogo_id ?? "").trim();
       const costeDirecto = typeof p.envase_coste === "number" && Number.isFinite(p.envase_coste) ? p.envase_coste : null;
-      const precioPorEnvase = Math.max(0, costeDirecto ?? (catalogo.get(envaseKey) ?? 0));
-      if (precioPorEnvase <= 0) continue;
+      const precioEnvase = envaseKey ? Math.max(0, costeDirecto ?? (catalogo.get(envaseKey) ?? 0)) : 0;
+
+      // Contabilidad SaaS: el valor del inventario solo refleja stock físico.
+      // Excluimos unidades pendientes de pedidos (pendiente/parcial) hasta que existan movimientos de entrada.
+      const pendientes = Math.max(0, Number((p as { unidades_pendientes?: unknown }).unidades_pendientes ?? 0) || 0);
+      const qty = Math.max(0, (Number(p.stock_actual ?? 0) || 0) - pendientes);
       const vacios = Math.max(0, Number(p.stock_vacios ?? 0) || 0);
-      if (vacios <= 0) continue;
-      total += vacios * precioPorEnvase;
+
+      if (precioEnvase > 0) {
+        envasesVaciosEUR += vacios * precioEnvase;
+        envasesLlenosEUR += qty * precioEnvase;
+      }
+
+      // Stock real (sin envase), a coste neto SIN IVA:
+      // coste = tarifa - descuento (%,€) - rappel
+      const esc = escById.get(String(p.id)) ?? null;
+      const tarifa = Math.max(0, esc?.precio_tarifa ?? 0);
+      const descVal = Math.max(0, esc?.descuento_valor ?? 0);
+      const rappel = Math.max(0, esc?.rappel_valor ?? 0);
+      const descTipo = esc?.descuento_tipo ?? "%";
+      const afterDesc = descTipo === "%" ? tarifa * (1 - descVal / 100) : tarifa - descVal;
+      const costeNeto = Math.max(0, afterDesc - rappel);
+      const costeSinEnvase = Math.max(0, costeNeto - (precioEnvase > 0 ? precioEnvase : 0));
+      stockRealSinEnvaseEUR += qty * costeSinEnvase;
     }
-    return total;
-  }, [envasesCatalogoQuery.data, rows]);
+
+    const totalEUR = envasesVaciosEUR + envasesLlenosEUR + stockRealSinEnvaseEUR;
+    return { envasesVaciosEUR, envasesLlenosEUR, stockRealSinEnvaseEUR, totalEUR };
+  }, [envasesCatalogoQuery.data, escandallosPrecioQuery.data, rows]);
 
   const barrasResumen = useMemo(() => {
+    const { envasesVaciosEUR, envasesLlenosEUR, stockRealSinEnvaseEUR } = valorEconomicoInventario;
     return [
-      { key: "stock", label: "Stock", value: Math.round((valorStock + Number.EPSILON) * 100) / 100 },
-      { key: "envases", label: "Envases", value: Math.round((valorEnvases + Number.EPSILON) * 100) / 100 }
+      { key: "stock", label: "Stock (sin envase)", value: Math.round((stockRealSinEnvaseEUR + Number.EPSILON) * 100) / 100 },
+      { key: "env-llenos", label: "Envases (llenos)", value: Math.round((envasesLlenosEUR + Number.EPSILON) * 100) / 100 },
+      { key: "env-vacios", label: "Envases (vacíos)", value: Math.round((envasesVaciosEUR + Number.EPSILON) * 100) / 100 }
     ];
-  }, [valorEnvases, valorStock]);
+  }, [valorEconomicoInventario]);
+
+  const pieResumen = useMemo(() => {
+    const colors: Record<string, string> = { stock: "#0F172A", "env-llenos": "#334155", "env-vacios": "#64748B" };
+    const items = barrasResumen
+      .map((x) => ({ ...x, color: colors[x.key] ?? "#94A3B8" }))
+      .filter((x) => (Number(x.value) || 0) > 0);
+    return items.length ? items : barrasResumen.map((x, idx) => ({ ...x, color: ["#0F172A", "#334155", "#64748B"][idx] }));
+  }, [barrasResumen]);
 
   function formatEUR(n: number): string {
     return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(n);
@@ -318,35 +329,57 @@ export function DashboardClient() {
       </div>
 
       <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-        <p className="text-sm font-semibold text-slate-900">Valoración</p>
-        <p className="mt-1 text-sm text-slate-600">Valor del stock (coste) y valor de envases (coste/fianza).</p>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <p className="text-sm font-semibold text-slate-900">Valor económico del inventario</p>
+        <p className="mt-1 text-sm text-slate-600">Resumen por establecimiento (EUR). Se recalcula con cada movimiento.</p>
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
           <div className="rounded-2xl bg-slate-50 p-4">
-            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Valor stock</p>
-            <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{formatEUR(valorStock)}</p>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Envases vacíos</p>
+            <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{formatEUR(valorEconomicoInventario.envasesVaciosEUR)}</p>
           </div>
           <div className="rounded-2xl bg-slate-50 p-4">
-            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Valor envases</p>
-            <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{formatEUR(valorEnvases)}</p>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Envases en stock (llenos)</p>
+            <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{formatEUR(valorEconomicoInventario.envasesLlenosEUR)}</p>
+          </div>
+          <div className="rounded-2xl bg-slate-50 p-4">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Stock real (sin envase)</p>
+            <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{formatEUR(valorEconomicoInventario.stockRealSinEnvaseEUR)}</p>
           </div>
         </div>
-        <div className="mt-4 h-44 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={barrasResumen} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-              <XAxis dataKey="label" tick={{ fill: "#334155", fontSize: 12 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: "#64748B", fontSize: 12 }} axisLine={false} tickLine={false} width={72} />
-              <Tooltip
-                formatter={(v) => formatEUR(Number(v) || 0)}
-                contentStyle={{ borderRadius: 12, borderColor: "#E2E8F0" }}
-              />
-              <Bar dataKey="value" radius={[10, 10, 10, 10]}>
-                {barrasResumen.map((d) => (
-                  <Cell key={d.key} fill={d.key === "stock" ? "#0F172A" : "#334155"} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div className="h-52 w-full rounded-2xl bg-white">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={barrasResumen} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                <XAxis dataKey="label" tick={{ fill: "#334155", fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: "#64748B", fontSize: 12 }} axisLine={false} tickLine={false} width={78} />
+                <Tooltip formatter={(v) => formatEUR(Number(v) || 0)} contentStyle={{ borderRadius: 12, borderColor: "#E2E8F0" }} />
+                <Bar dataKey="value" radius={[10, 10, 10, 10]}>
+                  {barrasResumen.map((d) => (
+                    <Cell key={d.key} fill={d.key === "stock" ? "#0F172A" : d.key === "env-llenos" ? "#334155" : "#64748B"} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="h-52 w-full rounded-2xl bg-white">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Tooltip formatter={(v) => formatEUR(Number(v) || 0)} contentStyle={{ borderRadius: 12, borderColor: "#E2E8F0" }} />
+                <Pie data={pieResumen} dataKey="value" nameKey="label" innerRadius={52} outerRadius={78} paddingAngle={2}>
+                  {pieResumen.map((d) => (
+                    <Cell key={d.key} fill={(d as { color?: string }).color ?? "#94A3B8"} />
+                  ))}
+                </Pie>
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
         </div>
+
+        <p className="mt-3 text-xs text-slate-500">
+          Total: <span className="font-semibold text-slate-700">{formatEUR(valorEconomicoInventario.totalEUR)}</span>
+        </p>
         <p className="mt-2 text-xs text-slate-500">
           Configura envases en <span className="font-semibold">Panel → Catálogo de envases</span>.
         </p>
