@@ -99,14 +99,13 @@ function ReservasPlanoInner() {
   const boardRef = useRef<HTMLDivElement | null>(null);
   const draggingRef = useRef<null | { mesaId: string; startClientX: number; startClientY: number; startX: number; startY: number }>(null);
   const panningRef = useRef<null | { startClientX: number; startClientY: number; startPanX: number; startPanY: number }>(null);
-  const mergeHoverRef = useRef<null | { sourceMesaId: string; targetMesaId: string; startedAt: number }>(null);
+  // mergeHoverRef: retirado en versión simplificada
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [selMesaId, setSelMesaId] = useState<string | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
   const [creatingMesa, setCreatingMesa] = useState<null | "rect" | "round" | "vip">(null);
   const [deletingMesa, setDeletingMesa] = useState(false);
-  const [mergePrompt, setMergePrompt] = useState<null | { sourceMesaId: string; targetMesaId: string }>(null);
   const [mergeMode, setMergeMode] = useState(false);
   const [zonaNameDraft, setZonaNameDraft] = useState("");
 
@@ -308,8 +307,6 @@ function ReservasPlanoInner() {
     }
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     draggingRef.current = { mesaId: mesa.id, startClientX: e.clientX, startClientY: e.clientY, startX: mesa.x, startY: mesa.y };
-    mergeHoverRef.current = null;
-    setMergePrompt(null);
   }
 
   function onPointerMove(e: React.PointerEvent) {
@@ -324,34 +321,6 @@ function ReservasPlanoInner() {
       const ny = clamp01(drag.startY + dy);
       setMesas((prev) => prev.map((m) => (m.id === drag.mesaId ? { ...m, x: nx, y: ny } : m)));
 
-      // Merge detection (hover 1s encima)
-      const src = mesas.find((m) => m.id === drag.mesaId) ?? null;
-      const others = mesasZona.filter((m) => m.id !== drag.mesaId);
-      const thresholdPx = 56;
-      const srcPx = { x: (nx * rect.width + pan.x) * scale, y: (ny * rect.height + pan.y) * scale };
-      let hoveredTarget: string | null = null;
-      for (const t of others) {
-        const tx = (t.x * rect.width + pan.x) * scale;
-        const ty = (t.y * rect.height + pan.y) * scale;
-        const dist = Math.hypot(srcPx.x - tx, srcPx.y - ty);
-        if (dist <= thresholdPx) {
-          hoveredTarget = t.id;
-          break;
-        }
-      }
-      if (!src || !hoveredTarget) {
-        mergeHoverRef.current = null;
-        return;
-      }
-      const now = Date.now();
-      const prev = mergeHoverRef.current;
-      if (!prev || prev.targetMesaId !== hoveredTarget || prev.sourceMesaId !== drag.mesaId) {
-        mergeHoverRef.current = { sourceMesaId: drag.mesaId, targetMesaId: hoveredTarget, startedAt: now };
-        return;
-      }
-      if (now - prev.startedAt >= 1000) {
-        setMergePrompt({ sourceMesaId: drag.mesaId, targetMesaId: hoveredTarget });
-      }
       return;
     }
     const p = panningRef.current;
@@ -366,16 +335,10 @@ function ReservasPlanoInner() {
     const drag = draggingRef.current;
     draggingRef.current = null;
     panningRef.current = null;
-    mergeHoverRef.current = null;
     setIsInteracting(false);
     if (!drag) return;
     const mesa = mesas.find((m) => m.id === drag.mesaId) ?? null;
     if (!mesa) return;
-    if (mergePrompt?.sourceMesaId === mesa.id) {
-      setSelMesaId(mesa.id);
-      setSheetOpen(true);
-      setManageOpen(true);
-    }
     try {
       const res = await supabase()
         .from("sala_mesas")
@@ -407,7 +370,8 @@ function ReservasPlanoInner() {
 
   async function deleteMesa() {
     if (!selMesa || !activeEstablishmentId) return;
-    if (!canDrag || !planoUnlocked) return;
+    // Permitir borrar desde "Gestionar" aunque el plano esté bloqueado.
+    if (!canDrag) return;
     if (deletingMesa) return;
     const ok = typeof window !== "undefined" ? window.confirm(`¿Eliminar la mesa ${selMesa.numero}?`) : false;
     if (!ok) return;
@@ -448,39 +412,7 @@ function ReservasPlanoInner() {
     }
   }
 
-  async function mergeMesas() {
-    if (!mergePrompt || !activeEstablishmentId) return;
-    if (!canDrag || !planoUnlocked) return;
-    const source = mesas.find((m) => m.id === mergePrompt.sourceMesaId) ?? null;
-    const target = mesas.find((m) => m.id === mergePrompt.targetMesaId) ?? null;
-    if (!source || !target) return;
-    const ok = typeof window !== "undefined" ? window.confirm(`¿Fusionar Mesa ${source.numero} con Mesa ${target.numero}?`) : false;
-    if (!ok) return;
-    setErrMsg(null);
-    try {
-      const newPax = (source.pax_max ?? 0) + (target.pax_max ?? 0);
-      const midX = clamp01((source.x + target.x) / 2);
-      const midY = clamp01((source.y + target.y) / 2);
-      const up = await supabase()
-        .from("sala_mesas")
-        .update({ pax_max: newPax, x: midX, y: midY })
-        .eq("id", source.id)
-        .eq("establecimiento_id", activeEstablishmentId);
-      if (up.error) throw up.error;
-      const del = await supabase()
-        .from("sala_mesas")
-        .delete()
-        .eq("id", target.id)
-        .eq("establecimiento_id", activeEstablishmentId);
-      if (del.error) throw del.error;
-      setMergePrompt(null);
-      haptic(50);
-      void load();
-    } catch (e) {
-      setErrMsg(supabaseErrToString(e));
-      void load();
-    }
-  }
+  // Nota: merge por "hover 1s" retirado en esta versión simplificada.
 
   async function mergeMesaInto(targetMesaId: string) {
     if (!activeEstablishmentId) return;
@@ -613,8 +545,9 @@ function ReservasPlanoInner() {
             </div>
           ) : null}
 
+          {/* Regla de oro: si hay mesa seleccionada, ocultar controles flotantes */}
           {/* Controles (solo cuando está BLOQUEADO) */}
-          {!planoUnlocked ? (
+          {!planoUnlocked && !selMesaId ? (
             <>
               <button
                 type="button"
@@ -644,7 +577,7 @@ function ReservasPlanoInner() {
           ) : null}
 
           {/* Toolbar creación (solo en modo edición) */}
-          {canDrag && planoUnlocked ? (
+          {canDrag && planoUnlocked && !selMesaId ? (
             <div className="pointer-events-auto absolute bottom-32 left-1/2 z-[999] -translate-x-1/2">
               <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-slate-200 bg-white p-2 shadow-lg">
                 <button
@@ -761,30 +694,16 @@ function ReservasPlanoInner() {
           </div>
 
           {/* BottomSheet */}
-          <Drawer open={sheetOpen} title={selMesa ? `Mesa ${selMesa.numero}` : "Mesa"} onClose={() => setSheetOpen(false)} variant="dark">
+          <Drawer open={sheetOpen} title={selMesa ? `Mesa ${selMesa.numero}` : "Mesa"} onClose={() => setSheetOpen(false)} variant="light">
             {!selMesa ? null : (
               <div className="space-y-4 pb-6">
-                <div className="overflow-hidden rounded-3xl border border-white/10 bg-white/5">
-                  <div className="flex h-36 items-center justify-center text-sm font-semibold text-white/60">Foto de la vista (placeholder)</div>
-                </div>
                 <button
                   type="button"
-                  className="min-h-12 w-full rounded-2xl bg-white text-sm font-extrabold text-[#0A0A0C]"
+                  className="min-h-12 w-full rounded-2xl bg-blue-600 text-sm font-extrabold text-white hover:bg-blue-700"
                   onClick={() => setManageOpen(true)}
                 >
                   Gestionar
                 </button>
-
-                {planoUnlocked && canDrag ? (
-                  <button
-                    type="button"
-                    className="min-h-12 w-full rounded-2xl border border-rose-400/30 bg-rose-500/15 text-sm font-extrabold text-rose-100 shadow-[0_0_0_1px_rgba(244,63,94,0.10)] hover:bg-rose-500/20 disabled:opacity-60"
-                    onClick={() => void deleteMesa()}
-                    disabled={deletingMesa}
-                  >
-                    {deletingMesa ? "Eliminando…" : "Eliminar mesa"}
-                  </button>
-                ) : null}
 
                 {manageOpen ? (
                   <div className="space-y-3">
@@ -803,33 +722,33 @@ function ReservasPlanoInner() {
                     ) : null}
 
                     {/* Número */}
-                    <div className="rounded-3xl border border-white/10 bg-white/5 p-3">
-                      <p className="text-xs font-extrabold uppercase tracking-wide text-white/60">Número</p>
+                    <div className="rounded-3xl border border-slate-200 bg-white p-3">
+                      <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Número</p>
                       <div className="mt-2 flex items-center justify-between gap-3">
                         <button
                           type="button"
-                          className="grid h-12 w-12 place-items-center rounded-2xl border border-white/10 bg-white/5 text-lg font-black text-white/90 disabled:opacity-50"
+                          className="grid h-12 w-12 place-items-center rounded-2xl border border-slate-200 bg-white text-lg font-black text-slate-900 disabled:opacity-50"
                           onClick={() => void updateMesaFields({ numero: Math.max(1, (selMesa.numero ?? 1) - 1) })}
                           disabled={!canDrag}
                         >
                           −
                         </button>
-                        <p className="text-3xl font-black tabular-nums text-white">{selMesa.numero}</p>
+                        <p className="text-3xl font-black tabular-nums text-slate-900">{selMesa.numero}</p>
                         <button
                           type="button"
-                          className="grid h-12 w-12 place-items-center rounded-2xl border border-white/10 bg-white/5 text-lg font-black text-white/90 disabled:opacity-50"
+                          className="grid h-12 w-12 place-items-center rounded-2xl border border-slate-200 bg-white text-lg font-black text-slate-900 disabled:opacity-50"
                           onClick={() => void updateMesaFields({ numero: (selMesa.numero ?? 1) + 1 })}
                           disabled={!canDrag}
                         >
                           +
                         </button>
                       </div>
-                      {!canDrag ? <p className="mt-2 text-xs font-semibold text-white/50">Solo Admin puede editar el número.</p> : null}
+                      {!canDrag ? <p className="mt-2 text-xs font-semibold text-slate-500">Solo Admin puede editar el número.</p> : null}
                     </div>
 
                     {/* Comensales (pax) */}
-                    <div className="rounded-3xl border border-white/10 bg-white/5 p-3">
-                      <p className="text-xs font-extrabold uppercase tracking-wide text-white/60">Comensales</p>
+                    <div className="rounded-3xl border border-slate-200 bg-white p-3">
+                      <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Comensales</p>
                       <div className="mt-2 grid grid-cols-6 gap-2">
                         {Array.from({ length: 12 }).map((_, i) => {
                           const n = i + 1;
@@ -840,7 +759,7 @@ function ReservasPlanoInner() {
                               type="button"
                               className={[
                                 "h-11 rounded-full border text-sm font-extrabold",
-                                active ? "border-violet-400/40 bg-violet-500/15 text-white" : "border-white/10 bg-white/5 text-white/80 hover:bg-white/10",
+                                active ? "border-blue-600/30 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-800 hover:bg-slate-50",
                                 !canDrag ? "opacity-50" : ""
                               ].join(" ")}
                               disabled={!canDrag}
@@ -855,50 +774,30 @@ function ReservasPlanoInner() {
                           );
                         })}
                       </div>
-                      {!canDrag ? <p className="mt-2 text-xs font-semibold text-white/50">Solo Admin puede editar comensales.</p> : null}
+                      {!canDrag ? <p className="mt-2 text-xs font-semibold text-slate-500">Solo Admin puede editar comensales.</p> : null}
                     </div>
 
-                    <p className="text-xs font-extrabold uppercase tracking-wide text-white/60">Estado</p>
+                    <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Estado</p>
                     <div className="grid grid-cols-2 gap-2">
-                      <button type="button" className="min-h-12 rounded-2xl border border-white/10 bg-white/5 text-sm font-extrabold text-white hover:bg-white/10" onClick={() => void setEstado("libre")}>
+                      <button type="button" className="min-h-12 rounded-2xl border border-slate-200 bg-white text-sm font-extrabold text-slate-900 hover:bg-slate-50" onClick={() => void setEstado("libre")}>
                         Libre
                       </button>
-                      <button type="button" className="min-h-12 rounded-2xl border border-white/10 bg-white/5 text-sm font-extrabold text-white hover:bg-white/10" onClick={() => void setEstado("reservada")}>
+                      <button type="button" className="min-h-12 rounded-2xl border border-slate-200 bg-white text-sm font-extrabold text-slate-900 hover:bg-slate-50" onClick={() => void setEstado("reservada")}>
                         Reservada
                       </button>
-                      <button type="button" className="min-h-12 rounded-2xl border border-white/10 bg-white/5 text-sm font-extrabold text-white hover:bg-white/10" onClick={() => void setEstado("ocupada")}>
+                      <button type="button" className="min-h-12 rounded-2xl border border-slate-200 bg-white text-sm font-extrabold text-slate-900 hover:bg-slate-50" onClick={() => void setEstado("ocupada")}>
                         Ocupada
                       </button>
-                      <button type="button" className="min-h-12 rounded-2xl border border-white/10 bg-white/5 text-sm font-extrabold text-white hover:bg-white/10" onClick={() => void setEstado("sucia")}>
+                      <button type="button" className="min-h-12 rounded-2xl border border-slate-200 bg-white text-sm font-extrabold text-slate-900 hover:bg-slate-50" onClick={() => void setEstado("sucia")}>
                         Sucia
                       </button>
                     </div>
 
-                    {planoUnlocked && canDrag ? (
+                    {canDrag ? (
                       <div className="pt-2">
                         <button
                           type="button"
-                          className="mb-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 text-sm font-extrabold text-white hover:bg-white/10"
-                          onClick={() => {
-                            if (selMesa?.es_decorativo) return;
-                            setMergeMode(true);
-                          }}
-                          disabled={!!selMesa?.es_decorativo}
-                        >
-                          Fusionar
-                        </button>
-                        {mergePrompt?.sourceMesaId === selMesa.id ? (
-                          <button
-                            type="button"
-                            className="mb-2 min-h-12 w-full rounded-2xl border border-violet-400/20 bg-violet-500/10 text-sm font-extrabold text-violet-100 hover:bg-violet-500/15"
-                            onClick={() => void mergeMesas()}
-                          >
-                            ¿Fusionar con Mesa {(mesas.find((m) => m.id === mergePrompt.targetMesaId)?.numero ?? "…")}?
-                          </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          className="min-h-12 w-full rounded-2xl border border-rose-400/20 bg-rose-500/10 text-sm font-extrabold text-rose-100 hover:bg-rose-500/15 disabled:opacity-60"
+                          className="min-h-12 w-full rounded-2xl border border-rose-300 bg-rose-50 text-sm font-extrabold text-rose-700 hover:bg-rose-100 disabled:opacity-60"
                           onClick={() => void deleteMesa()}
                           disabled={deletingMesa}
                         >
