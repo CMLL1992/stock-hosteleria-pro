@@ -84,6 +84,7 @@ function AnimatedCheck() {
 }
 
 export default function ReservarPublicClient({ slug }: { slug: string }) {
+  const slugNorm = useMemo(() => (slug ?? "").trim().toLowerCase(), [slug]);
   const [est, setEst] = useState<EstPublic | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -147,7 +148,7 @@ export default function ReservarPublicClient({ slug }: { slug: string }) {
     setOkMsg(null);
     (async () => {
       try {
-        const { data, error } = await supabase().rpc("get_establecimiento_public", { p_slug: slug });
+        const { data, error } = await supabase().rpc("get_establecimiento_public", { p_slug: slugNorm });
         if (cancelled) return;
         if (error) throw error;
         const row = (data as unknown as EstPublic | null) ?? null;
@@ -169,7 +170,7 @@ export default function ReservarPublicClient({ slug }: { slug: string }) {
     return () => {
       cancelled = true;
     };
-  }, [slug]);
+  }, [slugNorm]);
 
   useEffect(() => {
     let cancelled = false;
@@ -178,7 +179,7 @@ export default function ReservarPublicClient({ slug }: { slug: string }) {
     setErr(null);
     (async () => {
       try {
-        const { data, error } = await supabase().rpc("get_disponibilidad_public", { p_slug: slug, p_fecha: fecha });
+        const { data, error } = await supabase().rpc("get_disponibilidad_public", { p_slug: slugNorm, p_fecha: fecha });
         if (cancelled) return;
         if (error) throw error;
         setDisp((data as unknown as Disp) ?? null);
@@ -191,7 +192,7 @@ export default function ReservarPublicClient({ slug }: { slug: string }) {
     return () => {
       cancelled = true;
     };
-  }, [fecha, slug]);
+  }, [fecha, slugNorm]);
 
   const canSubmit = useMemo(() => {
     if (loading) return false;
@@ -226,7 +227,7 @@ export default function ReservarPublicClient({ slug }: { slug: string }) {
     setOkMsg(null);
     try {
       const { data, error } = await supabase().rpc("create_reserva_public", {
-        p_slug: slug,
+        p_slug: slugNorm,
         p_fecha: fecha,
         p_hora: hora,
         p_pax: pax,

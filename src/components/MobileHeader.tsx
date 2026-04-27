@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Link as LinkIcon, Lock, LogOut, QrCode, User } from "lucide-react";
+import { ArrowLeft, Lock, LogOut, User } from "lucide-react";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -8,8 +8,6 @@ import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
 import { supabase } from "@/lib/supabase";
 import { getEffectiveRole } from "@/lib/permissions";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
-import { Drawer } from "@/components/ui/Drawer";
-import { QRCodeCanvas } from "qrcode.react";
 
 export function MobileHeader({
   title,
@@ -27,47 +25,17 @@ export function MobileHeader({
     establishments,
     activeEstablishmentId,
     activeEstablishmentName,
-    activePublicBookingUrl,
     activeEstablishmentLogoUrl,
     setActiveEstablishmentId
   } = useActiveEstablishment();
 
   const [perfilOpen, setPerfilOpen] = useState(false);
-  const [bookingQrOpen, setBookingQrOpen] = useState(false);
-  const [bookingToast, setBookingToast] = useState<string | null>(null);
   const [perfilNombre, setPerfilNombre] = useState("");
   const [perfilSaving, setPerfilSaving] = useState(false);
   const [perfilErr, setPerfilErr] = useState<string | null>(null);
   const [perfilOk, setPerfilOk] = useState<string | null>(null);
 
   const effectiveRole = getEffectiveRole(me);
-  const canAdmin = effectiveRole === "admin" || effectiveRole === "superadmin";
-
-  async function copyBookingUrl() {
-    const url = (activePublicBookingUrl ?? "").trim();
-    if (!url) return;
-    setBookingToast(null);
-    try {
-      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(url);
-      } else {
-        const ta = document.createElement("textarea");
-        ta.value = url;
-        ta.style.position = "fixed";
-        ta.style.top = "-1000px";
-        document.body.appendChild(ta);
-        ta.focus();
-        ta.select();
-        document.execCommand("copy");
-        ta.remove();
-      }
-      setBookingToast("¡Enlace de reserva copiado!");
-      window.setTimeout(() => setBookingToast(null), 1600);
-    } catch {
-      setBookingToast("No se pudo copiar el enlace");
-      window.setTimeout(() => setBookingToast(null), 1600);
-    }
-  }
 
   useEffect(() => {
     if (!perfilOpen) return;
@@ -168,28 +136,6 @@ export function MobileHeader({
           ) : null}
         </div>
         <div className="flex items-center gap-2">
-          {canAdmin && activePublicBookingUrl ? (
-            <button
-              type="button"
-              onClick={() => void copyBookingUrl()}
-              className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-slate-200 bg-white shadow-sm hover:bg-slate-50"
-              aria-label="Enlace de reservas"
-              title="Enlace de reservas"
-            >
-              <LinkIcon className="h-5 w-5 text-slate-700" />
-            </button>
-          ) : null}
-          {canAdmin && activePublicBookingUrl ? (
-            <button
-              type="button"
-              onClick={() => setBookingQrOpen(true)}
-              className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-slate-200 bg-white shadow-sm hover:bg-slate-50"
-              aria-label="QR del enlace de reservas"
-              title="QR del enlace"
-            >
-              <QrCode className="h-5 w-5 text-slate-700" />
-            </button>
-          ) : null}
           <Link
             href="/ayuda"
             className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-slate-200 bg-white text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50"
@@ -221,27 +167,6 @@ export function MobileHeader({
           </button>
         </div>
       </div>
-
-      {bookingToast ? (
-        <div className="mx-auto max-w-3xl px-4 pb-2">
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-900 shadow-sm">
-            {bookingToast}
-          </div>
-        </div>
-      ) : null}
-
-      <Drawer open={bookingQrOpen} title="QR del enlace" onClose={() => setBookingQrOpen(false)}>
-        <div className="space-y-4 pb-4">
-          <div className="flex items-center justify-center rounded-3xl border border-slate-200 bg-white p-6">
-            {activePublicBookingUrl ? (
-              <QRCodeCanvas value={activePublicBookingUrl} size={220} includeMargin />
-            ) : (
-              <p className="text-sm text-slate-600">No hay URL disponible.</p>
-            )}
-          </div>
-          <p className="break-all text-xs font-semibold text-slate-600">{activePublicBookingUrl ?? ""}</p>
-        </div>
-      </Drawer>
 
       {perfilOpen ? (
         <div
