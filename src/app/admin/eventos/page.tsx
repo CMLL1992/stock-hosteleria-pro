@@ -19,9 +19,18 @@ type EventoLinea = {
   unidad: string | null;
   stockEvento: number;
   recibidoQty: number;
-  recibidoPrecioEnvase: number;
-  devueltoQty: number;
-  devueltoPrecioEnvase: number;
+  /** Precio unitario del producto para el evento (por defecto: precio_compra si existe). */
+  precioProducto: number;
+  /** Precio del envase asociado (por defecto: envase_coste). */
+  precioEnvase: number;
+  /** Devolución de producto (con envase lleno). */
+  devueltoProductoQty: number;
+  /** Devolución de envases vacíos (solo abono envase). */
+  devueltoVaciosQty: number;
+  // Backward-compat (v1): no se usan para cálculo nuevo, pero los conservamos por si hay datos guardados.
+  recibidoPrecioEnvase?: number;
+  devueltoQty?: number;
+  devueltoPrecioEnvase?: number;
 };
 
 type Evento = {
@@ -32,6 +41,8 @@ type Evento = {
   proveedorId: string | null;
   notaExtra: string;
   lineas: EventoLinea[];
+  extras?: Array<{ id: string; concepto: string; tipo: "gasto" | "ingreso"; importe: number }>;
+  recaudacionTotal?: number;
 };
 
 function nowIso() {
@@ -104,6 +115,7 @@ export default function EventosPage() {
 
   const [proveedores, setProveedores] = useState<ProveedorRow[]>([]);
   const [catalogo, setCatalogo] = useState<DashboardProducto[]>([]);
+  const [precioCompraById, setPrecioCompraById] = useState<Map<string, number>>(new Map());
   const [catalogoSearch, setCatalogoSearch] = useState("");
   const [pickProductoId, setPickProductoId] = useState<string>("");
 
@@ -152,11 +164,31 @@ export default function EventosPage() {
         .order("nombre", { ascending: true }),
       fetchDashboardProductos(activeEstablishmentId)
     ])
-      .then(([provRes, prods]) => {
+      .then(async ([provRes, prods]) => {
         if (cancelled) return;
         if (provRes.error) throw provRes.error;
         setProveedores((provRes.data as ProveedorRow[]) ?? []);
         setCatalogo(prods ?? []);
+
+        // Precio producto (si existe en DB): opcional y read-only (no afecta stock).
+        try {
+          const pRes = await supabase()
+            .from("productos")
+            .select("id,precio_compra")
+            .eq("establecimiento_id", activeEstablishmentId)
+            .limit(3000);
+          if (cancelled) return;
+          if (pRes.error) throw pRes.error;
+          const map = new Map<string, number>();
+          for (const r of (pRes.data as Array<{ id: string; precio_compra: number | null }> | null) ?? []) {
+            const id = String(r?.id ?? "").trim();
+            const v = typeof r?.precio_compra === "number" && Number.isFinite(r.precio_compra) ? r.precio_compra : 0;
+            if (id) map.set(id, Math.max(0, Math.round(v * 100) / 100));
+          }
+          setPrecioCompraById(map);
+        } catch {
+          setPrecioCompraById(new Map());
+        }
       })
       .catch((e) => {
         if (!cancelled) setErr(supabaseErrToString(e));
@@ -196,15 +228,17 @@ export default function EventosPage() {
     const existing = ev.lineas.find((l) => l.productoId === p.id);
     if (existing) return existing;
     const precioEnvaseAuto = Number.isFinite(Number(p.envase_coste)) ? Math.max(0, Number(p.envase_coste) || 0) : 0;
+    const precioProductoAuto = Math.max(0, Number(precioCompraById.get(p.id) ?? 0) || 0);
     return {
       productoId: p.id,
       articulo: p.articulo,
       unidad: p.unidad,
       stockEvento: 0,
       recibidoQty: 0,
-      recibidoPrecioEnvase: precioEnvaseAuto,
-      devueltoQty: 0,
-      devueltoPrecioEnvase: precioEnvaseAuto
+      precioProducto: precioProductoAuto,
+      precioEnvase: precioEnvaseAuto,
+      devueltoProductoQty: 0,
+      devueltoVaciosQty: 0
     };
   }
 
@@ -213,14 +247,15 @@ export default function EventosPage() {
     const precioEnvaseAuto = Number.isFinite(Number(p.envase_coste)) ? Math.max(0, Number(p.envase_coste) || 0) : 0;
     if (existing) {
       // Si ya estaba añadido, solo autocompleta si siguen en 0 (no pisa cambios manuales).
-      const shouldFillRec = (Number(existing.recibidoPrecioEnvase) || 0) <= 0;
-      const shouldFillDev = (Number(existing.devueltoPrecioEnvase) || 0) <= 0;
-      if (precioEnvaseAuto > 0 && (shouldFillRec || shouldFillDev)) {
+      const shouldFillEnv = (Number((existing as EventoLinea).precioEnvase) || 0) <= 0;
+      if (precioEnvaseAuto > 0 && shouldFillEnv) {
         updateLinea(ev, p.id, {
-          recibidoPrecioEnvase: shouldFillRec ? precioEnvaseAuto : existing.recibidoPrecioEnvase,
-          devueltoPrecioEnvase: shouldFillDev ? precioEnvaseAuto : existing.devueltoPrecioEnvase
+          precioEnvase: precioEnvaseAuto
         });
       }
+      const precioProdAuto = Math.max(0, Number(precioCompraById.get(p.id) ?? 0) || 0);
+      const shouldFillProd = (Number((existing as EventoLinea).precioProducto) || 0) <= 0;
+      if (precioProdAuto > 0 && shouldFillProd) updateLinea(ev, p.id, { precioProducto: precioProdAuto });
       return;
     }
     const linea = ensureLinea(ev, p);
@@ -282,19 +317,57 @@ export default function EventosPage() {
     window.open(url, "_blank", "noopener,noreferrer");
   }
 
+  function lineaPrecioProducto(l: EventoLinea): number {
+    return Math.max(0, Number((l as EventoLinea).precioProducto ?? 0) || 0);
+  }
+
+  function lineaPrecioEnvase(l: EventoLinea): number {
+    const v =
+      Number((l as EventoLinea).precioEnvase ?? 0) ||
+      Number(l.recibidoPrecioEnvase ?? 0) ||
+      Number(l.devueltoPrecioEnvase ?? 0) ||
+      0;
+    return Math.max(0, v);
+  }
+
   const resumen = useMemo(() => {
     const lineas = selected?.lineas ?? [];
-    const vendido = lineas.reduce((acc, l) => acc + Math.max(0, (Number(l.recibidoQty) || 0) - (Number(l.devueltoQty) || 0)), 0);
-    const costeMaterial = lineas.reduce((acc, l) => acc + (Number(l.recibidoQty) || 0) * (Number(l.recibidoPrecioEnvase) || 0), 0);
-    const valorDevuelto = lineas.reduce((acc, l) => acc + (Number(l.devueltoQty) || 0) * (Number(l.devueltoPrecioEnvase) || 0), 0);
-    const gastoReal = costeMaterial - valorDevuelto;
+    const totalPedido = lineas.reduce((acc, l) => {
+      const q = Math.max(0, Number(l.stockEvento) || 0);
+      const unit = lineaPrecioProducto(l) + lineaPrecioEnvase(l);
+      return acc + q * unit;
+    }, 0);
+    const totalDevProducto = lineas.reduce((acc, l) => {
+      const q = Math.max(0, Number((l as EventoLinea).devueltoProductoQty ?? l.devueltoQty ?? 0) || 0);
+      const unit = lineaPrecioProducto(l) + lineaPrecioEnvase(l);
+      return acc + q * unit;
+    }, 0);
+    const totalDevVacios = lineas.reduce((acc, l) => {
+      const q = Math.max(0, Number((l as EventoLinea).devueltoVaciosQty ?? 0) || 0);
+      const unit = lineaPrecioEnvase(l);
+      return acc + q * unit;
+    }, 0);
+    const totalDevoluciones = totalDevProducto + totalDevVacios;
+
+    const extras = selected?.extras ?? [];
+    const extrasGasto = extras.reduce((acc, x) => (x.tipo === "gasto" ? acc + (Number(x.importe) || 0) : acc), 0);
+    const extrasIngreso = extras.reduce((acc, x) => (x.tipo === "ingreso" ? acc + (Number(x.importe) || 0) : acc), 0);
+    const gastoReal = totalPedido - totalDevoluciones + extrasGasto - extrasIngreso;
+
+    const recaudacionTotal = Math.max(0, Number(selected?.recaudacionTotal ?? 0) || 0);
+    const beneficioNeto = recaudacionTotal - gastoReal;
     return {
-      vendido,
-      costeMaterial,
-      valorDevuelto,
-      gastoReal
+      totalPedido,
+      totalDevProducto,
+      totalDevVacios,
+      totalDevoluciones,
+      extrasGasto,
+      extrasIngreso,
+      gastoReal,
+      recaudacionTotal,
+      beneficioNeto
     };
-  }, [selected?.lineas]);
+  }, [selected?.extras, selected?.lineas, selected?.recaudacionTotal]);
 
   const waUrl = useMemo(() => {
     if (!selected) return null;
@@ -548,9 +621,14 @@ export default function EventosPage() {
                 </div>
 
                 <div className="premium-card premium-topline-green">
-                  <p className="text-sm font-black tracking-tight text-slate-900">Control financiero (fantasma)</p>
-                  <p className="mt-1 text-sm text-slate-600">
-                    Recibido / Devuelto con precio de envase. Vendido/Consumido se calcula automáticamente.
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <p className="text-sm font-black tracking-tight text-slate-900">Control financiero</p>
+                    <span className="inline-flex rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-600">
+                      Datos independientes: Estos registros no afectan al stock ni a las estadísticas generales de la app.
+                    </span>
+                  </div>
+                  <p className="mt-2 text-sm text-slate-600">
+                    Pedido inicial (producto + envase) · Devoluciones (producto+envase y vacíos) · Extras · Balance final.
                   </p>
 
                   {selected.lineas.length === 0 ? (
@@ -558,7 +636,14 @@ export default function EventosPage() {
                   ) : (
                     <div className="mt-4 space-y-3">
                       {selected.lineas.map((l) => {
-                        const vendido = Math.max(0, l.recibidoQty - l.devueltoQty);
+                        const devProd = Math.max(0, Number((l as EventoLinea).devueltoProductoQty ?? l.devueltoQty ?? 0) || 0);
+                        const devVac = Math.max(0, Number((l as EventoLinea).devueltoVaciosQty ?? 0) || 0);
+                        const vendido = Math.max(0, (Number(l.recibidoQty) || 0) - devProd);
+                        const precioProd = lineaPrecioProducto(l);
+                        const precioEnv = lineaPrecioEnvase(l);
+                        const unitFull = precioProd + precioEnv;
+                        const abonoProd = devProd * unitFull;
+                        const abonoVac = devVac * precioEnv;
                         return (
                           <div key={l.productoId} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                             <div className="flex flex-wrap items-end justify-between gap-2">
@@ -570,57 +655,87 @@ export default function EventosPage() {
 
                             <div className="mt-3 grid gap-3 sm:grid-cols-2">
                               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                                <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Recibido</p>
+                                <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Pedido inicial</p>
                                 <div className="mt-2 grid grid-cols-2 gap-2">
                                   <div>
-                                    <label className="text-[11px] font-bold text-slate-600">Cantidad</label>
-                                    <input
-                                      className="mt-1 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-center text-xl font-bold tabular-nums text-slate-900"
-                                      inputMode="numeric"
-                                      pattern="[0-9]*"
-                                      value={String(l.recibidoQty)}
-                                      onChange={(e) => updateLinea(selected, l.productoId, { recibidoQty: parseIntInput(e.currentTarget.value) })}
-                                    />
+                                    <label className="text-[11px] font-bold text-slate-600">Cantidad pedida (= recibida)</label>
+                                    <div className="mt-1 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-center text-xl font-black tabular-nums text-slate-900 grid place-items-center">
+                                      {Math.max(0, Number(l.stockEvento) || 0)}
+                                    </div>
                                   </div>
                                   <div>
-                                    <label className="text-[11px] font-bold text-slate-600">Precio envase (€)</label>
+                                    <label className="text-[11px] font-bold text-slate-600">Precio producto (€)</label>
                                     <input
                                       className="mt-1 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-center text-lg font-bold tabular-nums text-slate-900"
                                       inputMode="decimal"
-                                      value={String(l.recibidoPrecioEnvase || "")}
+                                      value={String((l as EventoLinea).precioProducto || "")}
                                       onChange={(e) =>
-                                        updateLinea(selected, l.productoId, { recibidoPrecioEnvase: parseEurInput(e.currentTarget.value) })
+                                        updateLinea(selected, l.productoId, { precioProducto: parseEurInput(e.currentTarget.value) })
                                       }
                                       placeholder="0"
                                     />
                                   </div>
                                 </div>
+                                <div className="mt-2 grid grid-cols-2 gap-2">
+                                  <div>
+                                    <label className="text-[11px] font-bold text-slate-600">Precio envase lleno (€)</label>
+                                    <input
+                                      className="mt-1 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-center text-lg font-bold tabular-nums text-slate-900"
+                                      inputMode="decimal"
+                                      value={String((l as EventoLinea).precioEnvase || "")}
+                                      onChange={(e) => updateLinea(selected, l.productoId, { precioEnvase: parseEurInput(e.currentTarget.value) })}
+                                      placeholder="0"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="text-[11px] font-bold text-slate-600">Subtotal pedido</label>
+                                    <div className="mt-1 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-center text-lg font-black tabular-nums text-slate-900 grid place-items-center">
+                                      {formatEUR(Math.max(0, Number(l.stockEvento) || 0) * unitFull)}
+                                    </div>
+                                  </div>
+                                </div>
                               </div>
 
                               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                                <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Devuelto</p>
+                                <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Devoluciones</p>
                                 <div className="mt-2 grid grid-cols-2 gap-2">
                                   <div>
-                                    <label className="text-[11px] font-bold text-slate-600">Cantidad</label>
+                                    <label className="text-[11px] font-bold text-slate-600">Producto devuelto (lleno)</label>
                                     <input
                                       className="mt-1 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-center text-xl font-bold tabular-nums text-slate-900"
                                       inputMode="numeric"
                                       pattern="[0-9]*"
-                                      value={String(l.devueltoQty)}
-                                      onChange={(e) => updateLinea(selected, l.productoId, { devueltoQty: parseIntInput(e.currentTarget.value) })}
+                                      value={String(devProd)}
+                                      onChange={(e) =>
+                                        updateLinea(selected, l.productoId, { devueltoProductoQty: parseIntInput(e.currentTarget.value) })
+                                      }
                                     />
                                   </div>
                                   <div>
-                                    <label className="text-[11px] font-bold text-slate-600">Precio envase (€)</label>
+                                    <label className="text-[11px] font-bold text-slate-600">Abono producto+envase</label>
+                                    <div className="mt-1 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-center text-lg font-black tabular-nums text-slate-900 grid place-items-center">
+                                      {formatEUR(abonoProd)}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="mt-2 grid grid-cols-2 gap-2">
+                                  <div>
+                                    <label className="text-[11px] font-bold text-slate-600">Envases vacíos devueltos</label>
                                     <input
-                                      className="mt-1 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-center text-lg font-bold tabular-nums text-slate-900"
-                                      inputMode="decimal"
-                                      value={String(l.devueltoPrecioEnvase || "")}
+                                      className="mt-1 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-center text-xl font-bold tabular-nums text-slate-900"
+                                      inputMode="numeric"
+                                      pattern="[0-9]*"
+                                      value={String(devVac)}
                                       onChange={(e) =>
-                                        updateLinea(selected, l.productoId, { devueltoPrecioEnvase: parseEurInput(e.currentTarget.value) })
+                                        updateLinea(selected, l.productoId, { devueltoVaciosQty: parseIntInput(e.currentTarget.value) })
                                       }
-                                      placeholder="0"
                                     />
+                                  </div>
+                                  <div>
+                                    <label className="text-[11px] font-bold text-slate-600">Abono vacíos (solo envase)</label>
+                                    <div className="mt-1 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-center text-lg font-black tabular-nums text-slate-900 grid place-items-center">
+                                      {formatEUR(abonoVac)}
+                                    </div>
                                   </div>
                                 </div>
                               </div>
@@ -631,20 +746,133 @@ export default function EventosPage() {
                     </div>
                   )}
 
-                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                      <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Coste total material</p>
-                      <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{formatEUR(resumen.costeMaterial)}</p>
+                      <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Total pedido</p>
+                      <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{formatEUR(resumen.totalPedido)}</p>
                     </div>
                     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                      <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Valor envases devueltos</p>
-                      <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{formatEUR(resumen.valorDevuelto)}</p>
+                      <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Total devoluciones</p>
+                      <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{formatEUR(resumen.totalDevoluciones)}</p>
                     </div>
                     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" style={{ borderTopWidth: 4, borderTopColor: "#10B981" }}>
                       <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Gasto real del evento</p>
                       <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">
                         {formatEUR(resumen.gastoReal)}
                       </p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" style={{ borderTopWidth: 4, borderTopColor: "#1D4ED8" }}>
+                      <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Beneficio / balance final</p>
+                      <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{formatEUR(resumen.beneficioNeto)}</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-black tracking-tight text-slate-900">Gastos e ingresos extra</p>
+                        <button
+                          type="button"
+                          className="premium-btn-secondary"
+                          onClick={() => {
+                            const id = newId("extra");
+                            const next = [...(selected.extras ?? [])];
+                            next.unshift({ id, concepto: "", tipo: "gasto", importe: 0 });
+                            updateEvento(selected.id, { extras: next });
+                          }}
+                        >
+                          + Añadir Gasto/Ingreso Extra
+                        </button>
+                      </div>
+
+                      {(selected.extras ?? []).length === 0 ? (
+                        <p className="mt-2 text-sm text-slate-600">Sin extras.</p>
+                      ) : (
+                        <div className="mt-3 space-y-2">
+                          {(selected.extras ?? []).map((x) => (
+                            <div key={x.id} className="grid gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:grid-cols-[120px_1fr_140px_40px]">
+                              <select
+                                className="premium-input"
+                                value={x.tipo}
+                                onChange={(e) => {
+                                  const tipo = (e.currentTarget.value as "gasto" | "ingreso") ?? "gasto";
+                                  updateEvento(selected.id, {
+                                    extras: (selected.extras ?? []).map((it) => (it.id === x.id ? { ...it, tipo } : it))
+                                  });
+                                }}
+                              >
+                                <option value="gasto">Gasto</option>
+                                <option value="ingreso">Ingreso</option>
+                              </select>
+                              <input
+                                className="premium-input"
+                                value={x.concepto}
+                                onChange={(e) => {
+                                  const concepto = e.currentTarget.value;
+                                  updateEvento(selected.id, {
+                                    extras: (selected.extras ?? []).map((it) => (it.id === x.id ? { ...it, concepto } : it))
+                                  });
+                                }}
+                                placeholder="Concepto…"
+                              />
+                              <input
+                                className="premium-input text-center tabular-nums"
+                                inputMode="decimal"
+                                value={String(x.importe || "")}
+                                onChange={(e) => {
+                                  const importe = parseEurInput(e.currentTarget.value);
+                                  updateEvento(selected.id, {
+                                    extras: (selected.extras ?? []).map((it) => (it.id === x.id ? { ...it, importe } : it))
+                                  });
+                                }}
+                                placeholder="€"
+                              />
+                              <button
+                                type="button"
+                                className="min-h-12 rounded-2xl border border-slate-200 bg-white text-sm font-black text-red-600 hover:bg-slate-50"
+                                onClick={() =>
+                                  updateEvento(selected.id, { extras: (selected.extras ?? []).filter((it) => it.id !== x.id) })
+                                }
+                                aria-label="Eliminar extra"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                          <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-600">Extras (gastos)</p>
+                          <p className="mt-1 text-lg font-black tabular-nums text-slate-900">{formatEUR(resumen.extrasGasto)}</p>
+                        </div>
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                          <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-600">Extras (ingresos)</p>
+                          <p className="mt-1 text-lg font-black tabular-nums text-slate-900">{formatEUR(resumen.extrasIngreso)}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <p className="text-sm font-black tracking-tight text-slate-900">Recaudación total</p>
+                      <p className="mt-1 text-sm text-slate-600">Introduce la recaudación final del evento para calcular el beneficio neto.</p>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2 sm:items-end">
+                        <div>
+                          <label className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Recaudación (€)</label>
+                          <input
+                            className="premium-input mt-2 text-center text-xl font-bold tabular-nums"
+                            inputMode="decimal"
+                            value={String(selected.recaudacionTotal || "")}
+                            onChange={(e) => updateEvento(selected.id, { recaudacionTotal: parseEurInput(e.currentTarget.value) })}
+                            placeholder="0"
+                          />
+                        </div>
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                          <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-600">Beneficio neto</p>
+                          <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">{formatEUR(resumen.beneficioNeto)}</p>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
