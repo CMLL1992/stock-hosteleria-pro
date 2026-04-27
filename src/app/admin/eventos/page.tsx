@@ -43,6 +43,14 @@ type Evento = {
   lineas: EventoLinea[];
   extras?: Array<{ id: string; concepto: string; tipo: "gasto" | "ingreso"; importe: number }>;
   recaudacionTotal?: number;
+  pedidosHist?: Array<{
+    id: string;
+    createdAt: string;
+    proveedorId: string | null;
+    proveedorNombre: string;
+    notaExtra: string;
+    lineas: Array<{ productoId: string; articulo: string; unidad: string | null; cantidad: number }>;
+  }>;
 };
 
 function nowIso() {
@@ -116,6 +124,7 @@ export default function EventosPage() {
   const [proveedores, setProveedores] = useState<ProveedorRow[]>([]);
   const [catalogo, setCatalogo] = useState<DashboardProducto[]>([]);
   const [precioCompraById, setPrecioCompraById] = useState<Map<string, number>>(new Map());
+  const [proveedorIdByProductoId, setProveedorIdByProductoId] = useState<Map<string, string | null>>(new Map());
   const [catalogoSearch, setCatalogoSearch] = useState("");
   const [pickProductoId, setPickProductoId] = useState<string>("");
 
@@ -170,24 +179,28 @@ export default function EventosPage() {
         setProveedores((provRes.data as ProveedorRow[]) ?? []);
         setCatalogo(prods ?? []);
 
-        // Precio producto (si existe en DB): opcional y read-only (no afecta stock).
+        // Precio producto / proveedor (si existe en DB): read-only (no afecta stock).
         try {
           const pRes = await supabase()
             .from("productos")
-            .select("id,precio_compra")
+            .select("id,precio_compra,proveedor_id")
             .eq("establecimiento_id", activeEstablishmentId)
             .limit(3000);
           if (cancelled) return;
           if (pRes.error) throw pRes.error;
           const map = new Map<string, number>();
-          for (const r of (pRes.data as Array<{ id: string; precio_compra: number | null }> | null) ?? []) {
+          const provMap = new Map<string, string | null>();
+          for (const r of (pRes.data as Array<{ id: string; precio_compra: number | null; proveedor_id: string | null }> | null) ?? []) {
             const id = String(r?.id ?? "").trim();
             const v = typeof r?.precio_compra === "number" && Number.isFinite(r.precio_compra) ? r.precio_compra : 0;
             if (id) map.set(id, Math.max(0, Math.round(v * 100) / 100));
+            if (id) provMap.set(id, r?.proveedor_id ? String(r.proveedor_id) : null);
           }
           setPrecioCompraById(map);
+          setProveedorIdByProductoId(provMap);
         } catch {
           setPrecioCompraById(new Map());
+          setProveedorIdByProductoId(new Map());
         }
       })
       .catch((e) => {
@@ -279,21 +292,19 @@ export default function EventosPage() {
   }, [catalogo, catalogoSearch]);
 
   const catalogoDropdown = useMemo(() => {
-    const list = filteredCatalogo.slice();
+    const proveedorId = selected?.proveedorId ?? null;
+    const base = proveedorId
+      ? filteredCatalogo.filter((p) => String(proveedorIdByProductoId.get(p.id) ?? "") === String(proveedorId))
+      : filteredCatalogo;
+    const list = base.slice();
     list.sort((a, b) => a.articulo.localeCompare(b.articulo, "es", { sensitivity: "base" }));
     return list;
-  }, [filteredCatalogo]);
+  }, [filteredCatalogo, proveedorIdByProductoId, selected?.proveedorId]);
 
   const proveedorSelected = useMemo(() => {
     if (!selected?.proveedorId) return null;
     return proveedores.find((p) => p.id === selected.proveedorId) ?? null;
   }, [proveedores, selected?.proveedorId]);
-
-  function setPedidoDelta(ev: Evento, productoId: string, delta: number) {
-    const curr = ev.lineas.find((l) => l.productoId === productoId);
-    const next = Math.max(0, (Number(curr?.stockEvento) || 0) + delta);
-    updateLinea(ev, productoId, { stockEvento: next });
-  }
 
   function confirmarPedidoYEnviarWhatsApp(ev: Evento) {
     const url = waUrl;
@@ -302,8 +313,30 @@ export default function EventosPage() {
     setEventos((prev) =>
       prev.map((e) => {
         if (e.id !== ev.id) return e;
+        const prov = proveedores.find((p) => p.id === e.proveedorId) ?? null;
+        const provNombre = prov?.nombre?.trim() || "Proveedor";
+        const pedidoLineas = e.lineas
+          .map((l) => ({
+            productoId: l.productoId,
+            articulo: l.articulo,
+            unidad: l.unidad,
+            cantidad: Math.max(0, Number(l.stockEvento) || 0)
+          }))
+          .filter((l) => l.cantidad > 0);
+        const hist = [
+          {
+            id: newId("pedido"),
+            createdAt: nowIso(),
+            proveedorId: e.proveedorId ?? null,
+            proveedorNombre: provNombre,
+            notaExtra: String(e.notaExtra ?? ""),
+            lineas: pedidoLineas
+          },
+          ...((e.pedidosHist ?? []) as NonNullable<Evento["pedidosHist"]>)
+        ].slice(0, 20);
         return {
           ...e,
+          pedidosHist: hist,
           lineas: e.lineas.map((l) => {
             const pedido = Math.max(0, Number(l.stockEvento) || 0);
             if (pedido <= 0) return l;
@@ -536,7 +569,7 @@ export default function EventosPage() {
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-2">
-                  <div className="premium-card">
+                  <div className="premium-card max-w-full overflow-hidden">
                     <p className="text-sm font-black tracking-tight text-slate-900">Añadir producto</p>
                     <div className="mt-3 grid gap-2">
                       <label className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Producto (dropdown)</label>
@@ -552,8 +585,11 @@ export default function EventosPage() {
                           // Reset para poder añadir otro rápidamente
                           setPickProductoId("");
                         }}
+                          disabled={!selected.proveedorId}
                       >
-                        <option value="">Selecciona un producto…</option>
+                          <option value="">
+                            {selected.proveedorId ? "Selecciona un producto…" : "Selecciona proveedor para ver productos…"}
+                          </option>
                         {catalogoDropdown.map((p) => (
                             <option key={p.id} value={p.id}>
                               {p.articulo}
@@ -570,7 +606,7 @@ export default function EventosPage() {
                     </div>
                   </div>
 
-                  <div className="premium-card">
+                  <div className="premium-card max-w-full overflow-hidden">
                     <p className="text-sm font-black tracking-tight text-slate-900">Pedido del evento</p>
                     {selected.lineas.length === 0 ? (
                       <p className="mt-2 text-sm text-slate-600">Selecciona productos arriba para empezar.</p>
@@ -588,30 +624,18 @@ export default function EventosPage() {
                               </button>
                             </div>
 
-                            <div className="mt-3 grid grid-cols-[1fr_170px] items-center gap-2">
+                              <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_170px] sm:items-center">
                               <div className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Pedir</div>
-                              <div className="grid grid-cols-[44px_1fr_44px] items-center gap-2">
-                                <button
-                                  type="button"
-                                  className="min-h-12 min-w-12 rounded-2xl border border-slate-200 bg-white text-2xl font-black leading-none text-slate-900 hover:bg-slate-50 disabled:opacity-40"
-                                  onClick={() => setPedidoDelta(selected, l.productoId, -1)}
-                                  disabled={(Number(l.stockEvento) || 0) <= 0}
-                                  aria-label={`Restar 1 a pedido de ${l.articulo}`}
-                                >
-                                  −
-                                </button>
-                                <div className="min-h-12 w-full min-w-24 rounded-2xl border border-slate-200 bg-slate-50 px-3 text-center text-xl font-bold tabular-nums text-slate-900 grid place-items-center">
-                                  {Math.max(0, Number(l.stockEvento) || 0)}
-                                </div>
-                                <button
-                                  type="button"
-                                  className="min-h-12 min-w-12 rounded-2xl border border-slate-200 bg-white text-2xl font-black leading-none text-slate-900 hover:bg-slate-50"
-                                  onClick={() => setPedidoDelta(selected, l.productoId, +1)}
-                                  aria-label={`Sumar 1 a pedido de ${l.articulo}`}
-                                >
-                                  +
-                                </button>
-                              </div>
+                                <input
+                                  type="number"
+                                  className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-center text-xl font-bold tabular-nums text-slate-900 shadow-sm"
+                                  inputMode="numeric"
+                                  min={0}
+                                  step={1}
+                                  value={String(Math.max(0, Number(l.stockEvento) || 0))}
+                                  onChange={(e) => updateLinea(selected, l.productoId, { stockEvento: parseIntInput(e.currentTarget.value) })}
+                                  aria-label={`Cantidad a pedir de ${l.articulo}`}
+                                />
                             </div>
                           </div>
                         ))}
@@ -619,6 +643,40 @@ export default function EventosPage() {
                     )}
                   </div>
                 </div>
+
+                  {(selected.pedidosHist ?? []).length ? (
+                    <div className="premium-card">
+                      <p className="text-sm font-black tracking-tight text-slate-900">Historial de pedidos del evento</p>
+                      <div className="mt-3 space-y-2">
+                        {(selected.pedidosHist ?? []).slice(0, 10).map((p) => (
+                          <div key={p.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div>
+                                <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">{p.proveedorNombre}</p>
+                                <p className="mt-0.5 text-xs text-slate-500">{new Date(p.createdAt).toLocaleString("es-ES")}</p>
+                              </div>
+                              <p className="text-xs font-semibold text-slate-600">
+                                Líneas: <span className="font-black tabular-nums text-slate-900">{p.lineas.length}</span>
+                              </p>
+                            </div>
+                            <ul className="mt-3 space-y-1 text-sm text-slate-800">
+                              {p.lineas.map((l) => (
+                                <li key={l.productoId} className="flex items-baseline justify-between gap-3">
+                                  <span className="min-w-0 flex-1 truncate">{l.articulo}</span>
+                                  <span className="shrink-0 font-black tabular-nums">{l.cantidad}</span>
+                                </li>
+                              ))}
+                            </ul>
+                            {p.notaExtra.trim() ? (
+                              <p className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+                                <span className="font-bold">Nota:</span> {p.notaExtra}
+                              </p>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
 
                 <div className="premium-card premium-topline-green">
                   <div className="flex flex-wrap items-start justify-between gap-3">
