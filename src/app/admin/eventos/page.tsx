@@ -293,13 +293,20 @@ export default function EventosPage() {
 
   const catalogoDropdown = useMemo(() => {
     const proveedorId = selected?.proveedorId ?? null;
+    const proveedorNombre = (proveedores.find((p) => p.id === proveedorId)?.nombre ?? "").trim();
     const base = proveedorId
-      ? filteredCatalogo.filter((p) => String(proveedorIdByProductoId.get(p.id) ?? "") === String(proveedorId))
+      ? filteredCatalogo.filter((p) => {
+          const byId = String(proveedorIdByProductoId.get(p.id) ?? "") === String(proveedorId);
+          // Fallback (seguridad): si el mapa de proveedor_id falla, usamos el nombre del proveedor embebido.
+          const byName = !!proveedorNombre && String(p.proveedor?.nombre ?? "").trim() === proveedorNombre;
+          // Si no tenemos ni id ni nombre, no filtramos por nombre.
+          return byId || byName;
+        })
       : filteredCatalogo;
     const list = base.slice();
     list.sort((a, b) => a.articulo.localeCompare(b.articulo, "es", { sensitivity: "base" }));
     return list;
-  }, [filteredCatalogo, proveedorIdByProductoId, selected?.proveedorId]);
+  }, [filteredCatalogo, proveedorIdByProductoId, proveedores, selected?.proveedorId]);
 
   const proveedorSelected = useMemo(() => {
     if (!selected?.proveedorId) return null;
@@ -527,7 +534,7 @@ export default function EventosPage() {
                     <div className="grid gap-2">
                       <label className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Proveedor</label>
                       <select
-                        className="premium-input"
+                        className="premium-input w-full"
                         value={selected.proveedorId ?? ""}
                         onChange={(e) => updateEvento(selected.id, { proveedorId: e.currentTarget.value || null })}
                       >
@@ -574,7 +581,7 @@ export default function EventosPage() {
                     <div className="mt-3 grid gap-2">
                       <label className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Producto (dropdown)</label>
                       <select
-                        className="premium-input"
+                        className="premium-input w-full"
                         value={pickProductoId}
                         onChange={(e) => {
                           const id = e.currentTarget.value;
@@ -590,11 +597,16 @@ export default function EventosPage() {
                           <option value="">
                             {selected.proveedorId ? "Selecciona un producto…" : "Selecciona proveedor para ver productos…"}
                           </option>
+                        {selected.proveedorId && catalogoDropdown.length === 0 ? (
+                          <option value="" disabled>
+                            No hay productos para este proveedor
+                          </option>
+                        ) : null}
                         {catalogoDropdown.map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.articulo}
-                            </option>
-                          ))}
+                          <option key={p.id} value={p.id}>
+                            {p.articulo}
+                          </option>
+                        ))}
                       </select>
                       <input
                         className="premium-input"
@@ -945,6 +957,7 @@ export default function EventosPage() {
 
 function CreateEvento({ onCreate }: { onCreate: (name: string) => void }) {
   const [name, setName] = useState("");
+  const canCreate = name.trim().length > 0;
   return (
     <div className="mt-3 grid gap-2">
       <input
@@ -956,11 +969,16 @@ function CreateEvento({ onCreate }: { onCreate: (name: string) => void }) {
       />
       <button
         type="button"
-        className="premium-btn-primary"
+        className={[
+          "transition-colors",
+          canCreate ? "premium-btn-primary" : "min-h-12 rounded-2xl bg-slate-200 px-4 text-sm font-extrabold text-slate-600 opacity-70 cursor-not-allowed"
+        ].join(" ")}
         onClick={() => {
+          if (!canCreate) return;
           onCreate(name);
           setName("");
         }}
+        disabled={!canCreate}
       >
         Crear EVENTO
       </button>
