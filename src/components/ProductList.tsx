@@ -156,7 +156,7 @@ function equivCajasTexto(stock: number, udsCaja: number | null | undefined): str
 }
 
 const STOCK_READONLY_CLASS =
-  "grid h-14 w-[5.5rem] shrink-0 place-items-center rounded-2xl border border-slate-200 bg-slate-100 px-2 text-center text-2xl font-black tabular-nums text-slate-700";
+  "grid h-14 w-[5.5rem] shrink-0 place-items-center rounded-2xl border border-slate-200 bg-white px-2 text-center text-2xl font-black tabular-nums text-slate-900";
 
 type QuickMovimientoTipo = "entrada_compra" | "salida_barra";
 
@@ -190,7 +190,7 @@ export function ProductList() {
   const role = getEffectiveRole(me);
   const canQr = canGenerateQr(role);
   const [tab, setTab] = useState<string>("todos");
-  const [stockErr, setStockErr] = useState<string | null>(null);
+  // UI: esta pantalla ya no permite editar stock directamente.
   const [search, setSearch] = useState<string>("");
   const [agruparPorProveedor, setAgruparPorProveedor] = useState(false);
 
@@ -625,19 +625,6 @@ export function ProductList() {
         </div>
       ) : null}
 
-      {stockErr ? (
-        <p
-          className={[
-            "rounded-2xl border p-3 text-sm",
-            stockErr.startsWith("INFO:")
-              ? "border-slate-200 bg-slate-50 text-slate-700"
-              : "border-red-200 bg-red-50 text-red-800"
-          ].join(" ")}
-        >
-          {stockErr.replace(/^INFO:\\s*/, "")}
-        </p>
-      ) : null}
-
       <div className="relative w-full">
         <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
         <input
@@ -748,14 +735,9 @@ export function ProductList() {
 
                   <div className="flex shrink-0 flex-col items-center gap-1">
                     <span className="text-[10px] font-bold uppercase text-slate-500">Stock</span>
-                    <button
-                      type="button"
-                      aria-label={`Stock de ${p.articulo}`}
-                      className={STOCK_READONLY_CLASS}
-                      onClick={() => setStockErr("INFO: Usa el botón de Recargar para mover stock")}
-                    >
+                    <div aria-label={`Stock de ${p.articulo}`} className={STOCK_READONLY_CLASS}>
                       {String(Math.max(0, Math.trunc(Number(p.stock_actual) || 0)))}
-                    </button>
+                    </div>
                   </div>
                 </div>
 
