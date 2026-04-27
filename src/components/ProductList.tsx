@@ -1,13 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Search } from "lucide-react";
 import { Drawer } from "@/components/ui/Drawer";
-import { IconWhatsApp } from "@/components/IconWhatsApp";
 import { Button } from "@/components/ui/Button";
 import { supabase } from "@/lib/supabase";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
@@ -15,13 +14,10 @@ import { stockSemaforo } from "@/lib/stockSemaforo";
 import { enqueueMovimiento, newClientUuid } from "@/lib/offlineQueue";
 import { requireUserId } from "@/lib/session";
 import { useProductosRealtime } from "@/lib/useProductosRealtime";
-import {
-  cantidadSugeridaPedido,
-  waUrlPedidoCestaProveedor
-} from "@/lib/whatsappPedido";
+// (Pedido por WhatsApp eliminado: la pantalla queda como catálogo + acciones superiores)
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 import { logActivity } from "@/lib/activityLog";
-import { getEffectiveRole, hasPermission, canAdjustStockAbsolute, canGenerateQr } from "@/lib/permissions";
+import { getEffectiveRole, canGenerateQr } from "@/lib/permissions";
 
 type Producto = {
   id: string;
@@ -159,8 +155,8 @@ function equivCajasTexto(stock: number, udsCaja: number | null | undefined): str
   return `${cajas} cajas + ${uds} uds`;
 }
 
-const STOCK_INPUT_CLASS =
-  "h-14 w-[5.5rem] shrink-0 rounded-2xl border-2 border-slate-800 bg-white px-2 text-center text-2xl font-black tabular-nums text-slate-900 shadow-inner focus:outline-none focus:ring-4 focus:ring-slate-300";
+const STOCK_READONLY_CLASS =
+  "grid h-14 w-[5.5rem] shrink-0 place-items-center rounded-2xl border border-slate-200 bg-slate-100 px-2 text-center text-2xl font-black tabular-nums text-slate-700";
 
 type QuickMovimientoTipo = "entrada_compra" | "salida_barra";
 
@@ -180,20 +176,6 @@ function errMsg(e: unknown): string {
   return "No se pudo completar la acción. Revisa la conexión y vuelve a intentarlo.";
 }
 
-function readEvtValue(
-  e:
-    | { currentTarget?: { value?: unknown }; target?: { value?: unknown } }
-    | null
-    | undefined
-): string {
-  try {
-    const v = e?.currentTarget?.value ?? e?.target?.value;
-    return typeof v === "string" ? v : String(v ?? "");
-  } catch {
-    return "";
-  }
-}
-
 export function ProductList() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -206,42 +188,29 @@ export function ProductList() {
   const queryClient = useQueryClient();
   const { me, activeEstablishmentId: establecimientoId, activeEstablishmentName } = useActiveEstablishment();
   const role = getEffectiveRole(me);
-  const canPedidos = hasPermission(role, "admin");
-  const canSetStockAbsolute = canAdjustStockAbsolute(role);
   const canQr = canGenerateQr(role);
   const [tab, setTab] = useState<string>("todos");
-  const [busyId, setBusyId] = useState<string | null>(null);
   const [stockErr, setStockErr] = useState<string | null>(null);
-  const [stockDraft, setStockDraft] = useState<Record<string, string>>({});
   const [search, setSearch] = useState<string>("");
   const [agruparPorProveedor, setAgruparPorProveedor] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
-  const [cestaOpen, setCestaOpen] = useState(false);
 
   // Recargar neveras (salida multiproducto + devolución de vacíos al almacén)
   const [recargaOpen, setRecargaOpen] = useState(false);
-  const [recargaStep, setRecargaStep] = useState<"qty" | "vacios">("qty");
+  const [recargaSearch, setRecargaSearch] = useState("");
+  const [recargaPickedIds, setRecargaPickedIds] = useState<Set<string>>(() => new Set());
   const [recargaQty, setRecargaQty] = useState<Record<string, string>>({});
   const [recargaVacios, setRecargaVacios] = useState<Record<string, string>>({});
   const [recargaBusy, setRecargaBusy] = useState(false);
   const [recargaErr, setRecargaErr] = useState<string | null>(null);
 
-  const [movOpen, setMovOpen] = useState(false);
-  const [movProd, setMovProd] = useState<Producto | null>(null);
-  const [movStep, setMovStep] = useState<"menu" | "cantidad">("menu");
-  const [movTipo, setMovTipo] = useState<QuickMovimientoTipo>("entrada_compra");
-  const [movCantidad, setMovCantidad] = useState<string>("1");
-  const [movBusy, setMovBusy] = useState(false);
-  const qtyRef = useRef<HTMLInputElement | null>(null);
-
-  // Devolver envases vacíos (manual, staff/admin/superadmin)
-  const [vaciosOpen, setVaciosOpen] = useState(false);
-  const [vaciosStep, setVaciosStep] = useState<"pick" | "qty">("pick");
-  const [vaciosSearch, setVaciosSearch] = useState("");
-  const [vaciosProd, setVaciosProd] = useState<Producto | null>(null);
-  const [vaciosQty, setVaciosQty] = useState<string>("1");
-  const [vaciosBusy, setVaciosBusy] = useState(false);
-  const [vaciosErr, setVaciosErr] = useState<string | null>(null);
+  // Modificar stock (ajuste centralizado, multiproducto)
+  const [modOpen, setModOpen] = useState(false);
+  const [modSearch, setModSearch] = useState("");
+  const [modPickedIds, setModPickedIds] = useState<Set<string>>(() => new Set());
+  const [modQty, setModQty] = useState<Record<string, string>>({});
+  const [modTipo, setModTipo] = useState<QuickMovimientoTipo>("entrada_compra");
+  const [modBusy, setModBusy] = useState(false);
+  const [modErr, setModErr] = useState<string | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["productos", establecimientoId],
@@ -260,16 +229,7 @@ export function ProductList() {
     ]
   });
 
-  useEffect(() => {
-    if (!data?.length) return;
-    setStockDraft((prev) => {
-      const next = { ...prev };
-      for (const p of data) {
-        if (next[p.id] === undefined) next[p.id] = String(Math.max(0, Math.trunc(p.stock_actual)));
-      }
-      return next;
-    });
-  }, [data]);
+  // Stock: solo lectura en esta lista (se mueve con Recargar Neveras / Pedidos).
 
   // Deep link: /stock?id=<producto_id>&scan=1 abre automáticamente "GESTIONAR" del producto.
   useEffect(() => {
@@ -315,67 +275,7 @@ export function ProductList() {
     return filteredForMode.filter((p) => p.articulo.toLowerCase().includes(q));
   }, [filteredForMode, search]);
 
-  const vaciosPickList = useMemo(() => {
-    const q = vaciosSearch.trim().toLowerCase();
-    const list = Array.isArray(data) ? data : [];
-    if (!q) return list;
-    return list.filter((p) => (p.articulo ?? "").toLowerCase().includes(q));
-  }, [data, vaciosSearch]);
-
-  async function commitDevolverVacios() {
-    if (!establecimientoId || !vaciosProd) return;
-    const n = Math.max(0, Math.trunc(Number(String(vaciosQty).replace(",", "."))));
-    if (!Number.isFinite(n) || n <= 0) return;
-    setVaciosBusy(true);
-    setVaciosErr(null);
-    try {
-      const usuario_id = await requireUserId();
-      const payload = {
-        client_uuid: newClientUuid(),
-        producto_id: vaciosProd.id,
-        establecimiento_id: establecimientoId,
-        tipo: "devolucion_envase" as const,
-        cantidad: n,
-        usuario_id,
-        timestamp: new Date().toISOString()
-      };
-
-      if (typeof navigator !== "undefined" && navigator.onLine) {
-        const { error } = await supabase()
-          .from("movimientos")
-          .upsert(payload, { onConflict: "client_uuid", ignoreDuplicates: true });
-        if (error) throw error;
-      } else {
-        await enqueueMovimiento(payload);
-      }
-
-      // Optimistic: suma a stock_vacios
-      const applyOptimistic = (prevList: Producto[]) =>
-        prevList.map((x) => {
-          if (x.id !== vaciosProd.id) return x;
-          const nextV = Math.max(0, Math.trunc(Number(x.stock_vacios ?? 0)) + n);
-          return { ...x, stock_vacios: nextV };
-        });
-      queryClient.setQueryData(["productos", establecimientoId], (old) => applyOptimistic(((old as Producto[] | undefined) ?? []) as Producto[]));
-      queryClient.setQueryData(["dashboard", "productos", establecimientoId], (old) => applyOptimistic(((old as Producto[] | undefined) ?? []) as Producto[]));
-
-      await queryClient.invalidateQueries({ queryKey: ["productos", establecimientoId] });
-      await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", establecimientoId] });
-      await queryClient.invalidateQueries({ queryKey: ["movimientos", establecimientoId] });
-
-      setVaciosOpen(false);
-      setVaciosStep("pick");
-      setVaciosSearch("");
-      setVaciosProd(null);
-      setVaciosQty("1");
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.error(e);
-      setVaciosErr(errMsg(e));
-    } finally {
-      setVaciosBusy(false);
-    }
-  }
+  // Eliminado: devolución de envases vacíos manual (ahora se captura dentro de "RECARGAR NEVERAS").
 
   const orderedList = useMemo(() => {
     const list = [...filteredBySearch];
@@ -388,48 +288,74 @@ export function ProductList() {
     });
   }, [filteredBySearch, agruparPorProveedor]);
 
-  const estNombre = activeEstablishmentName?.trim() || "mi establecimiento";
+  void activeEstablishmentName;
 
-  const toggleSelect = useCallback((id: string) => {
-    setSelectedIds((prev) => {
+  const recargaPicked = useMemo(() => {
+    const list = (data ?? []).filter((p) => recargaPickedIds.has(p.id));
+    return list.slice().sort((a, b) => a.articulo.localeCompare(b.articulo, "es", { sensitivity: "base" }));
+  }, [data, recargaPickedIds]);
+
+  const modPicked = useMemo(() => {
+    const list = (data ?? []).filter((p) => modPickedIds.has(p.id));
+    return list.slice().sort((a, b) => a.articulo.localeCompare(b.articulo, "es", { sensitivity: "base" }));
+  }, [data, modPickedIds]);
+
+  function openRecarga() {
+    setRecargaErr(null);
+    setRecargaSearch("");
+    setRecargaPickedIds(new Set());
+    setRecargaQty({});
+    setRecargaVacios({});
+    setRecargaOpen(true);
+  }
+
+  function addToRecarga(p: Producto) {
+    setRecargaPickedIds((prev) => {
       const n = new Set(prev);
-      if (n.has(id)) n.delete(id);
-      else n.add(id);
+      n.add(p.id);
       return n;
     });
-  }, []);
+    setRecargaQty((prev) => ({ ...prev, [p.id]: prev[p.id] ?? "1" }));
+    setRecargaVacios((prev) => ({ ...prev, [p.id]: prev[p.id] ?? "0" }));
+  }
 
-  const selectedProductos = useMemo(() => {
-    if (!data) return [];
-    return data.filter((p) => selectedIds.has(p.id));
-  }, [data, selectedIds]);
-
-  const selectedForRecarga = useMemo(() => {
-    const list = selectedProductos.slice().sort((a, b) => a.articulo.localeCompare(b.articulo, "es", { sensitivity: "base" }));
-    return list;
-  }, [selectedProductos]);
-
-  function openRecargaWith(products: Producto[]) {
-    if (!products.length) return;
-    setRecargaErr(null);
-    // Inicializa qty a 1 si faltaba
-    setRecargaQty((prev) => {
-      const next = { ...prev };
-      for (const p of products) {
-        if (!next[p.id]) next[p.id] = "1";
-      }
-      return next;
+  function removeFromRecarga(id: string) {
+    setRecargaPickedIds((prev) => {
+      const n = new Set(prev);
+      n.delete(id);
+      return n;
     });
-    // Inicializa vacíos a 0
-    setRecargaVacios((prev) => {
-      const next = { ...prev };
-      for (const p of products) {
-        if (next[p.id] == null) next[p.id] = "0";
-      }
-      return next;
+  }
+
+  function openModificarStock(opts?: { preselect?: Producto | null }) {
+    setModErr(null);
+    setModSearch("");
+    setModPickedIds(new Set());
+    setModQty({});
+    setModTipo("entrada_compra");
+    if (opts?.preselect) {
+      const p = opts.preselect;
+      setModPickedIds(new Set([p.id]));
+      setModQty({ [p.id]: "1" });
+    }
+    setModOpen(true);
+  }
+
+  function addToMod(p: Producto) {
+    setModPickedIds((prev) => {
+      const n = new Set(prev);
+      n.add(p.id);
+      return n;
     });
-    setRecargaStep("qty");
-    setRecargaOpen(true);
+    setModQty((prev) => ({ ...prev, [p.id]: prev[p.id] ?? "1" }));
+  }
+
+  function removeFromMod(id: string) {
+    setModPickedIds((prev) => {
+      const n = new Set(prev);
+      n.delete(id);
+      return n;
+    });
   }
 
   function sanitizeIntString(raw: string): string {
@@ -439,14 +365,14 @@ export function ProductList() {
 
   async function commitRecargaNeveras() {
     if (!establecimientoId) return;
-    if (!selectedForRecarga.length) return;
+    if (!recargaPicked.length) return;
     setRecargaBusy(true);
     setRecargaErr(null);
     try {
       const usuario_id = await requireUserId();
       const nowIso = new Date().toISOString();
 
-      const salidas = selectedForRecarga
+      const salidas = recargaPicked
         .map((p) => ({ p, n: Math.max(0, Math.trunc(Number(recargaQty[p.id] ?? "0") || 0)) }))
         .filter((x) => x.n > 0);
       if (!salidas.length) {
@@ -517,10 +443,7 @@ export function ProductList() {
         metadata: { productos: salidas.map((s) => ({ producto_id: s.p.id, cantidad: s.n, vacios: Number(recargaVacios[s.p.id] ?? 0) || 0 })) }
       });
 
-      // Limpia selección y cierra
-      setSelectedIds(new Set());
       setRecargaOpen(false);
-      setRecargaStep("qty");
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error(e);
@@ -530,190 +453,79 @@ export function ProductList() {
     }
   }
 
-  const cestaPorProveedor = useMemo(() => {
-    const map = new Map<
-      string,
-      { nombre: string; telefono: string | null; items: Producto[] }
-    >();
-    for (const p of selectedProductos) {
-      const key = proveedorNombreOrDefault(p);
-      const tel = p.proveedor?.telefono_whatsapp ?? null;
-      let g = map.get(key);
-      if (!g) {
-        g = { nombre: key, telefono: tel, items: [] };
-        map.set(key, g);
-      }
-      g.items.push(p);
-      if (tel) g.telefono = tel;
-    }
-    return Array.from(map.values());
-  }, [selectedProductos]);
+  const modTipoLabel = modTipo === "entrada_compra" ? "Entrada (Pedido/Inventario)" : "Salida (Merma/Ajuste)";
 
-  const setStockFromInput = async (p: Producto, raw: string) => {
+  async function commitModificarStock() {
     if (!establecimientoId) return;
-    const n = Math.max(0, Math.trunc(Number(String(raw).replace(",", "."))));
-    setBusyId(p.id);
-    setStockErr(null);
+    if (!modPicked.length) return;
+    setModBusy(true);
+    setModErr(null);
     try {
-      const prev = Math.max(0, Math.trunc(Number(p.stock_actual) || 0));
-      const delta = n - prev;
-      if (delta === 0) {
-        setStockDraft((d) => ({ ...d, [p.id]: String(n) }));
+      const usuario_id = await requireUserId();
+      const nowIso = new Date().toISOString();
+      const cambios = modPicked
+        .map((p) => ({ p, n: Math.max(0, Math.trunc(Number(modQty[p.id] ?? "0") || 0)) }))
+        .filter((x) => x.n > 0);
+      if (!cambios.length) {
+        setModErr("Indica al menos una cantidad > 0.");
         return;
       }
 
-      const tipo: "entrada" | "salida" = delta > 0 ? "entrada" : "salida";
-      const cantidad = Math.abs(delta);
-      const usuario_id = await requireUserId();
-      const payload = {
+      const movimientos = cambios.map(({ p, n }) => ({
         client_uuid: newClientUuid(),
         producto_id: p.id,
         establecimiento_id: establecimientoId,
-        tipo,
-        cantidad,
+        tipo: modTipo,
+        cantidad: n,
         usuario_id,
-        timestamp: new Date().toISOString()
-      };
+        timestamp: nowIso
+      }));
 
       if (typeof navigator !== "undefined" && navigator.onLine) {
-        const { error } = await supabase()
-          .from("movimientos")
-          .upsert(payload, { onConflict: "client_uuid", ignoreDuplicates: true });
+        const { error } = await supabase().from("movimientos").upsert(movimientos, { onConflict: "client_uuid", ignoreDuplicates: true });
         if (error) throw error;
       } else {
-        await enqueueMovimiento(payload);
+        for (const m of movimientos) {
+          await enqueueMovimiento(m as Parameters<typeof enqueueMovimiento>[0]);
+        }
       }
 
-      await logActivity({
-        establecimientoId,
-        icon: "stock",
-        message: `Stock actualizado: ${p.articulo} → ${n} (${tipo === "entrada" ? "+" : "-"}${cantidad}).`,
-        metadata: { producto_id: p.id, tipo, cantidad, stock: n }
-      });
-
-      setStockDraft((d) => ({ ...d, [p.id]: String(n) }));
-
-      // Optimistic UI: ajusta caches inmediatamente
-      const applyOptimistic = (prevList: Producto[]) =>
-        prevList.map((x) => {
-          if (x.id !== p.id) return x;
-          const nextStock = Math.max(0, Math.trunc(Number(x.stock_actual)) + (tipo === "entrada" ? cantidad : -cantidad));
+      const applyOptimistic = (prev: Producto[]) =>
+        prev.map((x) => {
+          const c = cambios.find((t) => t.p.id === x.id);
+          if (!c) return x;
+          const delta = modTipo === "entrada_compra" ? c.n : modTipo === "salida_barra" ? -c.n : 0;
+          const nextStock = Math.max(0, Math.trunc(Number(x.stock_actual ?? 0) || 0) + delta);
           return { ...x, stock_actual: nextStock };
         });
-      queryClient.setQueryData(["productos", establecimientoId], (old) => applyOptimistic(((old as Producto[] | undefined) ?? []) as Producto[]));
-      queryClient.setQueryData(["dashboard", "productos", establecimientoId], (old) =>
-        applyOptimistic(((old as Producto[] | undefined) ?? []) as Producto[])
-      );
 
+      queryClient.setQueryData(["productos", establecimientoId], (old) => applyOptimistic((old as Producto[] | undefined) ?? []));
+      queryClient.setQueryData(["dashboard", "productos", establecimientoId], (old) => applyOptimistic((old as Producto[] | undefined) ?? []));
       await queryClient.invalidateQueries({ queryKey: ["productos", establecimientoId] });
       await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", establecimientoId] });
       await queryClient.invalidateQueries({ queryKey: ["movimientos", establecimientoId] });
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.error(e);
-      setStockErr(errMsg(e));
-      setStockDraft((d) => ({ ...d, [p.id]: String(p.stock_actual) }));
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  useEffect(() => {
-    if (!movOpen) return;
-    const t = window.setTimeout(() => {
-      qtyRef.current?.focus();
-      qtyRef.current?.select();
-    }, 60);
-    return () => window.clearTimeout(t);
-  }, [movOpen]);
-
-  const openGestionar = (p: Producto) => {
-    setMovProd(p);
-    setMovCantidad("1");
-    setMovStep("menu");
-    setMovOpen(true);
-  };
-
-  async function commitQuickMovimiento() {
-    if (!establecimientoId || !movProd) return;
-    const n = Math.max(0, Math.trunc(Number(String(movCantidad).replace(",", "."))));
-    if (!Number.isFinite(n) || n <= 0) return;
-    setMovBusy(true);
-    setStockErr(null);
-    try {
-      const usuario_id = await requireUserId();
-      const payload: {
-        client_uuid: string;
-        producto_id: string;
-        establecimiento_id: string;
-        tipo: QuickMovimientoTipo;
-        cantidad: number;
-        usuario_id: string;
-        timestamp: string;
-      } = {
-        client_uuid: newClientUuid(),
-        producto_id: movProd.id,
-        establecimiento_id: establecimientoId,
-        tipo: movTipo,
-        cantidad: n,
-        usuario_id,
-        timestamp: new Date().toISOString()
-      };
-
-      if (typeof navigator !== "undefined" && navigator.onLine) {
-        const { error } = await supabase()
-          .from("movimientos")
-          .upsert(payload, { onConflict: "client_uuid", ignoreDuplicates: true });
-        if (error) throw error;
-      } else {
-        await enqueueMovimiento(payload);
-      }
 
       await logActivity({
         establecimientoId,
         icon: "stock",
-        message:
-          movTipo === "entrada_compra"
-            ? `Entrada de compra: +${n} ${movProd.articulo}.`
-            : `Salida a barra: -${n} ${movProd.articulo}.`,
-        metadata: { producto_id: movProd.id, tipo: movTipo, cantidad: n }
+        message: `ha modificado stock (${modTipoLabel}).`,
+        actorName: me?.email ?? null,
+        metadata: { tipo: modTipo, productos: cambios.map((c) => ({ producto_id: c.p.id, cantidad: c.n })) }
       });
 
-      // Optimistic UI: actualiza caches inmediatamente (sin esperar realtime/refetch)
-      const applyOptimistic = (prev: Producto[]) =>
-        prev.map((x) => {
-          if (x.id !== movProd.id) return x;
-          const deltaStock = movTipo === "entrada_compra" ? n : movTipo === "salida_barra" ? -n : 0;
-          const nextStock = Math.max(0, Math.trunc(Number(x.stock_actual)) + deltaStock);
-          // Importante: 'salida_barra' ya NO genera vacíos automáticamente.
-          return { ...x, stock_actual: nextStock };
-        });
-
-      queryClient.setQueryData(["productos", establecimientoId], (old) => {
-        const prev = (old as Producto[] | undefined) ?? [];
-        return applyOptimistic(prev);
-      });
-      queryClient.setQueryData(["dashboard", "productos", establecimientoId], (old) => {
-        const prev = (old as Producto[] | undefined) ?? [];
-        return applyOptimistic(prev);
-      });
-
-      await queryClient.invalidateQueries({ queryKey: ["productos", establecimientoId] });
-      await queryClient.invalidateQueries({ queryKey: ["dashboard", "productos", establecimientoId] });
-      setMovOpen(false);
-      setMovProd(null);
-      setMovStep("menu");
-      if (returnTo) {
-        router.replace(returnTo);
-      }
+      setModOpen(false);
+      if (returnTo) router.replace(returnTo);
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error(e);
-      setStockErr(errMsg(e));
+      setModErr(errMsg(e));
     } finally {
-      setMovBusy(false);
+      setModBusy(false);
     }
   }
+
+  // (bloqueado) Edición directa de stock desde la lista.
+  const openGestionar = (p: Producto) => openModificarStock({ preselect: p });
 
   if (me?.role === null && !me?.profileReady) return <p className="text-sm text-slate-600">Cargando perfil…</p>;
   if (isLoading) return <p className="text-sm text-slate-600">Cargando stock…</p>;
@@ -732,19 +544,22 @@ export function ProductList() {
   return (
     <div className="space-y-4 pb-32">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <button
-          type="button"
-          onClick={() => {
-            setVaciosErr(null);
-            setVaciosOpen(true);
-            setVaciosStep("pick");
-            setVaciosProd(null);
-            setVaciosQty("1");
-          }}
-          className="min-h-12 w-full rounded-3xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-900 shadow-sm hover:bg-slate-50 sm:w-auto"
-        >
-          Devolver Envases Vacíos
-        </button>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+          <button
+            type="button"
+            onClick={() => openRecarga()}
+            className="min-h-12 w-full rounded-3xl border-2 border-slate-900 bg-slate-900 px-4 text-sm font-extrabold uppercase tracking-wide text-white shadow-sm hover:bg-slate-800 sm:w-auto"
+          >
+            RECARGAR NEVERAS
+          </button>
+          <button
+            type="button"
+            onClick={() => openModificarStock()}
+            className="min-h-12 w-full rounded-3xl border border-slate-200 bg-white px-4 text-sm font-extrabold uppercase tracking-wide text-slate-900 shadow-sm hover:bg-slate-50 sm:w-auto"
+          >
+            MODIFICAR STOCK
+          </button>
+        </div>
       </div>
       {modoVacios ? (
         <div className="rounded-3xl border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm">
@@ -767,7 +582,16 @@ export function ProductList() {
       ) : null}
 
       {stockErr ? (
-        <p className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{stockErr}</p>
+        <p
+          className={[
+            "rounded-2xl border p-3 text-sm",
+            stockErr.startsWith("INFO:")
+              ? "border-slate-200 bg-slate-50 text-slate-700"
+              : "border-red-200 bg-red-50 text-red-800"
+          ].join(" ")}
+        >
+          {stockErr.replace(/^INFO:\\s*/, "")}
+        </p>
       ) : null}
 
       <div className="relative w-full">
@@ -828,7 +652,6 @@ export function ProductList() {
                 : { bg: "#ECFDF5", text: "#065F46", ring: "ring-1 ring-emerald-100", label: "OK" };
 
           const key = productTabKey(p);
-          const busy = busyId === p.id;
           const provLabel = proveedorNombreOrDefault(p);
           const prev = idx > 0 ? orderedList[idx - 1] : null;
           const showProvHeader = agruparPorProveedor && (!prev || proveedorNombreOrDefault(prev) !== provLabel);
@@ -846,16 +669,6 @@ export function ProductList() {
                 ].join(" ")}
               >
                 <div className="flex items-start gap-3">
-                  <label className="mt-1 flex shrink-0 cursor-pointer items-center">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.has(p.id)}
-                      onChange={() => toggleSelect(p.id)}
-                      className="h-6 w-6 rounded border-slate-300 text-slate-900"
-                      aria-label={`Seleccionar ${p.articulo}`}
-                    />
-                  </label>
-
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <Link href={`/p/${encodeURIComponent(p.id)}`} className="min-w-0">
@@ -886,45 +699,19 @@ export function ProductList() {
 
                   <div className="flex shrink-0 flex-col items-center gap-1">
                     <span className="text-[10px] font-bold uppercase text-slate-500">Stock</span>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
+                    <button
+                      type="button"
                       aria-label={`Stock de ${p.articulo}`}
-                      disabled={busy || !canSetStockAbsolute}
-                      className={STOCK_INPUT_CLASS}
-                      value={stockDraft[p.id] ?? String(p.stock_actual)}
-                      onChange={(e) => {
-                        const v = e.currentTarget?.value ?? readEvtValue(e);
-                        setStockDraft((d) => ({ ...d, [p.id]: v }));
-                      }}
-                      onBlur={() => {
-                        if (!canSetStockAbsolute) {
-                          // Staff: no puede fijar stock absoluto desde aquí.
-                          setStockDraft((d) => ({ ...d, [p.id]: String(p.stock_actual) }));
-                          return;
-                        }
-                        // En algunos móviles el evento puede llegar sin currentTarget; usamos el estado controlado.
-                        void setStockFromInput(p, stockDraft[p.id] ?? String(p.stock_actual));
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.currentTarget.blur();
-                        }
-                      }}
-                    />
+                      className={STOCK_READONLY_CLASS}
+                      onClick={() => setStockErr("INFO: Usa el botón de Recargar para mover stock")}
+                    >
+                      {String(Math.max(0, Math.trunc(Number(p.stock_actual) || 0)))}
+                    </button>
                   </div>
                 </div>
 
-                <div className="mt-4 flex flex-wrap items-stretch gap-2 pl-9">
-                  <button
-                    type="button"
-                    onClick={() => openGestionar(p)}
-                    className="inline-flex min-h-12 flex-1 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
-                  >
-                    GESTIONAR
-                  </button>
-                  {canQr ? (
+                {canQr ? (
+                  <div className="mt-4 flex flex-wrap items-stretch gap-2">
                     <Link
                       href={`/qr/${encodeURIComponent(p.id)}?print=1`}
                       target="_blank"
@@ -933,8 +720,8 @@ export function ProductList() {
                     >
                       Generar QR
                     </Link>
-                  ) : null}
-                </div>
+                  </div>
+                ) : null}
               </div>
             </div>
           );
@@ -951,409 +738,204 @@ export function ProductList() {
         </p>
       ) : null}
 
-      {selectedIds.size > 0 ? (
-        <div className="fixed bottom-24 right-4 z-30 flex flex-col gap-2" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
-          <button
-            type="button"
-            className="flex min-h-[52px] items-center justify-center rounded-full border-2 border-slate-900 bg-slate-900 px-5 py-3 text-base font-bold text-white shadow-xl"
-            onClick={() => openRecargaWith(selectedForRecarga)}
-          >
-            Recargar Neveras ({selectedIds.size})
-          </button>
-          {canPedidos ? (
-            <button
-              type="button"
-              className="flex min-h-[52px] items-center justify-center rounded-full border border-slate-200 bg-white px-5 py-3 text-base font-bold text-slate-900 shadow-xl"
-              onClick={() => setCestaOpen(true)}
-            >
-              Pedido ({selectedIds.size})
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-
-      {canPedidos ? (
-        <Drawer open={cestaOpen} title="Resumen del pedido" onClose={() => setCestaOpen(false)}>
-          <div className="space-y-6 pb-4">
-            <p className="text-sm text-slate-600">
-              {estNombre} · {selectedProductos.length} artículo{selectedProductos.length === 1 ? "" : "s"}
-            </p>
-            {cestaPorProveedor.map((grupo) => {
-              const lineas = grupo.items.map((p) => {
-                const min = typeof p.stock_minimo === "number" ? p.stock_minimo : 0;
-                const cant = cantidadSugeridaPedido(p.stock_actual, min);
-                return {
-                  articulo: p.articulo,
-                  cantidad: cant,
-                  unidad: p.unidad
-                };
-              });
-              const url = waUrlPedidoCestaProveedor({
-                nombreProveedor: grupo.nombre === "Sin proveedor" ? "Proveedor" : grupo.nombre,
-                telefonoWhatsapp: grupo.telefono,
-                nombreEstablecimiento: estNombre,
-                lineas
-              });
-              return (
-                <section key={grupo.nombre} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <h3 className="font-bold text-slate-900">{grupo.nombre}</h3>
-                  <ul className="mt-2 list-inside list-disc text-sm text-slate-700">
-                    {lineas.map((l, i) => (
-                      <li key={i}>
-                        {l.cantidad} {(l.unidad ?? "uds").toString()} de {l.articulo}
-                      </li>
-                    ))}
-                  </ul>
-                  <a
-                    href={url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-600"
-                  >
-                    <IconWhatsApp className="h-6 w-6 shrink-0 text-white" />
-                    Enviar pedido a {grupo.nombre === "Sin proveedor" ? "WhatsApp" : grupo.nombre}
-                  </a>
-                </section>
-              );
-            })}
-          </div>
-        </Drawer>
-      ) : null}
-
       <Drawer
         open={recargaOpen}
         title="Recargar neveras"
         onClose={() => {
           if (recargaBusy) return;
           setRecargaOpen(false);
-          setRecargaStep("qty");
           setRecargaErr(null);
         }}
       >
-        <div className="space-y-3 pb-3">
+        <div className="space-y-4 pb-2">
           {recargaErr ? (
             <p className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{recargaErr}</p>
           ) : null}
 
-          {recargaStep === "qty" ? (
-            <div className="space-y-3">
-              <p className="text-sm text-slate-600">Selecciona cantidades de salida para varios productos antes de confirmar.</p>
-              <div className="space-y-2">
-                {selectedForRecarga.map((p) => (
-                  <div key={p.id} className="rounded-2xl border border-slate-200 bg-white p-3">
-                    <p className="text-sm font-semibold text-slate-900">{p.articulo}</p>
-                    <p className="mt-1 text-xs text-slate-500">Stock actual: {Math.max(0, Math.trunc(Number(p.stock_actual ?? 0) || 0))}</p>
-                    <label className="mt-2 block text-xs font-semibold text-slate-700">Cantidad a recargar</label>
-                    <input
-                      className="mt-1 min-h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base"
-                      inputMode="numeric"
-                      type="text"
-                      pattern="[0-9]*"
-                      value={recargaQty[p.id] ?? "1"}
-                      onChange={(e) => setRecargaQty((d) => ({ ...d, [p.id]: sanitizeIntString(e.currentTarget.value) }))}
-                      disabled={recargaBusy}
-                    />
-                  </div>
-                ))}
-              </div>
-              <button
-                type="button"
-                className="min-h-12 w-full rounded-2xl bg-black px-4 text-sm font-semibold text-white hover:bg-slate-900 disabled:opacity-50"
-                disabled={recargaBusy || !establecimientoId || selectedForRecarga.length === 0}
-                onClick={() => setRecargaStep("vacios")}
-              >
-                Confirmar recarga
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <p className="text-sm font-semibold text-slate-900">¿Cuántos envases vacíos vas a devolver al almacén?</p>
-              <p className="text-sm text-slate-600">Anota los vacíos correspondientes a los productos que estás recargando. Puedes dejar 0 si no hay.</p>
-              <div className="space-y-2">
-                {selectedForRecarga.map((p) => (
-                  <div key={p.id} className="rounded-2xl border border-slate-200 bg-white p-3">
-                    <p className="text-sm font-semibold text-slate-900">{p.articulo}</p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      Recarga: {Math.max(0, Math.trunc(Number(recargaQty[p.id] ?? "0") || 0))} · Vacíos en almacén actuales:{" "}
-                      {Math.max(0, Math.trunc(Number(p.stock_vacios ?? 0) || 0))}
-                    </p>
-                    <label className="mt-2 block text-xs font-semibold text-slate-700">Vacíos devueltos al almacén</label>
-                    <input
-                      className="mt-1 min-h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base"
-                      inputMode="numeric"
-                      type="text"
-                      pattern="[0-9]*"
-                      value={recargaVacios[p.id] ?? "0"}
-                      onChange={(e) => setRecargaVacios((d) => ({ ...d, [p.id]: sanitizeIntString(e.currentTarget.value) }))}
-                      disabled={recargaBusy}
-                    />
-                  </div>
-                ))}
-              </div>
+          <input
+            className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+            placeholder="Buscar y añadir producto…"
+            value={recargaSearch}
+            onChange={(e) => setRecargaSearch(e.currentTarget.value)}
+          />
 
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="max-h-[30vh] overflow-auto rounded-2xl border border-slate-200 bg-white">
+            {(data ?? [])
+              .filter((p) => {
+                const q = recargaSearch.trim().toLowerCase();
+                if (!q) return false;
+                if (recargaPickedIds.has(p.id)) return false;
+                return (p.articulo ?? "").toLowerCase().includes(q);
+              })
+              .slice(0, 30)
+              .map((p) => (
                 <button
+                  key={p.id}
                   type="button"
-                  className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 hover:bg-slate-50 disabled:opacity-50"
                   disabled={recargaBusy}
-                  onClick={() => setRecargaStep("qty")}
+                  onClick={() => addToRecarga(p)}
+                  className="flex w-full items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-left hover:bg-slate-50 disabled:opacity-50"
                 >
-                  Volver
+                  <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">{p.articulo}</span>
+                  <span className="shrink-0 text-xs font-semibold text-slate-600">Añadir</span>
                 </button>
-                <button
-                  type="button"
-                  className="min-h-12 w-full rounded-2xl bg-black px-4 text-sm font-semibold text-white hover:bg-slate-900 disabled:opacity-50"
-                  disabled={recargaBusy || !establecimientoId}
-                  onClick={() => void commitRecargaNeveras()}
-                >
-                  {recargaBusy ? "Procesando…" : "Confirmar y registrar"}
-                </button>
-              </div>
-              <button
-                type="button"
-                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 hover:bg-slate-50 disabled:opacity-50"
-                disabled={recargaBusy}
-                onClick={() => {
-                  setRecargaVacios((prev) => {
-                    const next = { ...prev };
-                    for (const p of selectedForRecarga) next[p.id] = "0";
-                    return next;
-                  });
-                }}
-              >
-                Ninguno (0)
-              </button>
-            </div>
-          )}
-        </div>
-      </Drawer>
+              ))}
+            {!recargaSearch.trim() ? <p className="p-4 text-sm text-slate-600">Escribe para buscar productos.</p> : null}
+          </div>
 
-      <Drawer
-        open={movOpen}
-        title={movProd ? `Gestionar · ${movProd.articulo}` : "Gestionar"}
-        onClose={() => {
-          if (movBusy) return;
-          setMovOpen(false);
-          setMovProd(null);
-          setMovStep("menu");
-        }}
-      >
-        <div className="space-y-3">
-          {movStep === "menu" ? (
-            <div className="space-y-2">
-              {canPedidos ? (
-                <button
-                  type="button"
-                  disabled={movBusy}
-                  onClick={() => {
-                    setMovTipo("entrada_compra");
-                    setMovStep("cantidad");
-                  }}
-                  className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-50"
-                >
-                  Registrar Entrada (Compra)
-                </button>
-              ) : null}
-              <button
-                type="button"
-                disabled={movBusy}
-                onClick={() => {
-                  if (!movProd) return;
-                  // Flujo nuevo: Recargar Neveras (multiproducto + paso de vacíos)
-                  setSelectedIds((prev) => new Set(prev).add(movProd.id));
-                  openRecargaWith([movProd]);
-                  setMovOpen(false);
-                  setMovProd(null);
-                  setMovStep("menu");
-                }}
-                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-50"
-              >
-                Recargar Neveras
-              </button>
-              {canPedidos && movProd ? (
-                <Link
-                  href={`/admin/productos/${encodeURIComponent(movProd.id)}/editar`}
-                  className="flex min-h-12 w-full items-center rounded-2xl border border-slate-200 bg-white px-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-50"
-                >
-                  Editar Producto
-                </Link>
-              ) : null}
+          {recargaPicked.length ? (
+            <div className="rounded-2xl border border-slate-200 bg-white">
+              <div className="grid grid-cols-[1fr_104px_124px_44px] gap-2 border-b border-slate-100 px-4 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                <div>Producto</div>
+                <div className="text-center">A neveras</div>
+                <div className="text-center">Vacíos almacén</div>
+                <div />
+              </div>
+              {recargaPicked.map((p) => (
+                <div key={p.id} className="grid grid-cols-[1fr_104px_124px_44px] items-center gap-2 border-b border-slate-100 px-4 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-900">{p.articulo}</p>
+                    <p className="truncate text-xs text-slate-500">Stock: {Math.max(0, Math.trunc(Number(p.stock_actual) || 0))}</p>
+                  </div>
+                  <input
+                    className="min-h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-center text-base font-bold tabular-nums text-slate-900"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={recargaQty[p.id] ?? ""}
+                    onChange={(e) => setRecargaQty((d) => ({ ...d, [p.id]: sanitizeIntString(e.currentTarget.value) }))}
+                    disabled={recargaBusy}
+                    aria-label={`Cantidad a neveras de ${p.articulo}`}
+                  />
+                  <input
+                    className="min-h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-center text-base font-bold tabular-nums text-slate-900"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={recargaVacios[p.id] ?? ""}
+                    onChange={(e) => setRecargaVacios((d) => ({ ...d, [p.id]: sanitizeIntString(e.currentTarget.value) }))}
+                    disabled={recargaBusy}
+                    aria-label={`Vacíos al almacén de ${p.articulo}`}
+                  />
+                  <button
+                    type="button"
+                    className="min-h-10 w-full rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    disabled={recargaBusy}
+                    onClick={() => removeFromRecarga(p.id)}
+                    aria-label={`Quitar ${p.articulo}`}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
             </div>
           ) : (
-            <div className="space-y-3">
-              <button
-                type="button"
-                disabled={movBusy}
-                onClick={() => setMovStep("menu")}
-                className="min-h-10 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50"
-              >
-                Volver
-              </button>
-
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-900">Cantidad</label>
-                <input
-                  className="min-h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base"
-                  inputMode="numeric"
-                  type="text"
-                  pattern="[0-9]*"
-                  value={movCantidad}
-                  onChange={(e) => setMovCantidad(e.currentTarget.value)}
-                  onFocus={(e) => e.currentTarget.select()}
-                  ref={qtyRef}
-                  disabled={movBusy}
-                />
-                {movTipo === "entrada_compra" && movProd?.unidades_por_caja && movProd.unidades_por_caja > 1 ? (
-                  <p className="text-xs text-slate-500">
-                    Unidades por caja: <span className="font-semibold text-slate-700">{movProd.unidades_por_caja}</span> · Equivale a{" "}
-                    <span className="font-semibold text-slate-700">
-                      {Math.max(0, Math.trunc(Number(String(movCantidad).replace(",", ".")))) * movProd.unidades_por_caja} uds
-                    </span>
-                  </p>
-                ) : null}
-              </div>
-
-              <div className="grid grid-cols-1 gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    void commitQuickMovimiento();
-                  }}
-                  disabled={movBusy || !movProd || !establecimientoId}
-                  className="min-h-12 w-full rounded-2xl bg-black px-4 text-sm font-semibold text-white hover:bg-slate-900 active:bg-slate-950 disabled:opacity-50"
-                >
-                  {movBusy ? "Guardando…" : "Confirmar"}
-                </button>
-              </div>
-            </div>
+            <p className="text-sm text-slate-600">Añade productos arriba para preparar la recarga.</p>
           )}
 
-          <button
-            type="button"
-            onClick={() => {
-              if (movBusy) return;
-              setMovOpen(false);
-              setMovProd(null);
-              setMovStep("menu");
-            }}
-            className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50"
-          >
-            Cerrar
-          </button>
+          <Button onClick={() => void commitRecargaNeveras()} disabled={recargaBusy || !recargaPicked.length}>
+            {recargaBusy ? "Procesando…" : "Confirmar"}
+          </Button>
         </div>
       </Drawer>
 
       <Drawer
-        open={vaciosOpen}
-        title="Devolver envases vacíos"
+        open={modOpen}
+        title="Modificar stock"
         onClose={() => {
-          if (vaciosBusy) return;
-          setVaciosOpen(false);
-          setVaciosErr(null);
-          setVaciosStep("pick");
-          setVaciosProd(null);
-          setVaciosQty("1");
+          if (modBusy) return;
+          setModOpen(false);
+          setModErr(null);
         }}
       >
-        <div className="space-y-3 pb-2">
-          {vaciosErr ? (
-            <p className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{vaciosErr}</p>
+        <div className="space-y-4 pb-2">
+          {modErr ? (
+            <p className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{modErr}</p>
           ) : null}
 
-          {vaciosStep === "pick" ? (
-            <div className="space-y-3">
-              <input
-                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-                placeholder="Buscar producto…"
-                value={vaciosSearch}
-                onChange={(e) => setVaciosSearch(e.currentTarget.value)}
-              />
-              <div className="max-h-[55vh] overflow-auto rounded-2xl border border-slate-200 bg-white">
-                {(() => {
-                  const byFamily = new Map<string, typeof vaciosPickList>();
-                  for (const p of vaciosPickList) {
-                    const fam = (p.categoria ?? p.tipo ?? "Otros").toString().trim() || "Otros";
-                    byFamily.set(fam, [...(byFamily.get(fam) ?? []), p]);
-                  }
-                  const families = Array.from(byFamily.keys()).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
-                  let rendered = 0;
-                  return families.map((fam) => {
-                    const items = (byFamily.get(fam) ?? [])
-                      .slice()
-                      .sort((a, b) => a.articulo.localeCompare(b.articulo, "es", { sensitivity: "base" }));
-                    const out: React.ReactNode[] = [];
-                    if (rendered < 80) {
-                      out.push(
-                        <div key={`fam-${fam}`} className="sticky top-0 z-10 border-b border-slate-100 bg-white px-4 py-2">
-                          <p className="text-xs font-bold uppercase tracking-wide text-slate-600">{fam}</p>
-                        </div>
-                      );
-                    }
-                    for (const p of items) {
-                      if (rendered >= 80) break;
-                      rendered++;
-                      out.push(
-                        <button
-                          key={p.id}
-                          type="button"
-                          disabled={vaciosBusy}
-                          onClick={() => {
-                            setVaciosProd(p);
-                            setVaciosStep("qty");
-                            setVaciosQty("1");
-                          }}
-                          className="flex w-full items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-left hover:bg-slate-50"
-                        >
-                          <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">{p.articulo}</span>
-                          <span className="shrink-0 text-xs font-semibold text-slate-600">
-                            Vacíos: {Math.max(0, Number(p.stock_vacios ?? 0) || 0)}
-                          </span>
-                        </button>
-                      );
-                    }
-                    return out;
-                  });
-                })()}
-                {!vaciosPickList.length ? (
-                  <p className="p-4 text-sm text-slate-600">No hay productos que coincidan.</p>
-                ) : null}
+          <div className="grid gap-2">
+            <label className="text-sm font-semibold text-slate-900">Tipo</label>
+            <select
+              className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900"
+              value={modTipo}
+              onChange={(e) => setModTipo(e.currentTarget.value as QuickMovimientoTipo)}
+              disabled={modBusy}
+            >
+              <option value="entrada_compra">Entrada (Pedido/Inventario)</option>
+              <option value="salida_barra">Salida (Merma/Ajuste)</option>
+            </select>
+          </div>
+
+          <input
+            className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+            placeholder="Buscar y añadir producto…"
+            value={modSearch}
+            onChange={(e) => setModSearch(e.currentTarget.value)}
+          />
+
+          <div className="max-h-[30vh] overflow-auto rounded-2xl border border-slate-200 bg-white">
+            {(data ?? [])
+              .filter((p) => {
+                const q = modSearch.trim().toLowerCase();
+                if (!q) return false;
+                if (modPickedIds.has(p.id)) return false;
+                return (p.articulo ?? "").toLowerCase().includes(q);
+              })
+              .slice(0, 30)
+              .map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  disabled={modBusy}
+                  onClick={() => addToMod(p)}
+                  className="flex w-full items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-left hover:bg-slate-50 disabled:opacity-50"
+                >
+                  <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">{p.articulo}</span>
+                  <span className="shrink-0 text-xs font-semibold text-slate-600">Añadir</span>
+                </button>
+              ))}
+            {!modSearch.trim() ? <p className="p-4 text-sm text-slate-600">Escribe para buscar productos.</p> : null}
+          </div>
+
+          {modPicked.length ? (
+            <div className="rounded-2xl border border-slate-200 bg-white">
+              <div className="grid grid-cols-[1fr_124px_44px] gap-2 border-b border-slate-100 px-4 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                <div>Producto</div>
+                <div className="text-center">Cantidad</div>
+                <div />
               </div>
-              <p className="text-xs text-slate-500">
-                Selecciona un producto y registra cuántos envases vacíos llevas al almacén.
-              </p>
+              {modPicked.map((p) => (
+                <div key={p.id} className="grid grid-cols-[1fr_124px_44px] items-center gap-2 border-b border-slate-100 px-4 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-900">{p.articulo}</p>
+                    <p className="truncate text-xs text-slate-500">Stock: {Math.max(0, Math.trunc(Number(p.stock_actual) || 0))}</p>
+                  </div>
+                  <input
+                    className="min-h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-center text-base font-bold tabular-nums text-slate-900"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={modQty[p.id] ?? ""}
+                    onChange={(e) => setModQty((d) => ({ ...d, [p.id]: sanitizeIntString(e.currentTarget.value) }))}
+                    disabled={modBusy}
+                    aria-label={`Cantidad de ${p.articulo}`}
+                  />
+                  <button
+                    type="button"
+                    className="min-h-10 w-full rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    disabled={modBusy}
+                    onClick={() => removeFromMod(p.id)}
+                    aria-label={`Quitar ${p.articulo}`}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
             </div>
           ) : (
-            <div className="space-y-3">
-              <p className="text-sm font-semibold text-slate-900">{vaciosProd?.articulo ?? "Producto"}</p>
-              <label className="text-sm font-semibold text-slate-900">Cantidad</label>
-              <input
-                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base"
-                inputMode="numeric"
-                type="number"
-                min={1}
-                step={1}
-                value={vaciosQty}
-                onChange={(e) => setVaciosQty(e.currentTarget.value)}
-                disabled={vaciosBusy}
-              />
-              <div className="grid grid-cols-1 gap-2">
-                <Button onClick={() => void commitDevolverVacios()} disabled={vaciosBusy || !vaciosProd}>
-                  {vaciosBusy ? "Guardando…" : "Confirmar devolución"}
-                </Button>
-                <button
-                  type="button"
-                  className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 hover:bg-slate-50"
-                  disabled={vaciosBusy}
-                  onClick={() => {
-                    setVaciosStep("pick");
-                    setVaciosProd(null);
-                  }}
-                >
-                  Cambiar producto
-                </button>
-              </div>
-            </div>
+            <p className="text-sm text-slate-600">Añade productos arriba para aplicar un ajuste.</p>
           )}
+
+          <Button onClick={() => void commitModificarStock()} disabled={modBusy || !modPicked.length}>
+            {modBusy ? "Guardando…" : "Confirmar"}
+          </Button>
         </div>
       </Drawer>
     </div>

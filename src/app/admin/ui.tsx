@@ -203,7 +203,7 @@ export function AdminHomeClient({ denied }: { denied?: string | null } = {}) {
         ))}
       </div>
     );
-  }, [data, data?.isSuperadmin, data?.profileReady, data?.role, denied, error, isLoading]);
+  }, [data, denied, error, isLoading]);
 
   return (
     <div className="min-h-dvh bg-slate-50">
