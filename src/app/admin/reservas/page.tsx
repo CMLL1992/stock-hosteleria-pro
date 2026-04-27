@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Circle, Crown, Lock, LockOpen, Square, RectangleHorizontal, Minus } from "lucide-react";
+import { ArrowLeft, Circle, Lock, Square } from "lucide-react";
 import { Drawer } from "@/components/ui/Drawer";
 import { supabase } from "@/lib/supabase";
 import { useMyRole } from "@/lib/useMyRole";
@@ -41,12 +41,13 @@ function haptic(ms = 50) {
   }
 }
 
-function neonFor(estado: MesaEstado, selected: boolean) {
-  if (selected) return { border: "border-violet-400", glow: "shadow-[0_0_18px_rgba(167,139,250,0.55)]", dot: "bg-violet-400" };
-  if (estado === "libre") return { border: "border-emerald-400", glow: "shadow-[0_0_16px_rgba(52,211,153,0.45)]", dot: "bg-emerald-400" };
-  if (estado === "ocupada") return { border: "border-rose-400", glow: "shadow-[0_0_16px_rgba(251,113,133,0.45)]", dot: "bg-rose-400" };
-  if (estado === "reservada") return { border: "border-sky-400", glow: "shadow-[0_0_16px_rgba(56,189,248,0.40)]", dot: "bg-sky-400" };
-  return { border: "border-amber-300", glow: "shadow-[0_0_16px_rgba(252,211,77,0.35)]", dot: "bg-amber-300" };
+function mesaUi(estado: MesaEstado, selected: boolean) {
+  const base = { border: "border-slate-300", ring: "", dot: "bg-slate-400", bg: "bg-white" };
+  if (estado === "ocupada") return { ...base, dot: "bg-rose-500", bg: "bg-rose-50" };
+  if (estado === "reservada") return { ...base, dot: "bg-sky-500", bg: "bg-sky-50" };
+  if (estado === "sucia") return { ...base, dot: "bg-amber-500", bg: "bg-amber-50" };
+  if (selected) return { ...base, ring: "ring-2 ring-blue-500/30" };
+  return base;
 }
 
 function elapsedLabel(iso: string | null | undefined): string | null {
@@ -237,25 +238,19 @@ function ReservasPlanoInner() {
     return { x: clamp01(worldPxX / rect.width), y: clamp01(worldPxY / rect.height) };
   }
 
-  async function createMesa(kind: "rect" | "round" | "vip" | "pared" | "barra") {
+  async function createMesa(kind: "rect" | "round") {
     if (!activeEstablishmentId || !zonaId) return;
     if (!canDrag || !planoUnlocked) return;
     if (creatingMesa) return;
     setErrMsg(null);
-    setCreatingMesa(kind === "pared" ? "rect" : kind === "barra" ? "vip" : kind);
+    setCreatingMesa(kind);
     try {
       const { x, y } = centerOfViewportToWorld01();
       const forma = kind === "round" ? "round" : "rect";
-      const isDecor = kind === "pared" || kind === "barra";
-      const paxMax = isDecor ? 0 : kind === "vip" ? 6 : 4;
-
-      // Numero: las mesas decorativas no usan "número"; como la columna es NOT NULL,
-      // usamos números negativos correlativos para evitar colisiones con mesas reales.
+      const paxMax = 4;
       const maxPos = mesasZona.reduce((acc, m) => Math.max(acc, m.numero || 0), 0);
-      const minAny = mesasZona.reduce((acc, m) => Math.min(acc, m.numero || 0), 0);
-      const nextNumero = isDecor ? Math.min(-1, minAny - 1) : maxPos + 1;
-
-      const basePayload: Record<string, unknown> = {
+      const nextNumero = maxPos + 1;
+      const payload: Record<string, unknown> = {
         establecimiento_id: activeEstablishmentId,
         zona_id: zonaId,
         numero: nextNumero,
@@ -263,31 +258,13 @@ function ReservasPlanoInner() {
         forma,
         x,
         y,
-        estado: "libre",
-        nombre: isDecor ? (kind === "pared" ? "Pared" : "Barra/Escenario") : null,
-        es_decorativo: isDecor
+        estado: "libre"
       };
 
-      // Compatibilidad: si la columna `es_decorativo/nombre` aún no existe, degradamos sin romper.
       let newId: string | null = null;
-      try {
-        const res = await supabase().from("sala_mesas").insert(basePayload).select("id").single();
-        if (res.error) throw res.error;
-        newId = (res.data as unknown as { id: string } | null)?.id ?? null;
-      } catch (e) {
-        try {
-          // eslint-disable-next-line no-console
-          console.error("[reservas] create mesa payload failed; retry without decor fields", e);
-        } catch {
-          // ignore
-        }
-        const fallback: Record<string, unknown> = { ...basePayload };
-        delete fallback.es_decorativo;
-        delete fallback.nombre;
-        const res2 = await supabase().from("sala_mesas").insert(fallback).select("id").single();
-        if (res2.error) throw res2.error;
-        newId = (res2.data as unknown as { id: string } | null)?.id ?? null;
-      }
+      const res = await supabase().from("sala_mesas").insert(payload).select("id").single();
+      if (res.error) throw res.error;
+      newId = (res.data as unknown as { id: string } | null)?.id ?? null;
 
       haptic(50);
       if (newId) {
@@ -545,7 +522,7 @@ function ReservasPlanoInner() {
   if (!canView) return <main className="p-4 text-sm text-slate-600">Acceso denegado.</main>;
 
   return (
-    <div className="min-h-dvh bg-[#0A0A0C] text-white">
+    <div className="min-h-dvh bg-slate-50 text-slate-900">
       {isDesktop ? (
         <div className="mx-auto flex min-h-dvh max-w-xl items-center justify-center p-6">
           <div className="w-full rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl">
@@ -555,14 +532,14 @@ function ReservasPlanoInner() {
           </div>
         </div>
       ) : (
-        <main className="relative h-dvh w-full overflow-hidden">
+        <main className="relative h-dvh w-full overflow-hidden bg-slate-50">
           {/* Fondo puntos */}
           <div
             className="pointer-events-none absolute inset-0"
             style={{
-              backgroundColor: "#0A0A0C",
-              backgroundImage: "radial-gradient(circle at 1px 1px, rgba(255,255,255,0.08) 1px, transparent 0)",
-              backgroundSize: "20px 20px"
+              backgroundColor: "#F8FAFC",
+              backgroundImage: "radial-gradient(circle at 1px 1px, rgba(148,163,184,0.35) 1px, transparent 0)",
+              backgroundSize: "22px 22px"
             }}
           />
 
@@ -571,7 +548,7 @@ function ReservasPlanoInner() {
             <div className="flex items-center justify-between gap-3">
               <button
                 type="button"
-                className="grid h-10 w-10 place-items-center rounded-2xl border border-white/10 bg-white/5 backdrop-blur hover:bg-white/10"
+                className="grid h-10 w-10 place-items-center rounded-2xl border border-slate-200 bg-white shadow-sm hover:bg-slate-50"
                 aria-label="Volver"
                 onClick={() => {
                   try {
@@ -585,14 +562,14 @@ function ReservasPlanoInner() {
                   window.location.href = "/admin";
                 }}
               >
-                <ArrowLeft className="h-5 w-5 text-white/80" />
+                <ArrowLeft className="h-5 w-5 text-slate-700" />
               </button>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-black tracking-tight text-white">{(activeEstablishmentName ?? "").trim() || "Mi local"}</p>
+                <p className="truncate text-sm font-black tracking-tight text-slate-900">{(activeEstablishmentName ?? "").trim() || "Mi local"}</p>
                 <div className="mt-1 flex gap-2">
                   {canDrag && planoUnlocked ? (
                     <input
-                      className="min-h-9 max-w-[220px] rounded-2xl border border-white/10 bg-white/5 px-3 text-xs font-extrabold text-white placeholder:text-white/40 backdrop-blur focus:outline-none focus:ring-2 focus:ring-[rgba(163,73,242,0.35)]"
+                      className="min-h-9 max-w-[220px] rounded-2xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                       value={zonaNameDraft}
                       onChange={(e) => {
                         setZonaNameDraft(e.currentTarget.value);
@@ -603,7 +580,7 @@ function ReservasPlanoInner() {
                     />
                   ) : (
                     <select
-                      className="min-h-9 max-w-[220px] rounded-2xl border border-white/10 bg-white/5 px-3 text-xs font-semibold text-white/80 backdrop-blur"
+                      className="min-h-9 max-w-[220px] rounded-2xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 shadow-sm"
                       value={zonaId ?? ""}
                       onChange={(e) => setZonaId(e.currentTarget.value || null)}
                     >
@@ -616,7 +593,7 @@ function ReservasPlanoInner() {
                   )}
                   <button
                     type="button"
-                    className="min-h-9 rounded-2xl border border-white/10 bg-white/5 px-3 text-xs font-extrabold text-white/80 backdrop-blur hover:bg-white/10"
+                    className="min-h-9 rounded-2xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-700 shadow-sm hover:bg-slate-50"
                     onClick={() => {
                       setPan({ x: 0, y: 0 });
                       setScale(1);
@@ -636,43 +613,43 @@ function ReservasPlanoInner() {
             </div>
           ) : null}
 
-          {/* FAB lock */}
-          <button
-            type="button"
-            className={[
-              "absolute bottom-28 right-6 z-[999] grid h-14 w-14 place-items-center rounded-full border shadow-2xl backdrop-blur",
-              planoUnlocked ? "border-violet-400/30 bg-[#A349F2]" : "border-white/10 bg-white/10"
-            ].join(" ")}
-            aria-label={planoUnlocked ? "Bloquear plano" : "Desbloquear plano"}
-            disabled={!canDrag}
-            onClick={() => {
-              if (!canDrag) return;
-              setPlanoUnlocked((v) => !v);
-            }}
-            title={planoUnlocked ? "Bloquear" : "Desbloquear"}
-          >
-            {planoUnlocked ? <LockOpen className="h-6 w-6 text-white" /> : <Lock className="h-6 w-6 text-white" />}
-          </button>
+          {/* Controles (solo cuando está BLOQUEADO) */}
+          {!planoUnlocked ? (
+            <>
+              <button
+                type="button"
+                className="absolute bottom-32 right-6 z-[999] grid h-14 w-14 place-items-center rounded-full border border-slate-200 bg-white shadow-lg"
+                aria-label="Desbloquear plano"
+                disabled={!canDrag}
+                onClick={() => {
+                  if (!canDrag) return;
+                  setPlanoUnlocked(true);
+                }}
+                title="Desbloquear"
+              >
+                <Lock className="h-6 w-6 text-slate-800" />
+              </button>
 
-          {/* FAB reset vista */}
-          <button
-            type="button"
-            className="absolute bottom-28 left-6 z-[999] min-h-10 rounded-full border border-white/10 bg-white/10 px-4 text-xs font-extrabold text-white backdrop-blur hover:bg-white/15"
-            onClick={() => {
-              setPan({ x: 0, y: 0 });
-              setScale(1);
-            }}
-          >
-            Centrar plano
-          </button>
+              <button
+                type="button"
+                className="absolute bottom-32 left-6 z-[999] min-h-10 rounded-full border border-slate-200 bg-white px-4 text-xs font-extrabold text-slate-800 shadow-lg hover:bg-slate-50"
+                onClick={() => {
+                  setPan({ x: 0, y: 0 });
+                  setScale(1);
+                }}
+              >
+                Centrar plano
+              </button>
+            </>
+          ) : null}
 
           {/* Toolbar creación (solo en modo edición) */}
           {canDrag && planoUnlocked ? (
-            <div className="pointer-events-auto absolute bottom-28 left-1/2 z-[999] -translate-x-1/2">
-              <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-white/10 bg-white/10 p-2 shadow-2xl backdrop-blur">
+            <div className="pointer-events-auto absolute bottom-32 left-1/2 z-[999] -translate-x-1/2">
+              <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-slate-200 bg-white p-2 shadow-lg">
                 <button
                   type="button"
-                  className="grid h-12 w-12 place-items-center rounded-full border border-white/10 bg-[#A349F2] text-white hover:brightness-110 disabled:opacity-50"
+                  className="grid h-12 w-12 place-items-center rounded-full border border-slate-200 bg-white text-slate-800 hover:bg-slate-50 disabled:opacity-50"
                   onClick={() => void createMesa("rect")}
                   disabled={!!creatingMesa}
                   aria-label="Añadir mesa cuadrada"
@@ -682,7 +659,7 @@ function ReservasPlanoInner() {
                 </button>
                 <button
                   type="button"
-                  className="grid h-12 w-12 place-items-center rounded-full border border-white/10 bg-[#A349F2] text-white hover:brightness-110 disabled:opacity-50"
+                  className="grid h-12 w-12 place-items-center rounded-full border border-slate-200 bg-white text-slate-800 hover:bg-slate-50 disabled:opacity-50"
                   onClick={() => void createMesa("round")}
                   disabled={!!creatingMesa}
                   aria-label="Añadir mesa redonda"
@@ -692,33 +669,10 @@ function ReservasPlanoInner() {
                 </button>
                 <button
                   type="button"
-                  className="grid h-12 w-12 place-items-center rounded-full border border-white/10 bg-[#A349F2] text-white hover:brightness-110 disabled:opacity-50"
-                  onClick={() => void createMesa("vip")}
-                  disabled={!!creatingMesa}
-                  aria-label="Añadir sofá/VIP"
-                  title="Sofá/VIP"
+                  className="ml-2 min-h-12 rounded-full bg-blue-600 px-4 text-xs font-extrabold text-white shadow-sm hover:bg-blue-700"
+                  onClick={() => setPlanoUnlocked(false)}
                 >
-                  <Crown className="h-5 w-5" />
-                </button>
-                <button
-                  type="button"
-                  className="grid h-12 w-12 place-items-center rounded-full border border-white/10 bg-[#A349F2] text-white hover:brightness-110 disabled:opacity-50"
-                  onClick={() => void createMesa("pared")}
-                  disabled={!!creatingMesa}
-                  aria-label="Añadir pared"
-                  title="Pared"
-                >
-                  <Minus className="h-5 w-5" />
-                </button>
-                <button
-                  type="button"
-                  className="grid h-12 w-12 place-items-center rounded-full border border-white/10 bg-[#A349F2] text-white hover:brightness-110 disabled:opacity-50"
-                  onClick={() => void createMesa("barra")}
-                  disabled={!!creatingMesa}
-                  aria-label="Añadir barra o escenario"
-                  title="Barra/Escenario"
-                >
-                  <RectangleHorizontal className="h-5 w-5" />
+                  Finalizar edición
                 </button>
               </div>
             </div>
@@ -748,7 +702,7 @@ function ReservasPlanoInner() {
               >
                 {mesasZona.map((m) => {
                   const selected = sheetOpen && selMesaId === m.id;
-                  const neon = neonFor(m.estado, selected);
+                  const ui = mesaUi(m.estado, selected);
                   const elapsed = m.estado === "ocupada" ? elapsedLabel(m.hora_checkin) : null;
                   const isRound = m.forma === "round";
                   const isVip = (m.forma ?? "rect") === "rect" && (m.pax_max ?? 0) >= 6;
@@ -765,10 +719,10 @@ function ReservasPlanoInner() {
                         isVip ? "h-20 w-36" : "h-24 w-24",
                         isRound ? "rounded-full" : "rounded-2xl",
                         "border-2",
-                        neon.border,
-                        neon.glow,
-                        "bg-white/5",
-                        "backdrop-blur",
+                        ui.border,
+                        ui.ring,
+                        ui.bg,
+                        "shadow-sm",
                         "transition-transform duration-150 ease-out",
                         "active:scale-105",
                         planoUnlocked ? "cursor-grab active:cursor-grabbing border-dashed animate-pulse" : "cursor-pointer"
@@ -793,11 +747,11 @@ function ReservasPlanoInner() {
                       onPointerDown={planoUnlocked ? (e) => onPointerDownMesa(e, m) : undefined}
                       aria-label={`Mesa ${m.numero}`}
                     >
-                      <span className={["absolute left-2 top-2 h-2 w-2 rounded-full", neon.dot].join(" ")} aria-hidden />
+                      <span className={["absolute left-2 top-2 h-2 w-2 rounded-full", ui.dot].join(" ")} aria-hidden />
                       <div className="text-center">
-                        <p className="text-xl font-black tabular-nums text-white">{isDecor ? "—" : m.numero}</p>
-                        <p className="mt-0.5 text-[11px] font-semibold text-white/70">{isDecor ? (m.nombre ?? "Decorativo") : `${m.pax_max} pax`}</p>
-                        {elapsed ? <p className="mt-1 text-[11px] font-extrabold text-white/80">{elapsed}</p> : null}
+                        <p className="text-xl font-black tabular-nums text-slate-900">{isDecor ? "—" : m.numero}</p>
+                        <p className="mt-0.5 text-[11px] font-semibold text-slate-600">{isDecor ? (m.nombre ?? "Decorativo") : `${m.pax_max} pax`}</p>
+                        {elapsed ? <p className="mt-1 text-[11px] font-extrabold text-slate-700">{elapsed}</p> : null}
                       </div>
                     </div>
                   );
