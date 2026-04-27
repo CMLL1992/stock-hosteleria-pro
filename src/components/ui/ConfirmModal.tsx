@@ -42,12 +42,12 @@ export function ConfirmModal({
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
       <button type="button" className="absolute inset-0" onClick={busy ? undefined : onCancel} aria-label="Cerrar" />
       <div
-        className="relative z-10 w-full max-w-lg rounded-t-3xl border border-slate-200 bg-white shadow-2xl"
+        className="relative z-10 w-full max-w-lg rounded-t-3xl border border-slate-200 bg-white/90 shadow-2xl backdrop-blur"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <div className="mx-auto mt-2 h-1.5 w-12 rounded-full bg-slate-200" />
         <div className="flex items-start justify-between gap-2 px-5 pt-2">
-          <h2 id="confirm-modal-title" className="min-w-0 flex-1 text-base font-semibold text-slate-900">
+          <h2 id="confirm-modal-title" className="min-w-0 flex-1 text-lg font-black tracking-tight text-slate-900">
             {title}
           </h2>
           <button
@@ -67,7 +67,7 @@ export function ConfirmModal({
             className={
               danger
                 ? "min-h-12 w-full rounded-2xl bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
-                : "min-h-12 w-full rounded-2xl bg-black px-4 text-sm font-semibold text-white hover:bg-slate-900 disabled:opacity-50"
+                : "min-h-12 w-full rounded-2xl bg-premium-blue px-4 text-sm font-semibold text-white hover:brightness-95 disabled:opacity-50"
             }
             onClick={onConfirm}
             disabled={busy}

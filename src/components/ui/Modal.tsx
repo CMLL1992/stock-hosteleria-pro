@@ -26,13 +26,13 @@ export function Modal({
       }}
     >
       <div
-        className="relative z-10 max-h-[min(92dvh,880px)] w-full max-w-lg overflow-hidden rounded-t-3xl border border-slate-200 bg-white shadow-2xl"
+        className="relative z-10 max-h-[min(92dvh,880px)] w-full max-w-lg overflow-hidden rounded-t-3xl border border-slate-200 bg-white/90 shadow-2xl backdrop-blur"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <div className="flex max-h-[inherit] flex-col">
           <div className="mx-auto mt-2 h-1.5 w-12 shrink-0 rounded-full bg-slate-200" />
           <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
-            <h3 className="min-w-0 flex-1 truncate text-base font-semibold text-slate-900">{title}</h3>
+            <h3 className="min-w-0 flex-1 truncate text-lg font-black tracking-tight text-slate-900">{title}</h3>
             <button
               type="button"
               className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
