@@ -107,13 +107,38 @@ export function DashboardClient() {
       const since = new Date();
       since.setDate(since.getDate() - 28);
       const sinceISO = since.toISOString().slice(0, 10);
-      const { data, error } = await supabase()
-        .from("sala_reservas")
-        .select("fecha,hora,pax,prepago_eur")
-        .eq("establecimiento_id", establecimientoId as string)
-        .gte("fecha", sinceISO)
-        .limit(5000);
-      if (error) throw error;
+      const estId = establecimientoId as string;
+
+      // Nota: `sala_reservas` puede variar entre instalaciones (prepago_eur/total/precio).
+      // Hacemos un intento robusto y si falla por columna inexistente, degradamos sin romper la UI.
+      let data: unknown[] | null = null;
+      try {
+        const res = await supabase()
+          .from("sala_reservas")
+          .select("fecha,hora,pax,prepago_eur")
+          .eq("establecimiento_id", estId)
+          .gte("fecha", sinceISO)
+          .limit(5000);
+        if (res.error) throw res.error;
+        data = (res.data ?? []) as unknown as unknown[];
+      } catch (e) {
+        // Fallback: sin el campo económico
+        try {
+          // eslint-disable-next-line no-console
+          console.error("[dashboard] reservas metrics query failed; fallback without prepago_eur", e);
+        } catch {
+          // ignore
+        }
+        const res2 = await supabase()
+          .from("sala_reservas")
+          .select("fecha,hora,pax")
+          .eq("establecimiento_id", estId)
+          .gte("fecha", sinceISO)
+          .limit(5000);
+        if (res2.error) throw res2.error;
+        data = (res2.data ?? []) as unknown as unknown[];
+      }
+
       const rows = (data ?? []) as unknown as Array<Record<string, unknown>>;
 
       const byDow = new Map<number, number>(); // 0..6 (Mon..Sun)
@@ -519,7 +544,7 @@ export function DashboardClient() {
           <div className="shrink-0 text-right">
             <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Ventas estimadas</p>
             <p className="mt-1 text-xl font-black tabular-nums text-slate-900">
-              {reservasMetricsQuery.data ? formatEUR(reservasMetricsQuery.data.ventasEst) : "—"}
+              {formatEUR(reservasMetricsQuery.data?.ventasEst ?? 0)}
             </p>
           </div>
         </div>
@@ -533,9 +558,22 @@ export function DashboardClient() {
         <div className="mt-4 grid gap-4 lg:grid-cols-3">
           <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-2">
             <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Ocupación (reservas por día)</p>
+            {reservasMetricsQuery.isLoading ? <p className="mt-2 text-sm text-slate-500">Cargando…</p> : null}
             <div className="mt-3 h-40 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={reservasMetricsQuery.data?.ocupacionDow ?? []}>
+                <BarChart
+                  data={
+                    reservasMetricsQuery.data?.ocupacionDow ?? [
+                      { label: "Lun", reservas: 0 },
+                      { label: "Mar", reservas: 0 },
+                      { label: "Mié", reservas: 0 },
+                      { label: "Jue", reservas: 0 },
+                      { label: "Vie", reservas: 0 },
+                      { label: "Sáb", reservas: 0 },
+                      { label: "Dom", reservas: 0 }
+                    ]
+                  }
+                >
                   <XAxis dataKey="label" tickLine={false} axisLine={false} fontSize={12} />
                   <YAxis tickLine={false} axisLine={false} fontSize={12} allowDecimals={false} width={26} />
                   <Tooltip cursor={{ fill: "rgba(15, 23, 42, 0.06)" }} />
