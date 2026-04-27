@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Circle, Lock, Minus, RectangleHorizontal, Square } from "lucide-react";
+import { ArrowLeft, Circle, Lock, Square } from "lucide-react";
 import { Drawer } from "@/components/ui/Drawer";
 import { supabase } from "@/lib/supabase";
 import { useMyRole } from "@/lib/useMyRole";
@@ -119,7 +119,7 @@ function ReservasPlanoInner() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [selMesaId, setSelMesaId] = useState<string | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
-  const [creatingMesa, setCreatingMesa] = useState<null | "rect" | "round" | "pared" | "barra">(null);
+  const [creatingMesa, setCreatingMesa] = useState<null | "rect" | "round">(null);
   const [deletingMesa, setDeletingMesa] = useState(false);
   const [mergeMode, setMergeMode] = useState(false);
   const [zonaNameDraft, setZonaNameDraft] = useState("");
@@ -255,7 +255,7 @@ function ReservasPlanoInner() {
     return { x: clamp01(worldPxX / rect.width), y: clamp01(worldPxY / rect.height) };
   }
 
-  async function createMesa(kind: "rect" | "round" | "pared" | "barra") {
+  async function createMesa(kind: "rect" | "round") {
     if (!activeEstablishmentId || !zonaId) return;
     if (!canDrag || !planoUnlocked) return;
     if (creatingMesa) return;
@@ -263,24 +263,21 @@ function ReservasPlanoInner() {
     setCreatingMesa(kind);
     try {
       const { x, y } = centerOfViewportToWorld01();
-      const isDecor = kind === "pared" || kind === "barra";
       const forma = kind === "round" ? "round" : "rect";
-      const paxMax = isDecor ? 0 : 4;
       const maxPos = mesasZona.reduce((acc, m) => Math.max(acc, m.numero || 0), 0);
-      const minNum = mesasZona.reduce((acc, m) => Math.min(acc, m.numero || 0), 0);
-      const nextNumero = isDecor ? Math.min(-1, minNum - 1) : maxPos + 1;
+      const nextNumero = maxPos + 1;
 
       const payload: Record<string, unknown> = {
         establecimiento_id: activeEstablishmentId,
         zona_id: zonaId,
         numero: nextNumero,
-        pax_max: paxMax,
+        pax_max: 4,
         forma,
         x,
         y,
         estado: "libre",
-        es_decorativo: isDecor,
-        nombre: isDecor ? (kind === "pared" ? "Pared" : "Barra") : null
+        es_decorativo: false,
+        nombre: null
       };
 
       let newId: string | null = null;
@@ -292,7 +289,7 @@ function ReservasPlanoInner() {
       } catch (e) {
         try {
           // eslint-disable-next-line no-console
-          console.error("[reservas] create decor failed; fallback without es_decorativo/nombre", e);
+          console.error("[reservas] insert mesa failed; fallback without es_decorativo/nombre", e);
         } catch {
           // ignore
         }
@@ -308,7 +305,7 @@ function ReservasPlanoInner() {
       if (newId) {
         setSelMesaId(newId);
         setSheetOpen(true);
-        setManageOpen(isDecor);
+        setManageOpen(false);
       }
       // El realtime traerá la nueva mesa; refrescamos por si acaso.
       void load();
@@ -638,26 +635,6 @@ function ReservasPlanoInner() {
                   title="Mesa redonda"
                 >
                   <Circle className="h-5 w-5" />
-                </button>
-                <button
-                  type="button"
-                  className="grid h-12 w-12 place-items-center rounded-full border border-slate-200 bg-white text-slate-800 hover:bg-slate-50 disabled:opacity-50"
-                  onClick={() => void createMesa("pared")}
-                  disabled={!!creatingMesa}
-                  aria-label="Añadir pared"
-                  title="Pared"
-                >
-                  <Minus className="h-5 w-5" />
-                </button>
-                <button
-                  type="button"
-                  className="grid h-12 w-12 place-items-center rounded-full border border-slate-200 bg-white text-slate-800 hover:bg-slate-50 disabled:opacity-50"
-                  onClick={() => void createMesa("barra")}
-                  disabled={!!creatingMesa}
-                  aria-label="Añadir barra"
-                  title="Barra"
-                >
-                  <RectangleHorizontal className="h-5 w-5" />
                 </button>
                 <button
                   type="button"
