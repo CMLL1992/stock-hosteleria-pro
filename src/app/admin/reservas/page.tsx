@@ -640,8 +640,8 @@ function ReservasPlanoInner() {
           <button
             type="button"
             className={[
-              "absolute bottom-6 right-6 z-50 grid h-14 w-14 place-items-center rounded-full border shadow-2xl backdrop-blur",
-              planoUnlocked ? "border-violet-400/30 bg-violet-500/15" : "border-white/10 bg-white/5"
+              "absolute bottom-28 right-6 z-[999] grid h-14 w-14 place-items-center rounded-full border shadow-2xl backdrop-blur",
+              planoUnlocked ? "border-violet-400/30 bg-[#A349F2]" : "border-white/10 bg-white/10"
             ].join(" ")}
             aria-label={planoUnlocked ? "Bloquear plano" : "Desbloquear plano"}
             disabled={!canDrag}
@@ -651,13 +651,13 @@ function ReservasPlanoInner() {
             }}
             title={planoUnlocked ? "Bloquear" : "Desbloquear"}
           >
-            {planoUnlocked ? <LockOpen className="h-6 w-6 text-[#A349F2]" /> : <Lock className="h-6 w-6 text-white" />}
+            {planoUnlocked ? <LockOpen className="h-6 w-6 text-white" /> : <Lock className="h-6 w-6 text-white" />}
           </button>
 
           {/* FAB reset vista */}
           <button
             type="button"
-            className="absolute bottom-6 left-6 z-[999] min-h-10 rounded-full border border-white/10 bg-white/5 px-4 text-xs font-extrabold text-white backdrop-blur hover:bg-white/10"
+            className="absolute bottom-28 left-6 z-[999] min-h-10 rounded-full border border-white/10 bg-white/10 px-4 text-xs font-extrabold text-white backdrop-blur hover:bg-white/15"
             onClick={() => {
               setPan({ x: 0, y: 0 });
               setScale(1);
@@ -668,11 +668,11 @@ function ReservasPlanoInner() {
 
           {/* Toolbar creación (solo en modo edición) */}
           {canDrag && planoUnlocked ? (
-            <div className="pointer-events-auto absolute bottom-6 left-1/2 z-[999] -translate-x-1/2">
-              <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-white/10 bg-white/5 p-2 shadow-2xl backdrop-blur">
+            <div className="pointer-events-auto absolute bottom-28 left-1/2 z-[999] -translate-x-1/2">
+              <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-white/10 bg-white/10 p-2 shadow-2xl backdrop-blur">
                 <button
                   type="button"
-                  className="grid h-12 w-12 place-items-center rounded-full border border-white/10 bg-white/5 text-white hover:bg-white/10 disabled:opacity-50"
+                  className="grid h-12 w-12 place-items-center rounded-full border border-white/10 bg-[#A349F2] text-white hover:brightness-110 disabled:opacity-50"
                   onClick={() => void createMesa("rect")}
                   disabled={!!creatingMesa}
                   aria-label="Añadir mesa cuadrada"
@@ -682,7 +682,7 @@ function ReservasPlanoInner() {
                 </button>
                 <button
                   type="button"
-                  className="grid h-12 w-12 place-items-center rounded-full border border-white/10 bg-white/5 text-white hover:bg-white/10 disabled:opacity-50"
+                  className="grid h-12 w-12 place-items-center rounded-full border border-white/10 bg-[#A349F2] text-white hover:brightness-110 disabled:opacity-50"
                   onClick={() => void createMesa("round")}
                   disabled={!!creatingMesa}
                   aria-label="Añadir mesa redonda"
@@ -692,7 +692,7 @@ function ReservasPlanoInner() {
                 </button>
                 <button
                   type="button"
-                  className="grid h-12 w-12 place-items-center rounded-full border border-white/10 bg-white/5 text-white hover:bg-white/10 disabled:opacity-50"
+                  className="grid h-12 w-12 place-items-center rounded-full border border-white/10 bg-[#A349F2] text-white hover:brightness-110 disabled:opacity-50"
                   onClick={() => void createMesa("vip")}
                   disabled={!!creatingMesa}
                   aria-label="Añadir sofá/VIP"
@@ -702,7 +702,7 @@ function ReservasPlanoInner() {
                 </button>
                 <button
                   type="button"
-                  className="grid h-12 w-12 place-items-center rounded-full border border-white/10 bg-white/5 text-white hover:bg-white/10 disabled:opacity-50"
+                  className="grid h-12 w-12 place-items-center rounded-full border border-white/10 bg-[#A349F2] text-white hover:brightness-110 disabled:opacity-50"
                   onClick={() => void createMesa("pared")}
                   disabled={!!creatingMesa}
                   aria-label="Añadir pared"
@@ -712,7 +712,7 @@ function ReservasPlanoInner() {
                 </button>
                 <button
                   type="button"
-                  className="grid h-12 w-12 place-items-center rounded-full border border-white/10 bg-white/5 text-white hover:bg-white/10 disabled:opacity-50"
+                  className="grid h-12 w-12 place-items-center rounded-full border border-white/10 bg-[#A349F2] text-white hover:brightness-110 disabled:opacity-50"
                   onClick={() => void createMesa("barra")}
                   disabled={!!creatingMesa}
                   aria-label="Añadir barra o escenario"
@@ -820,6 +820,17 @@ function ReservasPlanoInner() {
                 >
                   Gestionar
                 </button>
+
+                {planoUnlocked && canDrag ? (
+                  <button
+                    type="button"
+                    className="min-h-12 w-full rounded-2xl border border-rose-400/30 bg-rose-500/15 text-sm font-extrabold text-rose-100 shadow-[0_0_0_1px_rgba(244,63,94,0.10)] hover:bg-rose-500/20 disabled:opacity-60"
+                    onClick={() => void deleteMesa()}
+                    disabled={deletingMesa}
+                  >
+                    {deletingMesa ? "Eliminando…" : "Eliminar mesa"}
+                  </button>
+                ) : null}
 
                 {manageOpen ? (
                   <div className="space-y-3">
