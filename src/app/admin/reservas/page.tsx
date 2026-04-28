@@ -80,6 +80,7 @@ function clampRange(n: number, min: number, max: number) {
 
 const SIZE_MIN = 0.04; // 4% del ancho/alto del contenedor
 const SIZE_MAX = 0.8; // 80%
+const HANDLE_MIN = 0.05;
 
 function haptic(ms = 50) {
   try {
@@ -220,8 +221,7 @@ function ReservasPlanoInner() {
   const boardRef = useRef<HTMLDivElement | null>(null);
   const draggingRef = useRef<null | { mesaId: string; startClientX: number; startClientY: number; startX: number; startY: number }>(null);
   const panningRef = useRef<null | { startClientX: number; startClientY: number; startPanX: number; startPanY: number }>(null);
-  const pointersRef = useRef(new Map<number, { x: number; y: number; mesaId: string | null }>());
-  const pinchRef = useRef<null | { mesaId: string; a: number; b: number; startDist: number; startW: number; startH: number }>(null);
+  const resizingRef = useRef<null | { mesaId: string; startClientX: number; startClientY: number; startW: number; startH: number }>(null);
   // mergeHoverRef: retirado en versión simplificada
 
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -250,7 +250,7 @@ function ReservasPlanoInner() {
   });
   const [editingReservaId, setEditingReservaId] = useState<string | null>(null);
   const [savingReserva, setSavingReserva] = useState(false);
-  const [pinchSizingMesaId, setPinchSizingMesaId] = useState<string | null>(null);
+  const [resizingMesaId, setResizingMesaId] = useState<string | null>(null);
 
   const mesasRef = useRef(mesas);
   useEffect(() => {
@@ -385,10 +385,10 @@ function ReservasPlanoInner() {
   }, [isDesktop]);
 
   // iOS Safari / Android: asegura que `preventDefault()` funcione en movimientos táctiles.
+  // Solo medimos el tamaño del tablero (las interacciones se gestionan con pointer events).
   useEffect(() => {
     const el = boardRef.current;
     if (!el) return;
-    // Medir tamaño real del tablero (para convertir width/height relativos → px)
     const measure = () => {
       const r = el.getBoundingClientRect();
       setBoardSize({ w: Math.max(0, r.width), h: Math.max(0, r.height) });
@@ -401,115 +401,14 @@ function ReservasPlanoInner() {
     } catch {
       // ignore
     }
-    const pointToWorld01 = (clientX: number, clientY: number): { x: number; y: number } => {
-      const rect = el.getBoundingClientRect();
-      const sx = clientX - rect.left;
-      const sy = clientY - rect.top;
-      const worldPxX = sx / scale - pan.x;
-      const worldPxY = sy / scale - pan.y;
-      return { x: clamp01(worldPxX / rect.width), y: clamp01(worldPxY / rect.height) };
-    };
-
-    const isTouchInsideMesa = (mesa: Mesa, clientX: number, clientY: number): boolean => {
-      const rect = el.getBoundingClientRect();
-      const wPx =
-        mesa.width != null && Number.isFinite(Number(mesa.width)) && rect.width > 0 ? Math.max(6, Number(mesa.width) * rect.width) : 60;
-      const hPx =
-        mesa.height != null && Number.isFinite(Number(mesa.height)) && rect.height > 0 ? Math.max(6, Number(mesa.height) * rect.height) : 60;
-      const p = pointToWorld01(clientX, clientY);
-      const w01 = wPx / Math.max(1, rect.width);
-      const h01 = hPx / Math.max(1, rect.height);
-      return p.x >= mesa.x - w01 / 2 && p.x <= mesa.x + w01 / 2 && p.y >= mesa.y - h01 / 2 && p.y <= mesa.y + h01 / 2;
-    };
-
-    const MIN_SIZE = 0.05;
-
-    const onTouchMove: EventListener = (evt) => {
-      const ev = evt as TouchEvent;
-      // Bloquea zoom nativo siempre dentro del tablero
-      ev.preventDefault();
-      ev.stopPropagation();
-
-      if (!planoUnlocked) return;
-      if (!selMesaId) return;
-      const mesa = mesasRef.current.find((m) => m.id === selMesaId) ?? null;
-      if (!mesa || isDecorativo(mesa)) return;
-
-      if (ev.touches.length !== 2) return;
-      const t1 = ev.touches[0];
-      const t2 = ev.touches[1];
-      if (!t1 || !t2) return;
-
-      // Solo si ambos dedos están sobre la mesa seleccionada
-      if (!isTouchInsideMesa(mesa, t1.clientX, t1.clientY)) return;
-      if (!isTouchInsideMesa(mesa, t2.clientX, t2.clientY)) return;
-
-      const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-      if (!Number.isFinite(dist) || dist <= 0) return;
-
-      if (!pinchRef.current || pinchRef.current.mesaId !== mesa.id) {
-        // Inicializa pinch con tamaños actuales
-        pinchRef.current = {
-          mesaId: mesa.id,
-          a: -1,
-          b: -2,
-          startDist: dist,
-          startW: clampRange(Number(mesa.width ?? 0.18) || 0.18, MIN_SIZE, SIZE_MAX),
-          startH: clampRange(Number(mesa.height ?? 0.18) || 0.18, MIN_SIZE, SIZE_MAX)
-        };
-        setPinchSizingMesaId(mesa.id);
-        return;
-      }
-
-      const pinch = pinchRef.current;
-      const factor = dist / Math.max(10, pinch.startDist);
-      const nextW = clampRange(pinch.startW * factor, MIN_SIZE, SIZE_MAX);
-      const nextH = clampRange(pinch.startH * factor, MIN_SIZE, SIZE_MAX);
-      setMesas((prev) => prev.map((m) => (m.id === mesa.id ? { ...m, width: nextW, height: nextH } : m)));
-    };
-
-    const onTouchEnd: EventListener = (evt) => {
-      const ev = evt as TouchEvent;
-      ev.preventDefault();
-      ev.stopPropagation();
-      const pinch = pinchRef.current;
-      if (!pinch) return;
-      // Si ya no hay 2 dedos, persistimos
-      if (ev.touches.length >= 2) return;
-      pinchRef.current = null;
-      setPinchSizingMesaId(null);
-
-      const mesa = mesasRef.current.find((m) => m.id === pinch.mesaId) ?? null;
-      if (!mesa || !activeEstablishmentId) return;
-      const patch = {
-        width: mesa.width != null ? clampRange(Number(mesa.width) || 0, MIN_SIZE, SIZE_MAX) : null,
-        height: mesa.height != null ? clampRange(Number(mesa.height) || 0, MIN_SIZE, SIZE_MAX) : null
-      };
-      void (async () => {
-        try {
-          const res = await supabase().from("sala_mesas").update(patch).eq("id", mesa.id).eq("establecimiento_id", activeEstablishmentId);
-          if (res.error) throw res.error;
-        } catch (err) {
-          setErrMsg(supabaseErrToString(err));
-          void load();
-        }
-      })();
-    };
-
-    el.addEventListener("touchmove", onTouchMove, { passive: false });
-    el.addEventListener("touchend", onTouchEnd, { passive: false });
-    el.addEventListener("touchcancel", onTouchEnd, { passive: false });
     return () => {
       try {
         ro?.disconnect();
       } catch {
         // ignore
       }
-      el.removeEventListener("touchmove", onTouchMove);
-      el.removeEventListener("touchend", onTouchEnd);
-      el.removeEventListener("touchcancel", onTouchEnd);
     };
-  }, [activeEstablishmentId, pan.x, pan.y, planoUnlocked, scale, selMesaId, load]);
+  }, []);
 
   function openMesa(mesaId: string) {
     const m = mesas.find((x) => x.id === mesaId) ?? null;
@@ -729,54 +628,41 @@ function ReservasPlanoInner() {
     haptic(20);
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 
-    // Track pointers para pinch-to-zoom
-    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY, mesaId: mesa.id });
-    const activeForMesa = Array.from(pointersRef.current.entries())
-      .filter(([, v]) => v.mesaId === mesa.id)
-      .map(([id]) => id);
-
-    // Pinch solo si la mesa está seleccionada y hay 2 punteros
-    if (selMesaId === mesa.id && activeForMesa.length >= 2) {
-      const [a, b] = activeForMesa.slice(-2);
-      const pa = pointersRef.current.get(a)!;
-      const pb = pointersRef.current.get(b)!;
-      const dist = Math.hypot(pa.x - pb.x, pa.y - pb.y);
-      const defaultW = boardSize.w > 0 ? 60 / boardSize.w : 0.18;
-      const defaultH = boardSize.h > 0 ? 60 / boardSize.h : 0.18;
-      const startW = clampRange(Number(mesa.width ?? defaultW) || defaultW, SIZE_MIN, SIZE_MAX);
-      const startH = clampRange(Number(mesa.height ?? defaultH) || defaultH, SIZE_MIN, SIZE_MAX);
-      pinchRef.current = { mesaId: mesa.id, a, b, startDist: Math.max(10, dist), startW, startH };
-      draggingRef.current = null;
-      panningRef.current = null;
-      return;
-    }
-
     // Drag normal con 1 dedo
-    if (!pinchRef.current) {
-      draggingRef.current = { mesaId: mesa.id, startClientX: e.clientX, startClientY: e.clientY, startX: mesa.x, startY: mesa.y };
-    }
+    draggingRef.current = { mesaId: mesa.id, startClientX: e.clientX, startClientY: e.clientY, startX: mesa.x, startY: mesa.y };
+  }
+
+  function onPointerDownResizeHandle(e: React.PointerEvent, mesa: Mesa) {
+    if (!canDrag) return;
+    if (!planoUnlocked) return;
+    if (isDecorativo(mesa)) return;
+    if (selMesaId !== mesa.id) return;
+    if (!boardRef.current) return;
+    e.preventDefault();
+    e.stopPropagation();
+    haptic(15);
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    const rect = boardRef.current.getBoundingClientRect();
+    const defaultW = 60 / Math.max(1, rect.width);
+    const defaultH = 60 / Math.max(1, rect.height);
+    const startW = clampRange(Number(mesa.width ?? defaultW) || defaultW, HANDLE_MIN, SIZE_MAX);
+    const startH = clampRange(Number(mesa.height ?? defaultH) || defaultH, HANDLE_MIN, SIZE_MAX);
+    resizingRef.current = { mesaId: mesa.id, startClientX: e.clientX, startClientY: e.clientY, startW, startH };
+    setResizingMesaId(mesa.id);
   }
 
   function onPointerMove(e: React.PointerEvent) {
-    // Actualizar puntero
-    const existing = pointersRef.current.get(e.pointerId);
-    if (existing) pointersRef.current.set(e.pointerId, { ...existing, x: e.clientX, y: e.clientY });
-
-    // Pinch-to-zoom activo
-    const pinch = pinchRef.current;
-    if (pinch && pinch.mesaId) {
-      const pa = pointersRef.current.get(pinch.a) ?? null;
-      const pb = pointersRef.current.get(pinch.b) ?? null;
-      if (pa && pb) {
-        e.preventDefault();
-        e.stopPropagation();
-        const dist = Math.hypot(pa.x - pb.x, pa.y - pb.y);
-        const factor = dist / Math.max(10, pinch.startDist);
-        const nextW = clampRange(pinch.startW * factor, SIZE_MIN, SIZE_MAX);
-        const nextH = clampRange(pinch.startH * factor, SIZE_MIN, SIZE_MAX);
-        setMesas((prev) => prev.map((m) => (m.id === pinch.mesaId ? { ...m, width: nextW, height: nextH } : m)));
-        return;
-      }
+    const resize = resizingRef.current;
+    if (resize && boardRef.current) {
+      e.preventDefault();
+      e.stopPropagation();
+      const rect = boardRef.current.getBoundingClientRect();
+      const dx = (e.clientX - resize.startClientX) / rect.width;
+      const dy = (e.clientY - resize.startClientY) / rect.height;
+      const nextW = clampRange(resize.startW + dx, HANDLE_MIN, SIZE_MAX);
+      const nextH = clampRange(resize.startH + dy, HANDLE_MIN, SIZE_MAX);
+      setMesas((prev) => prev.map((m) => (m.id === resize.mesaId ? { ...m, width: nextW, height: nextH } : m)));
+      return;
     }
 
     const drag = draggingRef.current;
@@ -800,26 +686,22 @@ function ReservasPlanoInner() {
     }
   }
 
-  async function onPointerUp(e: React.PointerEvent) {
-    pointersRef.current.delete(e.pointerId);
+  async function onPointerUp() {
+    const resize = resizingRef.current;
+    resizingRef.current = null;
+    if (resize) setResizingMesaId(null);
     const drag = draggingRef.current;
     draggingRef.current = null;
     panningRef.current = null;
     setIsInteracting(false);
 
-    // Finalizar pinch si estaba activo (cuando ya no quedan 2 punteros)
-    const pinch = pinchRef.current;
-    if (pinch) {
-      const stillA = pointersRef.current.has(pinch.a);
-      const stillB = pointersRef.current.has(pinch.b);
-      if (stillA && stillB) return;
-      pinchRef.current = null;
-      const m = mesas.find((x) => x.id === pinch.mesaId) ?? null;
-      if (m && activeEstablishmentId) {
+    if (resize && activeEstablishmentId) {
+      const m = mesas.find((x) => x.id === resize.mesaId) ?? null;
+      if (m) {
         try {
           const patch = {
-            width: m.width != null ? clampRange(Number(m.width) || 0, SIZE_MIN, SIZE_MAX) : null,
-            height: m.height != null ? clampRange(Number(m.height) || 0, SIZE_MIN, SIZE_MAX) : null
+            width: m.width != null ? clampRange(Number(m.width) || 0, HANDLE_MIN, SIZE_MAX) : null,
+            height: m.height != null ? clampRange(Number(m.height) || 0, HANDLE_MIN, SIZE_MAX) : null
           } as const;
           const res = await supabase().from("sala_mesas").update(patch).eq("id", m.id).eq("establecimiento_id", activeEstablishmentId);
           if (res.error) throw res.error;
@@ -828,6 +710,7 @@ function ReservasPlanoInner() {
           void load();
         }
       }
+      return;
     }
 
     if (!drag) return;
@@ -1453,6 +1336,8 @@ function ReservasPlanoInner() {
                     height: decor && dk === "texto" ? "auto" : `${Math.round(hPx)}px`,
                     ...(planoUnlocked && canDrag ? { touchAction: "none" } : {})
                   };
+                  const showHandle = planoUnlocked && canDrag && !decor && selMesaId === m.id;
+                  const handleSize = 16;
                   return (
                     <div
                       key={m.id}
@@ -1460,7 +1345,7 @@ function ReservasPlanoInner() {
                         "absolute select-none",
                         "grid place-items-center",
                         decor && dk === "texto" && !planoUnlocked ? "pointer-events-none" : "",
-                        pinchSizingMesaId === m.id ? "ring-2 ring-blue-500/40" : "",
+                        resizingMesaId === m.id ? "ring-2 ring-blue-500/40" : "",
                         decor ? (dk === "texto" ? "" : "border border-slate-300") : isRound ? "rounded-full" : "rounded-2xl",
                         decor
                           ? dk === "texto"
@@ -1509,11 +1394,24 @@ function ReservasPlanoInner() {
                       {!decor ? <span className={["absolute left-2 top-2 h-2 w-2 rounded-full", ui.dot].join(" ")} aria-hidden /> : null}
                       {!decor ? (
                         <div className="text-center">
-                          <p className="text-base font-extrabold text-slate-900">
-                            {String(m.nombre ?? "").trim() || `Mesa ${m.numero}`}
-                          </p>
+                          {(() => {
+                            const label = String(m.nombre ?? "").trim() || `Mesa ${m.numero}`;
+                            const len = label.length;
+                            const cls = len <= 3 ? "text-3xl" : len <= 10 ? "text-lg" : "text-sm";
+                            return <p className={[cls, "font-extrabold text-slate-900 leading-tight"].join(" ")}>{label}</p>;
+                          })()}
                           <p className="mt-1 text-sm font-extrabold tabular-nums text-slate-700">{`${m.pax_max} pax`}</p>
                         </div>
+                      ) : null}
+
+                      {showHandle ? (
+                        <button
+                          type="button"
+                          aria-label="Redimensionar mesa"
+                          onPointerDown={(e) => onPointerDownResizeHandle(e, m)}
+                          className="absolute rounded-full bg-blue-600 shadow-md ring-2 ring-white active:scale-95"
+                          style={{ right: -handleSize / 2, bottom: -handleSize / 2, width: handleSize, height: handleSize }}
+                        />
                       ) : null}
                     </div>
                   );
@@ -1709,9 +1607,9 @@ function ReservasPlanoInner() {
                           </p>
                         </div>
 
-                        {/* Identificador */}
+                        {/* Identificador de Mesa */}
                         <div className="rounded-3xl border border-slate-200 bg-white p-3">
-                          <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Identificador</p>
+                          <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Identificador de Mesa</p>
                           <p className="mt-1 text-sm text-slate-600">Puede ser número o nombre (ej: “Mesa 1”, “Rincón VIP”).</p>
                           <input
                             className="mt-3 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-60"
