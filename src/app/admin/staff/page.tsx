@@ -226,15 +226,22 @@ export default function AdminStaffPage() {
         .eq("establecimiento_id", activeEstablishmentId)
         .eq("semana_id", semRow.id);
       if (cel.error) throw cel.error;
-      setCeldas((cel.data ?? []) as unknown as CeldaRow[]);
+      const celRows = ((cel.data ?? []) as unknown as CeldaRow[]) ?? [];
+      setCeldas(celRows);
 
-      const as = await supabase()
-        .from("staff_cuadrante_asignaciones")
-        .select("id,celda_id,empleado_id")
-        .eq("establecimiento_id", activeEstablishmentId)
-        .in("celda_id", (cel.data ?? []).map((c) => String((c as { id?: string }).id ?? "")).filter(Boolean));
-      if (as.error) throw as.error;
-      setAsigs((as.data ?? []) as unknown as AsigRow[]);
+      // Nota: PostgREST falla si hacemos `.in(..., [])`. Si no hay celdas, no hay asignaciones.
+      const celdaIds = celRows.map((c) => String((c as { id?: string }).id ?? "")).filter(Boolean);
+      if (!celdaIds.length) {
+        setAsigs([]);
+      } else {
+        const as = await supabase()
+          .from("staff_cuadrante_asignaciones")
+          .select("id,celda_id,empleado_id")
+          .eq("establecimiento_id", activeEstablishmentId)
+          .in("celda_id", celdaIds);
+        if (as.error) throw as.error;
+        setAsigs((((as.data ?? []) as unknown as AsigRow[]) ?? []) as AsigRow[]);
+      }
     } catch (e) {
       setErr(supabaseErrToString(e));
     } finally {
