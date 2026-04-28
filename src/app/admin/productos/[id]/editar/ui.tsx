@@ -20,7 +20,6 @@ import {
 } from "@/lib/productoFormCatalogo";
 import { updateProductoCategoriaCompat } from "@/lib/productoWriteCompat";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
-import Link from "next/link";
 import { hasPermission } from "@/lib/permissions";
 
 type Proveedor = { id: string; nombre: string };
@@ -227,14 +226,6 @@ export function EditarProductoClient({ id }: { id: string }) {
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-semibold text-gray-900">Acciones</p>
-                  <Link
-                    href={`/qr/${encodeURIComponent(id)}?print=1`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-900 hover:bg-gray-50"
-                  >
-                    Generar QR
-                  </Link>
                 </div>
 
                 <div className="space-y-1">

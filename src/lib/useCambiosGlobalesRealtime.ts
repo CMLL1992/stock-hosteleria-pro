@@ -8,10 +8,6 @@ type RealtimeTable =
   | "pedidos"
   | "usuarios"
   | "escandallos"
-  | "sala_zonas"
-  | "sala_mesas"
-  | "sala_reservas"
-  | "sala_horarios"
   ;
 
 /**

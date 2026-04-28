@@ -3,7 +3,6 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import {
-  Boxes,
   Building2,
   ChevronRight,
   ClipboardList,
@@ -46,23 +45,19 @@ function itemIcon(id: string) {
       return Users;
     case "roles":
       return Shield;
-    case "auditoria-albaranes":
-      return ClipboardList;
     case "productos":
       return Package;
-    case "catalogo-envases":
-      return Boxes;
     case "importar-csv":
       return ClipboardList;
     case "escandallos":
-      return ClipboardList;
-    case "eventos":
       return ClipboardList;
     case "pedidos":
       return ShoppingBag;
     case "proveedores":
       return Truck;
     case "movimientos":
+      return ClipboardList;
+    case "bajo-minimos":
       return ClipboardList;
     default:
       return Package;
@@ -86,18 +81,6 @@ const SECTIONS: AdminSection[] = [
         href: "/admin/staff",
         title: "Staff / Turnos",
         subtitle: "Plantilla, restricciones y cuadrante semanal."
-      }
-    ]
-  },
-  {
-    id: "local",
-    heading: "Establecimiento",
-    items: [
-      {
-        id: "establecimiento",
-        href: "/admin/establecimiento",
-        title: "Datos del local",
-        subtitle: "Información general del establecimiento."
       }
     ]
   },
@@ -126,13 +109,6 @@ const SECTIONS: AdminSection[] = [
         subtitle: "Superadmin, Admin y Staff en un solo lugar.",
         superadminOnly: true
       },
-      {
-        id: "auditoria-albaranes",
-        href: "/admin/control/albaranes",
-        title: "Auditoría de albaranes",
-        subtitle: "Control de costes y revisión semanal.",
-        superadminOnly: true
-      }
     ]
   },
   {
@@ -144,12 +120,6 @@ const SECTIONS: AdminSection[] = [
         href: "/admin/productos",
         title: "Productos",
         subtitle: "Listado maestro y edición (clave artículo)."
-      },
-      {
-        id: "catalogo-envases",
-        href: "/admin/envases",
-        title: "Catálogo de envases",
-        subtitle: "Maestro de envases y coste real (por ID)."
       },
       {
         id: "importar-csv",
@@ -171,12 +141,6 @@ const SECTIONS: AdminSection[] = [
     heading: "Operaciones y movimientos",
     items: [
       {
-        id: "eventos",
-        href: "/admin/eventos",
-        title: "Eventos",
-        subtitle: "Pedidos y control financiero independiente del establecimiento."
-      },
-      {
         id: "pedidos",
         href: "/admin/pedidos",
         title: "Pedidos",
@@ -193,6 +157,18 @@ const SECTIONS: AdminSection[] = [
         href: "/admin/movimientos",
         title: "Movimientos",
         subtitle: "Histórico de entradas y salidas de stock."
+      }
+    ]
+  },
+  {
+    id: "stock",
+    heading: "Stock (atajos)",
+    items: [
+      {
+        id: "bajo-minimos",
+        href: "/admin/bajo-minimos",
+        title: "Bajo mínimos",
+        subtitle: "Lista de reposición y pedidos por proveedor."
       }
     ]
   }

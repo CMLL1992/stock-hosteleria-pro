@@ -17,7 +17,7 @@ import { useProductosRealtime } from "@/lib/useProductosRealtime";
 // (Pedido por WhatsApp eliminado: la pantalla queda como catálogo + acciones superiores)
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 import { logActivity } from "@/lib/activityLog";
-import { getEffectiveRole, canGenerateQr } from "@/lib/permissions";
+import { getEffectiveRole } from "@/lib/permissions";
 
 type Producto = {
   id: string;
@@ -187,8 +187,7 @@ export function ProductList() {
   const [deepLinkDone, setDeepLinkDone] = useState(false);
   const queryClient = useQueryClient();
   const { me, activeEstablishmentId: establecimientoId, activeEstablishmentName } = useActiveEstablishment();
-  const role = getEffectiveRole(me);
-  const canQr = canGenerateQr(role);
+  void getEffectiveRole;
   const [tab, setTab] = useState<string>("todos");
   // UI: esta pantalla ya no permite editar stock directamente.
   const [search, setSearch] = useState<string>("");
@@ -759,18 +758,7 @@ export function ProductList() {
                   </div>
                 </div>
 
-                {canQr ? (
-                  <div className="mt-4 flex flex-wrap items-stretch gap-2">
-                    <Link
-                      href={`/qr/${encodeURIComponent(p.id)}?print=1`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
-                    >
-                      Generar QR
-                    </Link>
-                  </div>
-                ) : null}
+                {null}
               </div>
             </div>
           );

@@ -6,7 +6,6 @@ import { fetchAdminEstablecimientosList } from "@/lib/fetchAdminEstablecimientos
 import { supabase } from "@/lib/supabase";
 import { useMyRole } from "@/lib/useMyRole";
 import type { EstablecimientoRow } from "@/types/ops";
-import { getBaseUrl } from "@/lib/baseUrl";
 
 export type Establecimiento = EstablecimientoRow;
 
@@ -120,12 +119,6 @@ export function useActiveEstablishment() {
     return activeDetailQuery.data?.logo_url ?? null;
   }, [activeDetailQuery.data?.logo_url, activeId, estQuery.data, isSuperadmin]);
 
-  const activePublicBookingUrl = useMemo(() => {
-    if (!activeSlug) return null;
-    const base = getBaseUrl();
-    return `${base}/reservar/${encodeURIComponent(activeSlug)}`;
-  }, [activeSlug]);
-
   function setActiveId(id: string | null) {
     setOverrideId(id);
     writeLs(id);
@@ -140,7 +133,6 @@ export function useActiveEstablishment() {
     activeEstablishmentId: activeId,
     activeEstablishmentName: activeName,
     activeEstablishmentSlug: activeSlug,
-    activePublicBookingUrl,
     activeEstablishmentLogoUrl: activeLogoUrl,
     setActiveEstablishmentId: setActiveId
   };
