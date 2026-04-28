@@ -85,7 +85,7 @@ export function ProductByUidClient({ uid }: { uid: string }) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [modo, setModo] = useState<"entrada" | "salida">("entrada");
-  const [cantidad, setCantidad] = useState<string>("0");
+  const [cantidad, setCantidad] = useState<number>(0);
   const qtyRef = useRef<HTMLInputElement | null>(null);
   const [saved, setSaved] = useState(false);
 
@@ -330,8 +330,17 @@ export function ProductByUidClient({ uid }: { uid: string }) {
               inputMode="numeric"
               type="text"
               pattern="[0-9]*"
-              value={cantidad}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => setCantidad(e.currentTarget.value)}
+              value={cantidad === 0 ? "" : String(cantidad)}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                try {
+                  const val = e.target.value;
+                  setCantidad(val === "" ? 0 : Number(val));
+                } catch (err) {
+                  // eslint-disable-next-line no-console
+                  console.error(err);
+                  setErr("No se pudo leer la cantidad. Inténtalo de nuevo.");
+                }
+              }}
               onFocus={(e) => e.currentTarget.select()}
               ref={qtyRef}
             />
@@ -340,21 +349,28 @@ export function ProductByUidClient({ uid }: { uid: string }) {
           <div className="grid grid-cols-1 gap-2">
             <Button
               onClick={async () => {
-                const n = Number(String(cantidad).replace(",", "."));
-                if (!Number.isFinite(n) || n === 0) return;
-                setSaved(false);
-                if (modo === "entrada") {
-                  await registrar("entrada", Math.abs(n));
-                  setSaved(true);
-                  window.setTimeout(() => setSaved(false), 1200);
-                  return;
-                }
-                if (modo === "salida") {
-                  // Importante: 'salida_barra' ya NO genera envases vacíos automáticamente.
-                  await registrar("salida_barra", Math.abs(n));
-                  setSaved(true);
-                  window.setTimeout(() => setSaved(false), 1200);
-                  return;
+                try {
+                  const n = Number(cantidad);
+                  if (!Number.isFinite(n) || n === 0) return;
+                  setErr(null);
+                  setSaved(false);
+                  if (modo === "entrada") {
+                    await registrar("entrada", Math.abs(n));
+                    setSaved(true);
+                    window.setTimeout(() => setSaved(false), 1200);
+                    return;
+                  }
+                  if (modo === "salida") {
+                    // Importante: 'salida_barra' ya NO genera envases vacíos automáticamente.
+                    await registrar("salida_barra", Math.abs(n));
+                    setSaved(true);
+                    window.setTimeout(() => setSaved(false), 1200);
+                    return;
+                  }
+                } catch (err) {
+                  // eslint-disable-next-line no-console
+                  console.error(err);
+                  setErr("No se pudo guardar el movimiento. Revisa la cantidad e inténtalo de nuevo.");
                 }
               }}
             >

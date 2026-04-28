@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Circle, LayoutGrid, Lock, Minus, RotateCw, Square } from "lucide-react";
+import { ArrowLeft, Circle, LayoutGrid, Lock, Minus, RotateCw, Square, Type } from "lucide-react";
 import { Drawer } from "@/components/ui/Drawer";
 import { supabase } from "@/lib/supabase";
 import { useMyRole } from "@/lib/useMyRole";
@@ -22,6 +22,9 @@ type Mesa = {
   nombre?: string | null;
   x: number; // 0..1
   y: number; // 0..1
+  /** Dimensiones relativas 0..1 respecto al contenedor del plano (compat: puede no existir en BD antigua). */
+  width?: number | null;
+  height?: number | null;
   estado: MesaEstado;
   hora_checkin?: string | null;
   updated_at?: string | null;
@@ -34,6 +37,13 @@ type Zona = { id: string; nombre: string; sort: number };
 function clamp01(n: number) {
   return Math.max(0, Math.min(1, n));
 }
+
+function clampRange(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+const SIZE_MIN = 0.04; // 4% del ancho/alto del contenedor
+const SIZE_MAX = 0.8; // 80%
 
 function haptic(ms = 50) {
   try {
@@ -60,10 +70,11 @@ function isDecorativo(m: Pick<Mesa, "es_decorativo" | "pax_max" | "numero"> | nu
   return (Number(m.pax_max ?? 0) || 0) <= 0 && (Number(m.numero ?? 0) || 0) < 0;
 }
 
-function decorKind(m: Pick<Mesa, "nombre"> | null | undefined): "pared" | "barra" | "decor" {
+function decorKind(m: Pick<Mesa, "nombre"> | null | undefined): "pared" | "barra" | "texto" | "decor" {
   const n = String(m?.nombre ?? "").toLowerCase();
   if (n.includes("pared")) return "pared";
   if (n.includes("barra")) return "barra";
+  if (n.startsWith("texto") || n.includes("texto:") || n.includes("[texto]")) return "texto";
   return "decor";
 }
 
@@ -112,6 +123,7 @@ function ReservasPlanoInner() {
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [scale, setScale] = useState(1);
   const [isInteracting, setIsInteracting] = useState(false);
+  const [boardSize, setBoardSize] = useState({ w: 0, h: 0 });
 
   const boardRef = useRef<HTMLDivElement | null>(null);
   const draggingRef = useRef<null | { mesaId: string; startClientX: number; startClientY: number; startX: number; startY: number }>(null);
@@ -121,7 +133,7 @@ function ReservasPlanoInner() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [selMesaId, setSelMesaId] = useState<string | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
-  const [creatingMesa, setCreatingMesa] = useState<null | "rect" | "round" | "pared">(null);
+  const [creatingMesa, setCreatingMesa] = useState<null | "rect" | "round" | "pared" | "texto">(null);
   const [deletingMesa, setDeletingMesa] = useState(false);
   const [mergeMode, setMergeMode] = useState(false);
   const [zonaNameDraft, setZonaNameDraft] = useState("");
@@ -153,6 +165,8 @@ function ReservasPlanoInner() {
       // Algunas instalaciones aún no tienen `es_decorativo`/`nombre` y el select falla (400).
       // Hacemos fallback automático sin bloquear la pantalla.
       const selects = [
+        "id,zona_id,numero,pax_max,forma,es_decorativo,nombre,x,y,width,height,estado,hora_checkin,updated_at,rotacion_deg",
+        "id,zona_id,numero,pax_max,forma,es_decorativo,nombre,x,y,width,height,estado,hora_checkin,updated_at",
         "id,zona_id,numero,pax_max,forma,es_decorativo,nombre,x,y,estado,hora_checkin,updated_at,rotacion_deg",
         "id,zona_id,numero,pax_max,forma,es_decorativo,nombre,x,y,estado,hora_checkin,updated_at",
         "id,zona_id,numero,pax_max,forma,x,y,estado,hora_checkin,updated_at"
@@ -216,6 +230,19 @@ function ReservasPlanoInner() {
   useEffect(() => {
     const el = boardRef.current;
     if (!el) return;
+    // Medir tamaño real del tablero (para convertir width/height relativos → px)
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      setBoardSize({ w: Math.max(0, r.width), h: Math.max(0, r.height) });
+    };
+    measure();
+    let ro: ResizeObserver | null = null;
+    try {
+      ro = new ResizeObserver(() => measure());
+      ro.observe(el);
+    } catch {
+      // ignore
+    }
     const onTouchMove = (ev: TouchEvent) => {
       if (draggingRef.current || panningRef.current) {
         ev.preventDefault();
@@ -224,6 +251,11 @@ function ReservasPlanoInner() {
     };
     el.addEventListener("touchmove", onTouchMove, { passive: false });
     return () => {
+      try {
+        ro?.disconnect();
+      } catch {
+        // ignore
+      }
       el.removeEventListener("touchmove", onTouchMove as EventListener);
     };
   }, []);
@@ -292,6 +324,34 @@ function ReservasPlanoInner() {
     }
   }
 
+  async function deleteZonaActual() {
+    if (!activeEstablishmentId || !zonaId) return;
+    if (!canDrag) return;
+    const z = zonas.find((x) => x.id === zonaId) ?? null;
+    const nombre = String(z?.nombre ?? "").trim() || "esta sala";
+    const count = mesas.filter((m) => m.zona_id === zonaId).length;
+    const ok = typeof window !== "undefined" ? window.confirm(count > 0 ? `La sala “${nombre}” tiene ${count} mesas. ¿Eliminar sala y sus mesas?` : `¿Eliminar la sala “${nombre}”?`) : false;
+    if (!ok) return;
+    setErrMsg(null);
+    try {
+      if (count > 0) {
+        const delMesas = await supabase().from("sala_mesas").delete().eq("zona_id", zonaId).eq("establecimiento_id", activeEstablishmentId);
+        if (delMesas.error) throw delMesas.error;
+      }
+      const delZona = await supabase().from("sala_zonas").delete().eq("id", zonaId).eq("establecimiento_id", activeEstablishmentId);
+      if (delZona.error) throw delZona.error;
+      haptic(50);
+      // Seleccionar otra zona disponible
+      const remaining = zonas.filter((x) => x.id !== zonaId).sort((a, b) => a.sort - b.sort);
+      setZonaId(remaining[0]?.id ?? null);
+      setZonaNameDraft(remaining[0]?.nombre ?? "");
+      await load();
+    } catch (e) {
+      setErrMsg(supabaseErrToString(e));
+      void load();
+    }
+  }
+
   function centerOfViewportToWorld01(): { x: number; y: number } {
     const el = boardRef.current;
     if (!el) return { x: 0.5, y: 0.5 };
@@ -302,7 +362,7 @@ function ReservasPlanoInner() {
     return { x: clamp01(worldPxX / rect.width), y: clamp01(worldPxY / rect.height) };
   }
 
-  async function createMesa(kind: "rect" | "round" | "pared") {
+  async function createMesa(kind: "rect" | "round" | "pared" | "texto") {
     if (!activeEstablishmentId || !zonaId) return;
     if (!canDrag || !planoUnlocked) return;
     if (creatingMesa) return;
@@ -311,22 +371,23 @@ function ReservasPlanoInner() {
     try {
       const { x, y } = centerOfViewportToWorld01();
       const isPared = kind === "pared";
+      const isTexto = kind === "texto";
       const forma = kind === "round" ? "round" : "rect";
       const maxPos = mesasZona.reduce((acc, m) => Math.max(acc, m.numero || 0), 0);
       const minNum = mesasZona.reduce((acc, m) => Math.min(acc, m.numero || 0), 0);
-      const nextNumero = isPared ? Math.min(-1, minNum - 1) : maxPos + 1;
+      const nextNumero = isPared || isTexto ? Math.min(-1, minNum - 1) : maxPos + 1;
 
       const payload: Record<string, unknown> = {
         establecimiento_id: activeEstablishmentId,
         zona_id: zonaId,
         numero: nextNumero,
-        pax_max: isPared ? 0 : 4,
+        pax_max: isPared || isTexto ? 0 : 4,
         forma,
         x,
         y,
         estado: "libre",
-        es_decorativo: isPared,
-        nombre: isPared ? "Pared" : null,
+        es_decorativo: isPared || isTexto,
+        nombre: isPared ? "Pared" : isTexto ? "Texto: Zona" : null,
         rotacion_deg: 0
       };
 
@@ -367,7 +428,7 @@ function ReservasPlanoInner() {
       if (newId) {
         setSelMesaId(newId);
         setSheetOpen(true);
-        setManageOpen(isPared);
+        setManageOpen(isPared || isTexto);
       }
       // El realtime traerá la nueva mesa; refrescamos por si acaso.
       void load();
@@ -437,6 +498,73 @@ function ReservasPlanoInner() {
     if (!drag) return;
     const mesa = mesas.find((m) => m.id === drag.mesaId) ?? null;
     if (!mesa) return;
+
+    // Fusión por colisión al soltar (solo mesas no decorativas).
+    const canTryMerge = !!activeEstablishmentId && canDrag && planoUnlocked && !isDecorativo(mesa);
+    if (canTryMerge && boardRef.current) {
+      const rect = boardRef.current.getBoundingClientRect();
+      const defaultW = 60 / Math.max(1, rect.width);
+      const defaultH = 60 / Math.max(1, rect.height);
+      const wA = clampRange(Number(mesa.width ?? defaultW) || defaultW, SIZE_MIN, SIZE_MAX);
+      const hA = clampRange(Number(mesa.height ?? defaultH) || defaultH, SIZE_MIN, SIZE_MAX);
+      const ax1 = mesa.x - wA / 2;
+      const ay1 = mesa.y - hA / 2;
+      const ax2 = mesa.x + wA / 2;
+      const ay2 = mesa.y + hA / 2;
+      const areaA = Math.max(0, ax2 - ax1) * Math.max(0, ay2 - ay1);
+
+      const candidates = mesasZona
+        .filter((m) => m.id !== mesa.id)
+        .filter((m) => !isDecorativo(m))
+        .map((m) => {
+          const wB = clampRange(Number(m.width ?? defaultW) || defaultW, SIZE_MIN, SIZE_MAX);
+          const hB = clampRange(Number(m.height ?? defaultH) || defaultH, SIZE_MIN, SIZE_MAX);
+          const bx1 = m.x - wB / 2;
+          const by1 = m.y - hB / 2;
+          const bx2 = m.x + wB / 2;
+          const by2 = m.y + hB / 2;
+          const ix1 = Math.max(ax1, bx1);
+          const iy1 = Math.max(ay1, by1);
+          const ix2 = Math.min(ax2, bx2);
+          const iy2 = Math.min(ay2, by2);
+          const inter = Math.max(0, ix2 - ix1) * Math.max(0, iy2 - iy1);
+          const score = areaA > 0 ? inter / areaA : 0;
+          return { m, score };
+        })
+        .filter((x) => x.score >= 0.35)
+        .sort((a, b) => b.score - a.score);
+
+      const hit = candidates[0]?.m ?? null;
+      if (hit) {
+        const ok = typeof window !== "undefined" ? window.confirm("¿Quieres fusionar estas mesas?") : false;
+        if (ok) {
+          try {
+            const newPax = Math.max(0, (mesa.pax_max ?? 0) + (hit.pax_max ?? 0));
+            const cx = clamp01((mesa.x + hit.x) / 2);
+            const cy = clamp01((mesa.y + hit.y) / 2);
+            const up = await supabase()
+              .from("sala_mesas")
+              .update({ pax_max: newPax, x: cx, y: cy })
+              .eq("id", mesa.id)
+              .eq("establecimiento_id", activeEstablishmentId ?? "");
+            if (up.error) throw up.error;
+            const del = await supabase()
+              .from("sala_mesas")
+              .delete()
+              .eq("id", hit.id)
+              .eq("establecimiento_id", activeEstablishmentId ?? "");
+            if (del.error) throw del.error;
+            haptic(50);
+            void load();
+            return;
+          } catch (e) {
+            setErrMsg(supabaseErrToString(e));
+            void load();
+          }
+        }
+      }
+    }
+
     try {
       const res = await supabase()
         .from("sala_mesas")
@@ -498,7 +626,7 @@ function ReservasPlanoInner() {
     }
   }
 
-  async function updateMesaFields(patch: Partial<Pick<Mesa, "numero" | "pax_max" | "rotacion_deg">>) {
+  async function updateMesaFields(patch: Partial<Pick<Mesa, "numero" | "pax_max" | "rotacion_deg" | "width" | "height" | "nombre">>) {
     if (!selMesa || !activeEstablishmentId) return;
     if (!canDrag) return;
     setErrMsg(null);
@@ -512,10 +640,13 @@ function ReservasPlanoInner() {
         .eq("establecimiento_id", activeEstablishmentId)
         .select(selectCols)
         .single();
-      if (last.error && patch.rotacion_deg !== undefined) {
+      if (last.error && (patch.rotacion_deg !== undefined || patch.width !== undefined || patch.height !== undefined || patch.nombre !== undefined)) {
         const rotacionErr = last.error;
         const rest = { ...patch };
         delete (rest as Record<string, unknown>).rotacion_deg;
+        delete (rest as Record<string, unknown>).width;
+        delete (rest as Record<string, unknown>).height;
+        delete (rest as Record<string, unknown>).nombre;
         if (Object.keys(rest).length > 0) {
           const sel2 = ["id", ...Object.keys(rest)].join(",");
           last = await supabase()
@@ -536,13 +667,18 @@ function ReservasPlanoInner() {
       }
     } catch (e) {
       const msg = supabaseErrToString(e);
-      const rotHint =
+      const missingRot =
         patch.rotacion_deg !== undefined &&
         (/rotacion|column|schema|42703|does not exist/i.test(msg) || msg.toLowerCase().includes("rotacion"));
+      const missingSize =
+        (patch.width !== undefined || patch.height !== undefined) &&
+        (/width|height|column|schema|42703|does not exist/i.test(msg) || msg.toLowerCase().includes("width") || msg.toLowerCase().includes("height"));
       setErrMsg(
-        rotHint
+        missingRot
           ? `${msg} Añade la columna ejecutando en Supabase: supabase/patches/sala-mesas-rotacion-pared.sql`
-          : msg
+          : missingSize
+            ? `${msg} Añade las columnas ejecutando en Supabase: supabase/patches/sala-mesas-size.sql`
+            : msg
       );
       void load();
     }
@@ -670,6 +806,17 @@ function ReservasPlanoInner() {
                       Nueva sala
                     </button>
                   ) : null}
+                  {canDrag && planoUnlocked ? (
+                    <button
+                      type="button"
+                      className="inline-flex min-h-9 items-center gap-1 rounded-2xl border border-rose-200 bg-rose-50 px-3 text-xs font-extrabold text-rose-700 shadow-sm hover:bg-rose-100"
+                      onClick={() => void deleteZonaActual()}
+                      title="Eliminar sala actual"
+                      disabled={!zonaId}
+                    >
+                      Eliminar sala
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="min-h-9 rounded-2xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-700 shadow-sm hover:bg-slate-50"
@@ -759,6 +906,16 @@ function ReservasPlanoInner() {
                 </button>
                 <button
                   type="button"
+                  className="grid h-12 w-12 place-items-center rounded-full border border-slate-200 bg-white text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+                  onClick={() => void createMesa("texto")}
+                  disabled={!!creatingMesa || !zonaId}
+                  aria-label="Añadir texto"
+                  title="Texto"
+                >
+                  <Type className="h-5 w-5" />
+                </button>
+                <button
+                  type="button"
                   className="ml-2 min-h-12 rounded-full bg-blue-600 px-4 text-xs font-extrabold text-white shadow-sm hover:bg-blue-700"
                   onClick={() => setPlanoUnlocked(false)}
                 >
@@ -802,10 +959,24 @@ function ReservasPlanoInner() {
                   const top = `${m.y * 100}%`;
                   const puedeGirar = decor && dk !== "barra";
                   const rotDeg = puedeGirar ? Number(m.rotacion_deg ?? 0) || 0 : 0;
+                  const fallback =
+                    decor && dk === "pared"
+                      ? { w: 100, h: 20 }
+                      : decor && dk === "barra"
+                        ? { w: 140, h: 60 }
+                        : !decor
+                          ? { w: 60, h: 60 }
+                          : { w: 100, h: 20 };
+                  const wPx =
+                    m.width != null && Number.isFinite(Number(m.width)) && boardSize.w > 0 ? Math.max(6, Number(m.width) * boardSize.w) : fallback.w;
+                  const hPx =
+                    m.height != null && Number.isFinite(Number(m.height)) && boardSize.h > 0 ? Math.max(6, Number(m.height) * boardSize.h) : fallback.h;
                   const mesaStyle: React.CSSProperties = {
                     left,
                     top,
                     transform: puedeGirar ? `translate(-50%, -50%) rotate(${rotDeg}deg)` : "translate(-50%, -50%)",
+                    width: decor && dk === "texto" ? "auto" : `${Math.round(wPx)}px`,
+                    height: decor && dk === "texto" ? "auto" : `${Math.round(hPx)}px`,
                     ...(planoUnlocked && canDrag ? { touchAction: "none" } : {})
                   };
                   return (
@@ -814,17 +985,18 @@ function ReservasPlanoInner() {
                       className={[
                         "absolute select-none",
                         "grid place-items-center",
-                        decor ? (dk === "pared" ? "h-5 w-44 rounded-xl" : dk === "barra" ? "h-16 w-44 rounded-2xl" : "h-10 w-36 rounded-2xl") : isVip ? "h-20 w-36" : "h-24 w-24",
-                        decor ? "border border-slate-300" : isRound ? "rounded-full" : "rounded-2xl",
+                        decor ? (dk === "texto" ? "" : "border border-slate-300") : isRound ? "rounded-full" : "rounded-2xl",
                         decor
-                          ? dk === "pared"
-                            ? "bg-slate-700 shadow-sm"
-                            : dk === "barra"
-                              ? "bg-slate-300 shadow-sm"
-                              : "bg-slate-500/30 shadow-sm"
+                          ? dk === "texto"
+                            ? ""
+                            : dk === "pared"
+                              ? "bg-slate-700 shadow-sm"
+                              : dk === "barra"
+                                ? "bg-slate-300 shadow-sm"
+                                : "bg-slate-500/30 shadow-sm"
                           : ["border-2", ui.border, ui.ring, ui.bg, "shadow-sm"].join(" "),
                         "transition-transform duration-150 ease-out",
-                        "active:scale-105",
+                        dk === "texto" ? "" : "active:scale-105",
                         planoUnlocked ? "cursor-grab active:cursor-grabbing border-dashed animate-pulse" : "cursor-pointer"
                       ].join(" ")}
                       style={mesaStyle}
@@ -853,11 +1025,16 @@ function ReservasPlanoInner() {
                       onPointerDown={planoUnlocked ? (e) => onPointerDownMesa(e, m) : undefined}
                       aria-label={`Mesa ${m.numero}`}
                     >
+                      {decor && dk === "texto" ? (
+                        <span className="pointer-events-none whitespace-nowrap text-[14px] font-medium tracking-wide text-slate-500">
+                          {String(m.nombre ?? "").replace(/^texto:\s*/i, "").trim() || "Texto"}
+                        </span>
+                      ) : null}
                       {!decor ? <span className={["absolute left-2 top-2 h-2 w-2 rounded-full", ui.dot].join(" ")} aria-hidden /> : null}
                       {!decor ? (
                         <div className="text-center">
                           <p className="text-xl font-black tabular-nums text-slate-900">{m.numero}</p>
-                          <p className="mt-0.5 text-[11px] font-semibold text-slate-600">{`${m.pax_max} pax`}</p>
+                          <p className="mt-1 text-sm font-extrabold tabular-nums text-slate-700">{`${m.pax_max} pax`}</p>
                           {elapsed ? <p className="mt-1 text-[11px] font-extrabold text-slate-700">{elapsed}</p> : null}
                         </div>
                       ) : null}
@@ -910,6 +1087,66 @@ function ReservasPlanoInner() {
 
                     {!selIsDecor ? (
                       <>
+                        {/* Tamaño */}
+                        <div className="rounded-3xl border border-slate-200 bg-white p-3">
+                          <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Tamaño</p>
+                          <div className="mt-3 grid gap-4">
+                            {(() => {
+                              const w = clampRange(Number(selMesa.width ?? 0.18) || 0.18, SIZE_MIN, SIZE_MAX);
+                              return (
+                                <div className="grid gap-2">
+                                  <div className="flex items-baseline justify-between gap-3">
+                                    <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Ancho</label>
+                                    <span className="text-xs font-semibold tabular-nums text-slate-700">{Math.round(w * 100)}%</span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min={SIZE_MIN}
+                                    max={SIZE_MAX}
+                                    step={0.01}
+                                    value={w}
+                                    disabled={!canDrag}
+                                    onChange={(e) => {
+                                      const next = clampRange(Number(e.currentTarget.value) || 0, SIZE_MIN, SIZE_MAX);
+                                      setMesas((prev) => prev.map((m) => (m.id === selMesa.id ? { ...m, width: next } : m)));
+                                    }}
+                                    onPointerUp={() => void updateMesaFields({ width: clampRange(Number(selMesa.width ?? 0.18) || 0.18, SIZE_MIN, SIZE_MAX) })}
+                                    className="w-full"
+                                    aria-label="Ancho"
+                                  />
+                                </div>
+                              );
+                            })()}
+                            {(() => {
+                              const h = clampRange(Number(selMesa.height ?? 0.18) || 0.18, SIZE_MIN, SIZE_MAX);
+                              return (
+                                <div className="grid gap-2">
+                                  <div className="flex items-baseline justify-between gap-3">
+                                    <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Alto</label>
+                                    <span className="text-xs font-semibold tabular-nums text-slate-700">{Math.round(h * 100)}%</span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min={SIZE_MIN}
+                                    max={SIZE_MAX}
+                                    step={0.01}
+                                    value={h}
+                                    disabled={!canDrag}
+                                    onChange={(e) => {
+                                      const next = clampRange(Number(e.currentTarget.value) || 0, SIZE_MIN, SIZE_MAX);
+                                      setMesas((prev) => prev.map((m) => (m.id === selMesa.id ? { ...m, height: next } : m)));
+                                    }}
+                                    onPointerUp={() => void updateMesaFields({ height: clampRange(Number(selMesa.height ?? 0.18) || 0.18, SIZE_MIN, SIZE_MAX) })}
+                                    className="w-full"
+                                    aria-label="Alto"
+                                  />
+                                </div>
+                              );
+                            })()}
+                          </div>
+                          {!canDrag ? <p className="mt-2 text-xs font-semibold text-slate-500">Solo Admin puede redimensionar.</p> : null}
+                        </div>
+
                         {/* Número */}
                         <div className="rounded-3xl border border-slate-200 bg-white p-3">
                           <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Número</p>
@@ -985,13 +1222,38 @@ function ReservasPlanoInner() {
                     ) : (
                       <div className="rounded-3xl border border-slate-200 bg-white p-3">
                         <p className="text-sm font-semibold text-slate-900">
-                          {decorKind(selMesa) === "pared" ? "Pared" : decorKind(selMesa) === "barra" ? "Barra" : "Elemento estructural"}
+                          {decorKind(selMesa) === "pared"
+                            ? "Pared"
+                            : decorKind(selMesa) === "barra"
+                              ? "Barra"
+                              : decorKind(selMesa) === "texto"
+                                ? "Texto"
+                                : "Elemento estructural"}
                         </p>
                         <p className="mt-1 text-sm text-slate-600">
                           {selPuedeGirarDecor
                             ? "Puedes moverlo, girarlo o eliminarlo."
                             : "Solo se puede mover o eliminar."}
                         </p>
+                        {decorKind(selMesa) === "texto" && canDrag ? (
+                          <div className="mt-3 grid gap-2">
+                            <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Contenido</label>
+                            <input
+                              className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                              value={String(selMesa.nombre ?? "").replace(/^texto:\s*/i, "")}
+                              onChange={(e) => {
+                                const v = e.currentTarget.value;
+                                setMesas((prev) => prev.map((m) => (m.id === selMesa.id ? { ...m, nombre: `Texto: ${v}` } : m)));
+                              }}
+                              onBlur={() => {
+                                const v = String(selMesa.nombre ?? "").replace(/^texto:\s*/i, "");
+                                void updateMesaFields({ nombre: `Texto: ${v}` });
+                              }}
+                              placeholder="Ej: Zona Barra"
+                              aria-label="Texto"
+                            />
+                          </div>
+                        ) : null}
                         {selPuedeGirarDecor && canDrag ? (
                           <button
                             type="button"
