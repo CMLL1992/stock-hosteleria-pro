@@ -1051,7 +1051,7 @@ function ReservasPlanoInner() {
           </div>
         </div>
       ) : (
-        <main className="relative h-dvh w-full overflow-hidden bg-slate-50">
+        <main className="relative h-[100vh] w-full overflow-hidden bg-slate-50">
           {/* Fondo puntos */}
           <div
             className="pointer-events-none absolute inset-0"
@@ -1285,7 +1285,7 @@ function ReservasPlanoInner() {
           ) : null}
 
           {/* Board */}
-          <div className="absolute inset-x-0 bottom-0 top-0 pt-14">
+          <div className="absolute inset-x-0 bottom-0 top-0 pt-14" style={{ height: "100vh", overflow: "hidden", position: "relative" }}>
             <div
               ref={boardRef}
               className="relative h-[calc(100dvh-56px)] w-full"
