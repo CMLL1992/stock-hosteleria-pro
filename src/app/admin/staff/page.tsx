@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Phone, UserPlus } from "lucide-react";
+import { ArrowLeft, Pencil, Phone, Plus, Trash2, UserPlus, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
@@ -120,6 +120,22 @@ export default function AdminStaffPage() {
   const [celdas, setCeldas] = useState<CeldaRow[]>([]);
   const [asigs, setAsigs] = useState<AsigRow[]>([]);
 
+  // ===== CRUD: plantilla =====
+  const [plantillaOpen, setPlantillaOpen] = useState(false);
+  const [empleadoEditing, setEmpleadoEditing] = useState<Empleado | null>(null);
+  const [empleadoDraft, setEmpleadoDraft] = useState<{
+    nombre: string;
+    telefono: string;
+    rol: Rol;
+    tipo: "Fijo" | "Extra";
+    notas_rendimiento: string;
+    activo: boolean;
+  }>({ nombre: "", telefono: "", rol: "Sala", tipo: "Fijo", notas_rendimiento: "", activo: true });
+  const [savingEmpleado, setSavingEmpleado] = useState(false);
+  const [selectedEmpleadoId, setSelectedEmpleadoId] = useState<string>("");
+  const [restrDraft, setRestrDraft] = useState<{ dia_semana: number; turno: Turno; motivo: string }>({ dia_semana: 1, turno: "Comida", motivo: "" });
+  const [savingRestr, setSavingRestr] = useState(false);
+
   const empleadosById = useMemo(() => {
     const m = new Map<string, Empleado>();
     for (const e of empleados) m.set(e.id, e);
@@ -225,6 +241,133 @@ export default function AdminStaffPage() {
       setLoading(false);
     }
   }, [activeEstablishmentId, semanaStart]);
+
+  function openNuevoEmpleado() {
+    setEmpleadoEditing(null);
+    setEmpleadoDraft({ nombre: "", telefono: "", rol: "Sala", tipo: "Fijo", notas_rendimiento: "", activo: true });
+    setPlantillaOpen(true);
+  }
+
+  function openEditarEmpleado(e: Empleado) {
+    setEmpleadoEditing(e);
+    setEmpleadoDraft({
+      nombre: String(e.nombre ?? "").trim(),
+      telefono: String(e.telefono ?? "").trim(),
+      rol: e.rol,
+      tipo: e.tipo,
+      notas_rendimiento: String(e.notas_rendimiento ?? ""),
+      activo: !!e.activo
+    });
+    setPlantillaOpen(true);
+    setSelectedEmpleadoId(e.id);
+  }
+
+  async function saveEmpleado() {
+    if (!canEdit) return;
+    if (!activeEstablishmentId) return;
+    const nombre = empleadoDraft.nombre.trim();
+    if (!nombre) {
+      setErr("Indica el nombre del empleado.");
+      return;
+    }
+    setSavingEmpleado(true);
+    setErr(null);
+    setOk(null);
+    try {
+      const payload = {
+        establecimiento_id: activeEstablishmentId,
+        nombre,
+        telefono: empleadoDraft.telefono.trim() || null,
+        rol: empleadoDraft.rol,
+        tipo: empleadoDraft.tipo,
+        notas_rendimiento: empleadoDraft.notas_rendimiento.trim() || null,
+        activo: !!empleadoDraft.activo
+      };
+      if (empleadoEditing) {
+        const up = await supabase().from("staff_empleados").update(payload).eq("id", empleadoEditing.id).eq("establecimiento_id", activeEstablishmentId);
+        if (up.error) throw up.error;
+      } else {
+        const ins = await supabase().from("staff_empleados").insert(payload).select("id").single();
+        if (ins.error) throw ins.error;
+        const newId = (ins.data as unknown as { id?: string } | null)?.id ?? "";
+        if (newId) setSelectedEmpleadoId(newId);
+      }
+      setOk("Empleado guardado.");
+      await loadAll();
+    } catch (e) {
+      setErr(supabaseErrToString(e));
+    } finally {
+      setSavingEmpleado(false);
+    }
+  }
+
+  async function deleteEmpleado(id: string) {
+    if (!canEdit) return;
+    if (!activeEstablishmentId) return;
+    const emp = empleadosById.get(id) ?? null;
+    const okConfirm = typeof window !== "undefined" ? window.confirm(`¿Eliminar empleado ${emp?.nombre ?? ""}?`) : false;
+    if (!okConfirm) return;
+    setErr(null);
+    setOk(null);
+    try {
+      const del = await supabase().from("staff_empleados").delete().eq("id", id).eq("establecimiento_id", activeEstablishmentId);
+      if (del.error) throw del.error;
+      if (selectedEmpleadoId === id) setSelectedEmpleadoId("");
+      setOk("Empleado eliminado.");
+      await loadAll();
+    } catch (e) {
+      setErr(supabaseErrToString(e));
+    }
+  }
+
+  async function addRestriccion() {
+    if (!canEdit) return;
+    if (!activeEstablishmentId) return;
+    const empleado_id = selectedEmpleadoId.trim();
+    if (!empleado_id) {
+      setErr("Selecciona un empleado para añadir restricciones.");
+      return;
+    }
+    setSavingRestr(true);
+    setErr(null);
+    setOk(null);
+    try {
+      const ins = await supabase()
+        .from("staff_restricciones")
+        .insert({
+          establecimiento_id: activeEstablishmentId,
+          empleado_id,
+          dia_semana: restrDraft.dia_semana,
+          turno: restrDraft.turno,
+          motivo: restrDraft.motivo.trim() || null
+        })
+        .select("id");
+      if (ins.error) throw ins.error;
+      setOk("Restricción guardada.");
+      await loadAll();
+    } catch (e) {
+      setErr(supabaseErrToString(e));
+    } finally {
+      setSavingRestr(false);
+    }
+  }
+
+  async function deleteRestriccion(id: string) {
+    if (!canEdit) return;
+    if (!activeEstablishmentId) return;
+    const okConfirm = typeof window !== "undefined" ? window.confirm("¿Eliminar restricción?") : false;
+    if (!okConfirm) return;
+    setErr(null);
+    setOk(null);
+    try {
+      const del = await supabase().from("staff_restricciones").delete().eq("id", id).eq("establecimiento_id", activeEstablishmentId);
+      if (del.error) throw del.error;
+      setOk("Restricción eliminada.");
+      await loadAll();
+    } catch (e) {
+      setErr(supabaseErrToString(e));
+    }
+  }
 
   useEffect(() => {
     if (!canView) return;
@@ -371,6 +514,27 @@ export default function AdminStaffPage() {
               >
                 {loading ? "Cargando…" : "Recargar"}
               </button>
+              <button
+                type="button"
+                className="min-h-8 rounded-2xl bg-slate-900 px-3 text-[11px] font-extrabold text-white shadow-sm hover:bg-black sm:min-h-9 sm:text-xs disabled:opacity-60"
+                disabled={!canEdit}
+                onClick={() => {
+                  setPlantillaOpen(true);
+                  if (!selectedEmpleadoId) setSelectedEmpleadoId(empleados[0]?.id ?? "");
+                }}
+                title={!canEdit ? "Solo Admin puede gestionar plantilla" : "Gestionar empleados y restricciones"}
+              >
+                Plantilla
+              </button>
+              <button
+                type="button"
+                className="min-h-8 rounded-2xl border border-slate-200 bg-white px-3 text-[11px] font-extrabold text-slate-900 shadow-sm hover:bg-slate-50 sm:min-h-9 sm:text-xs disabled:opacity-60"
+                disabled={!canEdit}
+                onClick={() => openNuevoEmpleado()}
+                title={!canEdit ? "Solo Admin puede crear empleados" : "Añadir empleado"}
+              >
+                + Empleado
+              </button>
             </div>
           </div>
         </div>
@@ -381,6 +545,57 @@ export default function AdminStaffPage() {
 
       <div className="absolute inset-x-0 bottom-0 top-16 overflow-hidden sm:top-20" style={{ height: "100vh", overflow: "hidden", position: "relative" }}>
         <div className="absolute inset-0 overflow-auto p-2 pt-3 sm:p-4 sm:pt-4">
+          {/* Plantilla: resumen rápido */}
+          <div className="mb-3 grid gap-3 md:grid-cols-2">
+            <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-extrabold text-slate-900">Empleados</p>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-extrabold text-slate-900 hover:bg-slate-50 disabled:opacity-60"
+                  disabled={!canEdit}
+                  onClick={() => openNuevoEmpleado()}
+                >
+                  <Plus className="h-4 w-4" /> Añadir
+                </button>
+              </div>
+              <p className="mt-1 text-xs font-semibold text-slate-600">
+                {empleados.filter((e) => e.activo).length} activos · {empleados.filter((e) => e.tipo === "Extra").length} extras
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {empleados.slice(0, 8).map((e) => (
+                  <button
+                    key={e.id}
+                    type="button"
+                    className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-extrabold text-slate-900 hover:bg-slate-50"
+                    onClick={() => openEditarEmpleado(e)}
+                  >
+                    {e.nombre}
+                  </button>
+                ))}
+                {empleados.length > 8 ? <span className="text-xs font-semibold text-slate-500">…</span> : null}
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-sm font-extrabold text-slate-900">Restricciones</p>
+              <p className="mt-1 text-xs font-semibold text-slate-600">
+                {restricciones.length} registradas (no disponibilidad por día/turno).
+              </p>
+              <button
+                type="button"
+                className="mt-3 inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-extrabold text-slate-900 hover:bg-slate-50 disabled:opacity-60"
+                disabled={!canEdit}
+                onClick={() => {
+                  setPlantillaOpen(true);
+                  if (!selectedEmpleadoId) setSelectedEmpleadoId(empleados[0]?.id ?? "");
+                }}
+              >
+                Gestionar restricciones
+              </button>
+            </div>
+          </div>
+
           <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
             <div className="overflow-auto rounded-3xl">
               <table className="min-w-[980px] w-full border-collapse">
@@ -596,6 +811,209 @@ export default function AdminStaffPage() {
                   </div>
                 );
               })()}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Modal plantilla (CRUD empleados y restricciones) */}
+      {plantillaOpen ? (
+        <div className="absolute inset-0 z-[1200]">
+          <button type="button" className="absolute inset-0 bg-black/30" aria-label="Cerrar" onClick={() => setPlantillaOpen(false)} />
+          <div
+            className="absolute bottom-0 left-0 w-full rounded-t-3xl border border-slate-200 bg-white shadow-2xl"
+            style={{ maxHeight: "80vh" }}
+            onPointerDownCapture={(e) => e.stopPropagation()}
+            onClickCapture={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+              <p className="text-sm font-extrabold text-slate-900">Plantilla</p>
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-extrabold text-slate-900 hover:bg-slate-50"
+                onClick={() => setPlantillaOpen(false)}
+              >
+                <X className="h-4 w-4" /> Cerrar
+              </button>
+            </div>
+
+            <div className="max-h-[80vh] overflow-auto px-4 py-4 pb-10">
+              {/* Empleados */}
+              <div className="rounded-3xl border border-slate-200 bg-white p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Empleados</p>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-3 py-2 text-xs font-extrabold text-white hover:bg-black disabled:opacity-60"
+                    disabled={!canEdit}
+                    onClick={() => openNuevoEmpleado()}
+                  >
+                    <Plus className="h-4 w-4" /> Nuevo
+                  </button>
+                </div>
+
+                <div className="mt-3 grid gap-2">
+                  {empleados.map((e) => (
+                    <div key={e.id} className="flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white p-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-extrabold text-slate-900">{e.nombre}</p>
+                        <p className="mt-0.5 text-xs font-semibold text-slate-600">
+                          {e.rol} · {e.tipo} · {(e.telefono ?? "").trim() || "Sin teléfono"} {e.activo ? "" : "· Inactivo"}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-60"
+                          disabled={!canEdit}
+                          onClick={() => openEditarEmpleado(e)}
+                          aria-label="Editar"
+                          title="Editar"
+                        >
+                          <Pencil className="h-5 w-5" />
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-60"
+                          disabled={!canEdit}
+                          onClick={() => void deleteEmpleado(e.id)}
+                          aria-label="Eliminar"
+                          title="Eliminar"
+                        >
+                          <Trash2 className="h-5 w-5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Editor empleado */}
+                <div className="mt-4 rounded-3xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">{empleadoEditing ? "Editar empleado" : "Nuevo empleado"}</p>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <div className="grid gap-2">
+                      <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Nombre</label>
+                      <input className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900" value={empleadoDraft.nombre} onChange={(e) => setEmpleadoDraft((d) => ({ ...d, nombre: (e.target as HTMLInputElement).value }))} />
+                    </div>
+                    <div className="grid gap-2">
+                      <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Teléfono</label>
+                      <input className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900" value={empleadoDraft.telefono} onChange={(e) => setEmpleadoDraft((d) => ({ ...d, telefono: (e.target as HTMLInputElement).value }))} inputMode="tel" />
+                    </div>
+                    <div className="grid gap-2">
+                      <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Rol</label>
+                      <select className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900" value={empleadoDraft.rol} onChange={(e) => setEmpleadoDraft((d) => ({ ...d, rol: (e.target as HTMLSelectElement).value as Rol }))}>
+                        {ROLES.map((r) => (
+                          <option key={r} value={r}>
+                            {r}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="grid gap-2">
+                      <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Tipo</label>
+                      <select className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900" value={empleadoDraft.tipo} onChange={(e) => setEmpleadoDraft((d) => ({ ...d, tipo: (e.target as HTMLSelectElement).value as "Fijo" | "Extra" }))}>
+                        <option value="Fijo">Fijo</option>
+                        <option value="Extra">Extra</option>
+                      </select>
+                    </div>
+                    <div className="md:col-span-2 grid gap-2">
+                      <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Notas rendimiento</label>
+                      <textarea className="min-h-20 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900" value={empleadoDraft.notas_rendimiento} onChange={(e) => setEmpleadoDraft((d) => ({ ...d, notas_rendimiento: (e.target as HTMLTextAreaElement).value }))} />
+                    </div>
+                    <label className="md:col-span-2 inline-flex items-center gap-2 text-sm font-semibold text-slate-800">
+                      <input type="checkbox" checked={empleadoDraft.activo} onChange={(e) => setEmpleadoDraft((d) => ({ ...d, activo: (e.target as HTMLInputElement).checked }))} />
+                      Activo
+                    </label>
+                  </div>
+                  <button
+                    type="button"
+                    className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 text-sm font-extrabold text-white hover:bg-blue-700 disabled:opacity-60"
+                    disabled={!canEdit || savingEmpleado}
+                    onClick={() => void saveEmpleado()}
+                  >
+                    {savingEmpleado ? "Guardando…" : "Guardar empleado"}
+                  </button>
+                  {!canEdit ? <p className="mt-2 text-xs font-semibold text-slate-500">Solo Admin puede modificar plantilla.</p> : null}
+                </div>
+              </div>
+
+              {/* Restricciones */}
+              <div className="mt-4 rounded-3xl border border-slate-200 bg-white p-3">
+                <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Restricciones (no disponible)</p>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <div className="grid gap-2">
+                    <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Empleado</label>
+                    <select className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900" value={selectedEmpleadoId} onChange={(e) => setSelectedEmpleadoId((e.target as HTMLSelectElement).value)}>
+                      <option value="">Selecciona…</option>
+                      {empleados.map((e) => (
+                        <option key={e.id} value={e.id}>
+                          {e.nombre}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="grid gap-2">
+                      <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Día</label>
+                      <select className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900" value={String(restrDraft.dia_semana)} onChange={(e) => setRestrDraft((d) => ({ ...d, dia_semana: Math.max(1, Math.min(7, Number((e.target as HTMLSelectElement).value) || 1)) }))}>
+                        {DIA_LABEL.map((d) => (
+                          <option key={d.n} value={String(d.n)}>
+                            {d.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="grid gap-2">
+                      <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Turno</label>
+                      <select className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900" value={restrDraft.turno} onChange={(e) => setRestrDraft((d) => ({ ...d, turno: (e.target as HTMLSelectElement).value as Turno }))}>
+                        {TURNOS.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="md:col-span-2 grid gap-2">
+                    <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Motivo</label>
+                    <input className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900" value={restrDraft.motivo} onChange={(e) => setRestrDraft((d) => ({ ...d, motivo: (e.target as HTMLInputElement).value }))} placeholder="Ej: No disponible" />
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 text-sm font-extrabold text-white hover:bg-black disabled:opacity-60"
+                  disabled={!canEdit || savingRestr || !selectedEmpleadoId}
+                  onClick={() => void addRestriccion()}
+                >
+                  {savingRestr ? "Guardando…" : "Añadir restricción"}
+                </button>
+
+                <div className="mt-3 space-y-2">
+                  {(restriccionesByEmpleado.get(selectedEmpleadoId) ?? []).map((r) => (
+                    <div key={r.id} className="flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white p-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-extrabold text-slate-900">
+                          {(DIA_LABEL.find((d) => d.n === Number(r.dia_semana))?.label ?? `Día ${r.dia_semana}`)} · {r.turno}
+                        </p>
+                        <p className="mt-0.5 text-xs font-semibold text-slate-600">{String(r.motivo ?? "").trim() || "—"}</p>
+                      </div>
+                      <button
+                        type="button"
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-60"
+                        disabled={!canEdit}
+                        onClick={() => void deleteRestriccion(r.id)}
+                        aria-label="Eliminar restricción"
+                        title="Eliminar"
+                      >
+                        <Trash2 className="h-5 w-5" />
+                      </button>
+                    </div>
+                  ))}
+                  {selectedEmpleadoId && !(restriccionesByEmpleado.get(selectedEmpleadoId) ?? []).length ? (
+                    <p className="text-sm font-semibold text-slate-600">Sin restricciones para este empleado.</p>
+                  ) : null}
+                </div>
+              </div>
             </div>
           </div>
         </div>

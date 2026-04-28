@@ -3,14 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo } from "react";
-import { LayoutDashboard } from "lucide-react";
 import { useMyRole } from "@/lib/useMyRole";
 import { getEffectiveRole, hasPermission } from "@/lib/permissions";
 
 type Tab = {
   href: string;
   label: string;
-  icon: "home" | "reservas" | "stock" | "pedidos" | "panel" | "perfil";
+  icon: "home" | "stock" | "pedidos" | "panel" | "perfil";
 };
 
 function tabActive(pathname: string, href: string): boolean {
@@ -19,9 +18,6 @@ function tabActive(pathname: string, href: string): boolean {
   }
   if (href === "/stock") {
     return pathname === "/stock" || pathname.startsWith("/stock/");
-  }
-  if (href === "/admin/reservas") {
-    return pathname === "/admin/reservas" || pathname.startsWith("/admin/reservas/");
   }
   if (href === "/admin/pedidos") {
     return pathname === "/admin/pedidos" || pathname.startsWith("/admin/pedidos/");
@@ -55,9 +51,6 @@ export function BottomTabBar() {
           />
         </svg>
       );
-    }
-    if (name === "reservas") {
-      return <LayoutDashboard className={cls} aria-hidden strokeWidth={2.2} />;
     }
     if (name === "stock") {
       return (
@@ -105,14 +98,12 @@ export function BottomTabBar() {
     if (!isAdmin) {
       return [
         { href: "/", label: "INICIO", icon: "home" },
-        { href: "/admin/reservas", label: "Reservas", icon: "reservas" },
         { href: "/stock", label: "STOCK", icon: "stock" },
         { href: "/mas", label: "PERFIL", icon: "perfil" }
       ];
     }
     return [
       { href: "/", label: "INICIO", icon: "home" },
-      { href: "/admin/reservas", label: "Reservas", icon: "reservas" },
       { href: "/stock", label: "STOCK", icon: "stock" },
       { href: "/admin/pedidos", label: "PEDIDOS", icon: "pedidos" },
       { href: "/admin", label: "PANEL", icon: "panel" }

@@ -1,0 +1,9 @@
+// Backup desactivado: ruta /admin/reservas.
+// Motivo: simplificación temporal del proyecto.
+//
+// Este archivo NO es una ruta activa de Next.js porque no se llama page.tsx.
+// Si queréis recuperar la pantalla en el futuro, renombrar este archivo a page.tsx
+// (y revisar dependencias UI/RLS asociadas).
+
+export {};
+

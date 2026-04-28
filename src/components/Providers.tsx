@@ -17,12 +17,9 @@ import { GlobalRealtimeSync } from "@/components/GlobalRealtimeSync";
 import { ToastProvider } from "@/components/ui/ToastCenter";
 import { ActivityRealtimeToasts } from "@/components/ActivityRealtimeToasts";
 import { SupabaseEnvBootstrap } from "@/components/SupabaseEnvBootstrap";
-import { usePathname } from "next/navigation";
 
 export function Providers({ children }: { children: ReactNode }) {
   const [persister] = useState(() => createIdbPersister());
-  const pathname = usePathname();
-  const isAdminRoute = (pathname ?? "").startsWith("/admin");
   const [client] = useState(
     () =>
       new QueryClient({
@@ -58,9 +55,9 @@ export function Providers({ children }: { children: ReactNode }) {
         <OfflineSync />
         <div className="min-h-dvh bg-slate-50 pb-[calc(env(safe-area-inset-bottom)+6.5rem)] text-slate-900">
           {children}
-          {!isAdminRoute ? <Footer /> : null}
+          <Footer />
         </div>
-        {!isAdminRoute ? <CookieBanner /> : null}
+        <CookieBanner />
         <BottomTabBar />
       </ToastProvider>
     </PersistQueryClientProvider>
