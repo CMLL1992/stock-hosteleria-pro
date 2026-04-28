@@ -41,8 +41,34 @@ type ReservaRow = {
   hora: string;
   pax: number;
   nombre: string;
+  telefono?: string | null;
+  notas?: string | null;
   estado?: ReservaEstado | string | null;
 };
+
+type TurnoKey = "comida" | "cena";
+
+const RESERVA_DEFAULT_MINUTES = 90;
+
+function parseHoraToMinutes(hora: string): number | null {
+  const m = String(hora ?? "").trim().match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+  return hh * 60 + mm;
+}
+
+function turnoRange(turno: TurnoKey): { start: number; end: number } {
+  // MVP: rangos operativos típicos; configurable en siguiente iteración (sala_horarios).
+  if (turno === "comida") return { start: 12 * 60, end: 17 * 60 }; // 12:00-17:00
+  return { start: 19 * 60, end: 24 * 60 }; // 19:00-24:00
+}
+
+function overlaps(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean {
+  return Math.max(aStart, bStart) < Math.min(aEnd, bEnd);
+}
 
 function clamp01(n: number) {
   return Math.max(0, Math.min(1, n));
@@ -134,6 +160,43 @@ function ReservasPlanoInner() {
     return `${yyyy}-${mm}-${dd}`;
   });
   const [reservasDia, setReservasDia] = useState<ReservaRow[]>([]);
+  const [turno, setTurno] = useState<TurnoKey>("cena");
+  const [horaFocus, setHoraFocus] = useState<string>(() => (new Date().getHours() < 17 ? "14:00" : "21:00"));
+  const focusMins = useMemo(() => parseHoraToMinutes(horaFocus) ?? (turno === "comida" ? 14 * 60 : 21 * 60), [horaFocus, turno]);
+
+  const mesaReservaNowById = useMemo(() => {
+    const m = new Map<string, ReservaRow | null>();
+    const { start: tStart, end: tEnd } = turnoRange(turno);
+    for (const r of reservasDia) {
+      const mesaId = String(r.mesa_id ?? "").trim();
+      if (!mesaId) continue;
+      const h = parseHoraToMinutes(String(r.hora ?? ""));
+      if (h == null) continue;
+      const rStart = h;
+      const rEnd = h + RESERVA_DEFAULT_MINUTES;
+      const isInTurno = overlaps(rStart, rEnd, tStart, tEnd);
+      if (!isInTurno) continue;
+      const isNow = overlaps(rStart, rEnd, focusMins, focusMins + 1);
+      if (isNow) m.set(mesaId, r);
+    }
+    return m;
+  }, [focusMins, reservasDia, turno]);
+
+  const mesaHasLaterById = useMemo(() => {
+    const m = new Map<string, boolean>();
+    const { start: tStart, end: tEnd } = turnoRange(turno);
+    for (const r of reservasDia) {
+      const mesaId = String(r.mesa_id ?? "").trim();
+      if (!mesaId) continue;
+      const h = parseHoraToMinutes(String(r.hora ?? ""));
+      if (h == null) continue;
+      const rStart = h;
+      const rEnd = h + RESERVA_DEFAULT_MINUTES;
+      if (!overlaps(rStart, rEnd, tStart, tEnd)) continue;
+      if (rStart > focusMins) m.set(mesaId, true);
+    }
+    return m;
+  }, [focusMins, reservasDia, turno]);
   const reservasByMesa = useMemo(() => {
     const map = new Map<string, ReservaRow[]>();
     for (const r of reservasDia) {
@@ -177,6 +240,16 @@ function ReservasPlanoInner() {
     () => selIsDecor && decorKind(selMesa) !== "barra",
     [selIsDecor, selMesa]
   );
+
+  const [reservaDraft, setReservaDraft] = useState({
+    nombre: "",
+    telefono: "",
+    pax: 2,
+    hora: "21:00",
+    notas: ""
+  });
+  const [editingReservaId, setEditingReservaId] = useState<string | null>(null);
+  const [savingReserva, setSavingReserva] = useState(false);
 
   const load = useCallback(async () => {
     if (!activeEstablishmentId) return;
@@ -233,6 +306,8 @@ function ReservasPlanoInner() {
     setErrMsg(null);
     try {
       const selects = [
+        "id,mesa_id,fecha,hora,pax,nombre,telefono,notas,estado",
+        "id,mesa_id,fecha,hora,pax,nombre,telefono,notas",
         "id,mesa_id,fecha,hora,pax,nombre,estado",
         "id,mesa_id,fecha,hora,pax,nombre"
       ] as const;
@@ -340,10 +415,20 @@ function ReservasPlanoInner() {
   function openMesa(mesaId: string) {
     const m = mesas.find((x) => x.id === mesaId) ?? null;
     setSelMesaId(mesaId);
-    // Decorativos: abrimos directamente "Gestionar" (solo eliminar).
-    setManageOpen(isDecorativo(m));
+    // En modo agenda (plano bloqueado): el Drawer es para reservas manuales.
+    // Decorativos no abren agenda cuando está bloqueado.
+    if (!planoUnlocked && isDecorativo(m)) return;
+    setManageOpen(isDecorativo(m) && planoUnlocked);
     setSheetOpen(true);
     setMergeMode(false);
+    setEditingReservaId(null);
+    setReservaDraft({
+      nombre: "",
+      telefono: "",
+      pax: 2,
+      hora: horaFocus || (turno === "comida" ? "14:00" : "21:00"),
+      notas: ""
+    });
   }
 
   useEffect(() => {
@@ -745,6 +830,103 @@ function ReservasPlanoInner() {
     }
   }
 
+  function mesaAgendaColor(mesa: Mesa): { dot: string; bg: string; border: string } {
+    const now = mesaReservaNowById.get(mesa.id) ?? null;
+    if (now) return { dot: "bg-rose-600", bg: "bg-rose-50", border: "border-rose-300" }; // rojo: ocupada ahora
+    const later = mesaHasLaterById.get(mesa.id) ?? false;
+    if (later) return { dot: "bg-amber-500", bg: "bg-amber-50", border: "border-amber-300" }; // amarillo: reserva más tarde
+    return { dot: "bg-emerald-600", bg: "bg-emerald-50", border: "border-emerald-300" }; // verde: libre
+  }
+
+  async function saveReservaManual() {
+    if (!activeEstablishmentId || !selMesa) return;
+    if (isDecorativo(selMesa)) return;
+    setSavingReserva(true);
+    setErrMsg(null);
+    try {
+      const nombre = String(reservaDraft.nombre ?? "").trim();
+      const telefono = String(reservaDraft.telefono ?? "").trim();
+      const notas = String(reservaDraft.notas ?? "").trim();
+      const pax = Math.max(1, Math.trunc(Number(reservaDraft.pax) || 1));
+      const hora = String(reservaDraft.hora ?? "").trim() || (turno === "comida" ? "14:00" : "21:00");
+      if (!nombre) throw new Error("Indica el nombre del cliente.");
+      if (!telefono) throw new Error("Indica el teléfono.");
+      if (parseHoraToMinutes(hora) == null) throw new Error("Hora inválida. Usa formato HH:MM (ej: 14:30).");
+
+      if (editingReservaId) {
+        const up = await supabase()
+          .from("sala_reservas")
+          .update({ nombre, telefono, pax, hora, notas, estado: "confirmada" })
+          .eq("id", editingReservaId)
+          .eq("establecimiento_id", activeEstablishmentId);
+        if (up.error) throw up.error;
+      } else {
+        const ins = await supabase()
+          .from("sala_reservas")
+          .insert({
+            establecimiento_id: activeEstablishmentId,
+            mesa_id: selMesa.id,
+            fecha: selectedDate,
+            nombre,
+            telefono,
+            pax,
+            hora,
+            notas,
+            estado: "confirmada"
+          });
+        if (ins.error) throw ins.error;
+      }
+
+      await loadReservasForDate();
+      setSheetOpen(false);
+      setSelMesaId(null);
+      setManageOpen(false);
+      setEditingReservaId(null);
+    } catch (e) {
+      setErrMsg(supabaseErrToString(e));
+    } finally {
+      setSavingReserva(false);
+    }
+  }
+
+  async function liberarMesa() {
+    if (!activeEstablishmentId || !selMesa) return;
+    const r = mesaReservaNowById.get(selMesa.id) ?? null;
+    if (!r) return;
+    const ok = typeof window !== "undefined" ? window.confirm("¿Liberar mesa (cancelar reserva) ?") : false;
+    if (!ok) return;
+    setSavingReserva(true);
+    setErrMsg(null);
+    try {
+      const up = await supabase()
+        .from("sala_reservas")
+        .update({ estado: "cancelada" })
+        .eq("id", r.id)
+        .eq("establecimiento_id", activeEstablishmentId);
+      if (up.error) throw up.error;
+      await loadReservasForDate();
+      setSheetOpen(false);
+      setSelMesaId(null);
+      setManageOpen(false);
+      setEditingReservaId(null);
+    } catch (e) {
+      setErrMsg(supabaseErrToString(e));
+    } finally {
+      setSavingReserva(false);
+    }
+  }
+
+  function startEditarReserva(r: ReservaRow) {
+    setEditingReservaId(r.id);
+    setReservaDraft({
+      nombre: String(r.nombre ?? "").trim(),
+      telefono: String(r.telefono ?? "").trim(),
+      pax: Math.max(1, Math.trunc(Number(r.pax) || 1)),
+      hora: String(r.hora ?? "").trim() || (turno === "comida" ? "14:00" : "21:00"),
+      notas: String(r.notas ?? "").trim()
+    });
+  }
+
   async function deleteMesa() {
     if (!selMesa || !activeEstablishmentId) return;
     // Permitir borrar desde "Gestionar" aunque el plano esté bloqueado.
@@ -928,6 +1110,26 @@ function ReservasPlanoInner() {
                     value={selectedDate}
                     onChange={(e) => setSelectedDate((e.target as HTMLInputElement).value)}
                     aria-label="Fecha"
+                  />
+                  <select
+                    className="min-h-9 rounded-2xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 shadow-sm"
+                    value={turno}
+                    onChange={(e) => {
+                      const next = (e.target as HTMLSelectElement).value as TurnoKey;
+                      setTurno(next === "comida" ? "comida" : "cena");
+                      setHoraFocus(next === "comida" ? "14:00" : "21:00");
+                    }}
+                    aria-label="Turno"
+                  >
+                    <option value="comida">Comida</option>
+                    <option value="cena">Cena</option>
+                  </select>
+                  <input
+                    type="time"
+                    className="min-h-9 rounded-2xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 shadow-sm"
+                    value={horaFocus}
+                    onChange={(e) => setHoraFocus((e.target as HTMLInputElement).value)}
+                    aria-label="Hora"
                   />
                   {canDrag && planoUnlocked ? (
                     <input
@@ -1126,7 +1328,7 @@ function ReservasPlanoInner() {
                   const selected = sheetOpen && selMesaId === m.id;
                   const decor = isDecorativo(m);
                   const dk = decorKind(m);
-                  const ui = mesaUi(m.estado, selected);
+                  const ui = !planoUnlocked && !decor ? { ...mesaAgendaColor(m), ring: "" } : mesaUi(m.estado, selected);
                   const isRound = m.forma === "round";
                   const left = `${m.x * 100}%`;
                   const top = `${m.y * 100}%`;
@@ -1223,18 +1425,27 @@ function ReservasPlanoInner() {
           {/* BottomSheet */}
           <Drawer
             open={sheetOpen}
-            title={selMesa ? (isDecorativo(selMesa) ? String(selMesa.nombre ?? "").trim() || "Elemento" : `Mesa ${selMesa.numero}`) : "Mesa"}
+            title={
+              selMesa
+                ? isDecorativo(selMesa)
+                  ? String(selMesa.nombre ?? "").trim() || "Elemento"
+                  : !planoUnlocked
+                    ? "Reserva"
+                    : `Mesa ${selMesa.numero}`
+                : "Mesa"
+            }
             onClose={() => {
               setSheetOpen(false);
               setManageOpen(false);
               setSelMesaId(null);
               setMergeMode(false);
+              setEditingReservaId(null);
             }}
             variant="light"
           >
             {!selMesa ? null : (
               <div className="space-y-4 pb-6">
-                {!manageOpen ? (
+                {!manageOpen && planoUnlocked ? (
                   <button
                     type="button"
                     className="min-h-12 w-full rounded-2xl bg-blue-600 text-sm font-extrabold text-white hover:bg-blue-700"
@@ -1242,6 +1453,135 @@ function ReservasPlanoInner() {
                   >
                     Gestionar
                   </button>
+                ) : null}
+
+                {/* Modo agenda (plano bloqueado): crear/editar/liberar reservas */}
+                {!planoUnlocked && !selIsDecor ? (
+                  <div className="space-y-3">
+                    {(() => {
+                      const now = selMesa ? (mesaReservaNowById.get(selMesa.id) ?? null) : null;
+                      const later = selMesa ? (mesaHasLaterById.get(selMesa.id) ?? false) : false;
+                      const statusLabel = now ? "Ocupada ahora" : later ? "Tiene reserva más tarde" : "Libre";
+                      const statusClass = now ? "border-rose-200 bg-rose-50 text-rose-900" : later ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-900";
+                      return (
+                        <div className={["rounded-3xl border p-3 text-sm font-semibold", statusClass].join(" ")}>
+                          {statusLabel} · {selectedDate} · {turno} · {horaFocus}
+                        </div>
+                      );
+                    })()}
+
+                    {selMesa ? (
+                      (() => {
+                        const rNow = mesaReservaNowById.get(selMesa.id) ?? null;
+                        if (rNow) {
+                          return (
+                            <div className="space-y-3">
+                              <div className="rounded-3xl border border-slate-200 bg-white p-3">
+                                <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Reserva</p>
+                                <p className="mt-2 text-base font-extrabold text-slate-900">{String(rNow.nombre ?? "").trim() || "Cliente"}</p>
+                                <p className="mt-1 text-sm text-slate-700">
+                                  {String(rNow.telefono ?? "").trim() || "—"} ·{" "}
+                                  <span className="font-semibold tabular-nums">{Math.max(1, Math.trunc(Number(rNow.pax) || 1))} pax</span>
+                                </p>
+                                <p className="mt-1 text-sm font-semibold text-slate-700">{String(rNow.hora ?? "").trim() || "—"}</p>
+                                {String(rNow.notas ?? "").trim() ? (
+                                  <p className="mt-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                                    {String(rNow.notas ?? "").trim()}
+                                  </p>
+                                ) : null}
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <button
+                                  type="button"
+                                  className="min-h-12 rounded-2xl border border-slate-200 bg-white text-sm font-extrabold text-slate-900 hover:bg-slate-50 disabled:opacity-60"
+                                  disabled={savingReserva}
+                                  onClick={() => startEditarReserva(rNow)}
+                                >
+                                  Editar
+                                </button>
+                                <button
+                                  type="button"
+                                  className="min-h-12 rounded-2xl border border-rose-200 bg-rose-50 text-sm font-extrabold text-rose-700 hover:bg-rose-100 disabled:opacity-60"
+                                  disabled={savingReserva}
+                                  onClick={() => void liberarMesa()}
+                                >
+                                  Liberar mesa
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div className="space-y-3">
+                            <div className="rounded-3xl border border-slate-200 bg-white p-3">
+                              <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">
+                                {editingReservaId ? "Editar reserva manual" : "Crear reserva manual"}
+                              </p>
+                              <div className="mt-3 grid gap-2">
+                                <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Nombre</label>
+                                <input
+                                  className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900"
+                                  value={reservaDraft.nombre}
+                                  onChange={(e) => setReservaDraft((d) => ({ ...d, nombre: (e.target as HTMLInputElement).value }))}
+                                  placeholder="Nombre del cliente"
+                                />
+                              </div>
+                              <div className="mt-3 grid gap-2">
+                                <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Teléfono</label>
+                                <input
+                                  className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900"
+                                  value={reservaDraft.telefono}
+                                  onChange={(e) => setReservaDraft((d) => ({ ...d, telefono: (e.target as HTMLInputElement).value }))}
+                                  placeholder="+34 600 000 000"
+                                  inputMode="tel"
+                                />
+                              </div>
+                              <div className="mt-3 grid grid-cols-2 gap-3">
+                                <div className="grid gap-2">
+                                  <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Comensales</label>
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900"
+                                    value={String(reservaDraft.pax)}
+                                    onChange={(e) => setReservaDraft((d) => ({ ...d, pax: Math.max(1, Math.trunc(Number((e.target as HTMLInputElement).value) || 1)) }))}
+                                  />
+                                </div>
+                                <div className="grid gap-2">
+                                  <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Hora</label>
+                                  <input
+                                    type="time"
+                                    className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900"
+                                    value={reservaDraft.hora}
+                                    onChange={(e) => setReservaDraft((d) => ({ ...d, hora: (e.target as HTMLInputElement).value }))}
+                                  />
+                                </div>
+                              </div>
+                              <div className="mt-3 grid gap-2">
+                                <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Notas</label>
+                                <textarea
+                                  className="min-h-24 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                                  value={reservaDraft.notas}
+                                  onChange={(e) => setReservaDraft((d) => ({ ...d, notas: (e.target as HTMLTextAreaElement).value }))}
+                                  placeholder="Ej: Alérgico al gluten"
+                                />
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              className="min-h-12 w-full rounded-2xl bg-slate-900 text-sm font-extrabold text-white hover:bg-black disabled:opacity-60"
+                              disabled={savingReserva}
+                              onClick={() => void saveReservaManual()}
+                            >
+                              {savingReserva ? "Guardando…" : editingReservaId ? "Guardar cambios" : "Crear reserva"}
+                            </button>
+                          </div>
+                        );
+                      })()
+                    ) : null}
+                  </div>
                 ) : null}
 
                 {manageOpen ? (
