@@ -243,14 +243,37 @@ export default function AdminStaffPage() {
       if (resR.error) throw resR.error;
       setRestricciones((resR.data ?? []) as unknown as Restriccion[]);
 
-      const sem = await supabase()
-        .from("staff_cuadrante_semanas")
-        .upsert({ establecimiento_id: activeEstablishmentId, semana_start: semanaStart }, { onConflict: "establecimiento_id,semana_start" })
-        .select("id,semana_start")
-        .single();
-      if (sem.error) throw sem.error;
-      const semRow = sem.data as unknown as SemanaRow;
+      // Escritura del cuadrante (crear semana) solo para Admin.
+      // Staff puede ver si existe, pero no debe intentar crear filas (RLS).
+      let semRow: SemanaRow | null = null;
+      if (canEdit) {
+        const sem = await supabase()
+          .from("staff_cuadrante_semanas")
+          .upsert(
+            { establecimiento_id: activeEstablishmentId, semana_start: semanaStart },
+            { onConflict: "establecimiento_id,semana_start" }
+          )
+          .select("id,semana_start")
+          .single();
+        if (sem.error) throw sem.error;
+        semRow = sem.data as unknown as SemanaRow;
+      } else {
+        const sem = await supabase()
+          .from("staff_cuadrante_semanas")
+          .select("id,semana_start")
+          .eq("establecimiento_id", activeEstablishmentId)
+          .eq("semana_start", semanaStart)
+          .maybeSingle();
+        if (sem.error) throw sem.error;
+        semRow = (sem.data as unknown as SemanaRow | null) ?? null;
+      }
       setSemanaRow(semRow);
+
+      if (!semRow?.id) {
+        setCeldas([]);
+        setAsigs([]);
+        return;
+      }
 
       const cel = await supabase()
         .from("staff_cuadrante_celdas")
@@ -284,7 +307,7 @@ export default function AdminStaffPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeEstablishmentId, semanaStart]);
+  }, [activeEstablishmentId, canEdit, semanaStart]);
 
   function openNuevoEmpleado() {
     setEmpleadoEditing(null);
