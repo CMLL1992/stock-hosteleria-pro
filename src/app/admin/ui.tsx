@@ -5,16 +5,14 @@ import Link from "next/link";
 import {
   Boxes,
   Building2,
-  CalendarDays,
   ChevronRight,
   ClipboardList,
-  Link as LinkIcon,
   Package,
-  MapPin,
   Shield,
   ShoppingBag,
   Truck,
-  Users
+  Users,
+  UsersRound
 } from "lucide-react";
 import { MobileHeader } from "@/components/MobileHeader";
 import { useMyRole } from "@/lib/useMyRole";
@@ -38,8 +36,10 @@ type AdminSection = {
 
 function itemIcon(id: string) {
   switch (id) {
-    case "url-reservas":
-      return LinkIcon;
+    case "staff":
+      return UsersRound;
+    case "establecimiento":
+      return Building2;
     case "establecimientos":
       return Building2;
     case "usuarios":
@@ -57,9 +57,7 @@ function itemIcon(id: string) {
     case "escandallos":
       return ClipboardList;
     case "eventos":
-      return CalendarDays;
-    case "reservas":
-      return MapPin;
+      return ClipboardList;
     case "pedidos":
       return ShoppingBag;
     case "proveedores":
@@ -80,14 +78,26 @@ function accentByIndex(i: number): { bar: string; bg: string; text: string } {
 
 const SECTIONS: AdminSection[] = [
   {
+    id: "staff",
+    heading: "Staff y turnos",
+    items: [
+      {
+        id: "staff",
+        href: "/admin/staff",
+        title: "Staff / Turnos",
+        subtitle: "Plantilla, restricciones y cuadrante semanal."
+      }
+    ]
+  },
+  {
     id: "local",
     heading: "Establecimiento",
     items: [
       {
-        id: "url-reservas",
+        id: "establecimiento",
         href: "/admin/establecimiento",
-        title: "Enlace de reservas",
-        subtitle: "Copiar URL pública y generar QR para mesas."
+        title: "Datos del local",
+        subtitle: "Información general del establecimiento."
       }
     ]
   },

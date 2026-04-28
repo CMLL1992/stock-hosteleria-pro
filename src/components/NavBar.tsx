@@ -54,6 +54,7 @@ export function NavBar() {
           {isAdmin ? (
             <LinkItem href="/admin/pedidos" label="Pedidos" activeHref={activeHref} />
           ) : null}
+          {isAdmin ? <LinkItem href="/admin/staff" label="Staff" activeHref={activeHref} /> : null}
         </div>
         <button
           className="min-h-12 rounded-xl px-3 text-sm text-zinc-700 hover:bg-zinc-100"
