@@ -776,7 +776,8 @@ function ReservasPlanoInner() {
                       className="min-h-9 max-w-[220px] rounded-2xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                       value={zonaNameDraft}
                       onChange={(e) => {
-                        setZonaNameDraft(e.currentTarget.value);
+                        const newValue = (e.target as HTMLInputElement).value;
+                        setZonaNameDraft(newValue);
                       }}
                       onBlur={() => void saveZonaName(zonaNameDraft)}
                       placeholder="Nombre del plano"
@@ -786,7 +787,10 @@ function ReservasPlanoInner() {
                     <select
                       className="min-h-9 max-w-[220px] rounded-2xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 shadow-sm"
                       value={zonaId ?? ""}
-                      onChange={(e) => setZonaId(e.currentTarget.value || null)}
+                      onChange={(e) => {
+                        const newValue = (e.target as HTMLSelectElement).value;
+                        setZonaId(newValue || null);
+                      }}
                     >
                     {zonas.map((z) => (
                       <option key={z.id} value={z.id}>
@@ -1106,7 +1110,8 @@ function ReservasPlanoInner() {
                                     value={w}
                                     disabled={!canDrag}
                                     onChange={(e) => {
-                                      const next = clampRange(Number(e.currentTarget.value) || 0, SIZE_MIN, SIZE_MAX);
+                                      const newValue = (e.target as HTMLInputElement).value;
+                                      const next = clampRange(Number(newValue) || 0, SIZE_MIN, SIZE_MAX);
                                       setMesas((prev) => prev.map((m) => (m.id === selMesa.id ? { ...m, width: next } : m)));
                                     }}
                                     onPointerUp={() => void updateMesaFields({ width: clampRange(Number(selMesa.width ?? 0.18) || 0.18, SIZE_MIN, SIZE_MAX) })}
@@ -1132,7 +1137,8 @@ function ReservasPlanoInner() {
                                     value={h}
                                     disabled={!canDrag}
                                     onChange={(e) => {
-                                      const next = clampRange(Number(e.currentTarget.value) || 0, SIZE_MIN, SIZE_MAX);
+                                      const newValue = (e.target as HTMLInputElement).value;
+                                      const next = clampRange(Number(newValue) || 0, SIZE_MIN, SIZE_MAX);
                                       setMesas((prev) => prev.map((m) => (m.id === selMesa.id ? { ...m, height: next } : m)));
                                     }}
                                     onPointerUp={() => void updateMesaFields({ height: clampRange(Number(selMesa.height ?? 0.18) || 0.18, SIZE_MIN, SIZE_MAX) })}
@@ -1241,7 +1247,8 @@ function ReservasPlanoInner() {
                               className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                               value={String(selMesa.nombre ?? "").replace(/^texto:\s*/i, "")}
                               onChange={(e) => {
-                                const v = e.currentTarget.value;
+                                const newValue = (e.target as HTMLInputElement).value;
+                                const v = newValue;
                                 setMesas((prev) => prev.map((m) => (m.id === selMesa.id ? { ...m, nombre: `Texto: ${v}` } : m)));
                               }}
                               onBlur={() => {

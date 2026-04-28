@@ -398,7 +398,10 @@ export function ProductByUidClient({ uid }: { uid: string }) {
             type="text"
             pattern="[0-9]*"
             value={pedidoCantidad}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => setPedidoCantidad(e.currentTarget.value)}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => {
+              const newValue = e.target.value;
+              setPedidoCantidad(newValue);
+            }}
           />
           <div className="grid grid-cols-1 gap-2">
             <Button
