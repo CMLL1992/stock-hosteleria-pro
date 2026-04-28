@@ -214,7 +214,7 @@ function ReservasPlanoInner() {
   const [planoUnlocked, setPlanoUnlocked] = useState(false);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [scale, setScale] = useState(1);
-  const [isInteracting, setIsInteracting] = useState(false);
+  const [, setIsInteracting] = useState(false);
   const [boardSize, setBoardSize] = useState({ w: 0, h: 0 });
 
   const boardRef = useRef<HTMLDivElement | null>(null);
@@ -250,6 +250,12 @@ function ReservasPlanoInner() {
   });
   const [editingReservaId, setEditingReservaId] = useState<string | null>(null);
   const [savingReserva, setSavingReserva] = useState(false);
+  const [pinchSizingMesaId, setPinchSizingMesaId] = useState<string | null>(null);
+
+  const mesasRef = useRef(mesas);
+  useEffect(() => {
+    mesasRef.current = mesas;
+  }, [mesas]);
 
   const load = useCallback(async () => {
     if (!activeEstablishmentId) return;
@@ -395,22 +401,115 @@ function ReservasPlanoInner() {
     } catch {
       // ignore
     }
-    const onTouchMove = (ev: TouchEvent) => {
-      if (draggingRef.current || panningRef.current) {
-        ev.preventDefault();
-        ev.stopPropagation();
-      }
+    const pointToWorld01 = (clientX: number, clientY: number): { x: number; y: number } => {
+      const rect = el.getBoundingClientRect();
+      const sx = clientX - rect.left;
+      const sy = clientY - rect.top;
+      const worldPxX = sx / scale - pan.x;
+      const worldPxY = sy / scale - pan.y;
+      return { x: clamp01(worldPxX / rect.width), y: clamp01(worldPxY / rect.height) };
     };
+
+    const isTouchInsideMesa = (mesa: Mesa, clientX: number, clientY: number): boolean => {
+      const rect = el.getBoundingClientRect();
+      const wPx =
+        mesa.width != null && Number.isFinite(Number(mesa.width)) && rect.width > 0 ? Math.max(6, Number(mesa.width) * rect.width) : 60;
+      const hPx =
+        mesa.height != null && Number.isFinite(Number(mesa.height)) && rect.height > 0 ? Math.max(6, Number(mesa.height) * rect.height) : 60;
+      const p = pointToWorld01(clientX, clientY);
+      const w01 = wPx / Math.max(1, rect.width);
+      const h01 = hPx / Math.max(1, rect.height);
+      return p.x >= mesa.x - w01 / 2 && p.x <= mesa.x + w01 / 2 && p.y >= mesa.y - h01 / 2 && p.y <= mesa.y + h01 / 2;
+    };
+
+    const MIN_SIZE = 0.05;
+
+    const onTouchMove: EventListener = (evt) => {
+      const ev = evt as TouchEvent;
+      // Bloquea zoom nativo siempre dentro del tablero
+      ev.preventDefault();
+      ev.stopPropagation();
+
+      if (!planoUnlocked) return;
+      if (!selMesaId) return;
+      const mesa = mesasRef.current.find((m) => m.id === selMesaId) ?? null;
+      if (!mesa || isDecorativo(mesa)) return;
+
+      if (ev.touches.length !== 2) return;
+      const t1 = ev.touches[0];
+      const t2 = ev.touches[1];
+      if (!t1 || !t2) return;
+
+      // Solo si ambos dedos están sobre la mesa seleccionada
+      if (!isTouchInsideMesa(mesa, t1.clientX, t1.clientY)) return;
+      if (!isTouchInsideMesa(mesa, t2.clientX, t2.clientY)) return;
+
+      const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+      if (!Number.isFinite(dist) || dist <= 0) return;
+
+      if (!pinchRef.current || pinchRef.current.mesaId !== mesa.id) {
+        // Inicializa pinch con tamaños actuales
+        pinchRef.current = {
+          mesaId: mesa.id,
+          a: -1,
+          b: -2,
+          startDist: dist,
+          startW: clampRange(Number(mesa.width ?? 0.18) || 0.18, MIN_SIZE, SIZE_MAX),
+          startH: clampRange(Number(mesa.height ?? 0.18) || 0.18, MIN_SIZE, SIZE_MAX)
+        };
+        setPinchSizingMesaId(mesa.id);
+        return;
+      }
+
+      const pinch = pinchRef.current;
+      const factor = dist / Math.max(10, pinch.startDist);
+      const nextW = clampRange(pinch.startW * factor, MIN_SIZE, SIZE_MAX);
+      const nextH = clampRange(pinch.startH * factor, MIN_SIZE, SIZE_MAX);
+      setMesas((prev) => prev.map((m) => (m.id === mesa.id ? { ...m, width: nextW, height: nextH } : m)));
+    };
+
+    const onTouchEnd: EventListener = (evt) => {
+      const ev = evt as TouchEvent;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const pinch = pinchRef.current;
+      if (!pinch) return;
+      // Si ya no hay 2 dedos, persistimos
+      if (ev.touches.length >= 2) return;
+      pinchRef.current = null;
+      setPinchSizingMesaId(null);
+
+      const mesa = mesasRef.current.find((m) => m.id === pinch.mesaId) ?? null;
+      if (!mesa || !activeEstablishmentId) return;
+      const patch = {
+        width: mesa.width != null ? clampRange(Number(mesa.width) || 0, MIN_SIZE, SIZE_MAX) : null,
+        height: mesa.height != null ? clampRange(Number(mesa.height) || 0, MIN_SIZE, SIZE_MAX) : null
+      };
+      void (async () => {
+        try {
+          const res = await supabase().from("sala_mesas").update(patch).eq("id", mesa.id).eq("establecimiento_id", activeEstablishmentId);
+          if (res.error) throw res.error;
+        } catch (err) {
+          setErrMsg(supabaseErrToString(err));
+          void load();
+        }
+      })();
+    };
+
     el.addEventListener("touchmove", onTouchMove, { passive: false });
+    el.addEventListener("touchend", onTouchEnd, { passive: false });
+    el.addEventListener("touchcancel", onTouchEnd, { passive: false });
     return () => {
       try {
         ro?.disconnect();
       } catch {
         // ignore
       }
-      el.removeEventListener("touchmove", onTouchMove as EventListener);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+      el.removeEventListener("touchcancel", onTouchEnd);
     };
-  }, []);
+  }, [activeEstablishmentId, pan.x, pan.y, planoUnlocked, scale, selMesaId, load]);
 
   function openMesa(mesaId: string) {
     const m = mesas.find((x) => x.id === mesaId) ?? null;
@@ -1308,7 +1407,7 @@ function ReservasPlanoInner() {
               ref={boardRef}
               className="relative h-[calc(100dvh-56px)] w-full"
               style={{
-                touchAction: isInteracting || (canDrag && planoUnlocked) ? "none" : "manipulation",
+                touchAction: "none",
                 overscrollBehavior: "none"
               }}
               onPointerDown={onPointerDownBoard}
@@ -1361,6 +1460,7 @@ function ReservasPlanoInner() {
                         "absolute select-none",
                         "grid place-items-center",
                         decor && dk === "texto" && !planoUnlocked ? "pointer-events-none" : "",
+                        pinchSizingMesaId === m.id ? "ring-2 ring-blue-500/40" : "",
                         decor ? (dk === "texto" ? "" : "border border-slate-300") : isRound ? "rounded-full" : "rounded-2xl",
                         decor
                           ? dk === "texto"
