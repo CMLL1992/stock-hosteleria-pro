@@ -1,8 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Circle, LayoutGrid, Lock, Minus, RotateCw, Square, Type } from "lucide-react";
-import { Drawer } from "@/components/ui/Drawer";
+import { ArrowLeft, Circle, LayoutGrid, Lock, Minus, Square, Type } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useMyRole } from "@/lib/useMyRole";
 import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
@@ -113,17 +112,6 @@ function decorKind(m: Pick<Mesa, "nombre"> | null | undefined): "pared" | "barra
   return "decor";
 }
 
-function addMinutesToHora(hora: string, minsToAdd: number): string {
-  const m = String(hora ?? "").trim().match(/^(\d{1,2}):(\d{2})/);
-  if (!m) return "";
-  const hh = Math.max(0, Math.min(23, Number(m[1]) || 0));
-  const mm = Math.max(0, Math.min(59, Number(m[2]) || 0));
-  const total = hh * 60 + mm + minsToAdd;
-  const nh = Math.floor(((total % (24 * 60)) + 24 * 60) % (24 * 60) / 60);
-  const nm = ((total % 60) + 60) % 60;
-  return `${String(nh).padStart(2, "0")}:${String(nm).padStart(2, "0")}`;
-}
-
 export default function ReservasPlanoPage() {
   return (
     <Suspense fallback={<main className="p-4 text-sm text-slate-600">Cargando…</main>}>
@@ -198,20 +186,6 @@ function ReservasPlanoInner() {
     }
     return m;
   }, [focusMins, reservasDia, turno]);
-  const reservasByMesa = useMemo(() => {
-    const map = new Map<string, ReservaRow[]>();
-    for (const r of reservasDia) {
-      const id = String(r.mesa_id ?? "").trim();
-      if (!id) continue;
-      map.set(id, [...(map.get(id) ?? []), r]);
-    }
-    for (const [k, v] of map.entries()) {
-      v.sort((a, b) => String(a.hora ?? "").localeCompare(String(b.hora ?? "")));
-      map.set(k, v);
-    }
-    return map;
-  }, [reservasDia]);
-
   const [planoUnlocked, setPlanoUnlocked] = useState(false);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [scale, setScale] = useState(1);
@@ -226,9 +200,7 @@ function ReservasPlanoInner() {
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [selMesaId, setSelMesaId] = useState<string | null>(null);
-  const [manageOpen, setManageOpen] = useState(false);
   const [creatingMesa, setCreatingMesa] = useState<null | "rect" | "round" | "pared" | "texto">(null);
-  const [deletingMesa, setDeletingMesa] = useState(false);
   const [mergeMode, setMergeMode] = useState(false);
   const [zonaNameDraft, setZonaNameDraft] = useState("");
 
@@ -236,11 +208,6 @@ function ReservasPlanoInner() {
   const mesasZona = useMemo(() => mesas.filter((m) => m.zona_id === (zonaId ?? "")), [mesas, zonaId]);
   const selIsDecor = useMemo(() => isDecorativo(selMesa), [selMesa]);
   /** Pared y otros decor rect.; no barras (suelen ser horizontales). */
-  const selPuedeGirarDecor = useMemo(
-    () => selIsDecor && decorKind(selMesa) !== "barra",
-    [selIsDecor, selMesa]
-  );
-
   const [reservaDraft, setReservaDraft] = useState({
     nombre: "",
     telefono: "",
@@ -251,6 +218,8 @@ function ReservasPlanoInner() {
   const [editingReservaId, setEditingReservaId] = useState<string | null>(null);
   const [savingReserva, setSavingReserva] = useState(false);
   const [resizingMesaId, setResizingMesaId] = useState<string | null>(null);
+  const [mesaEditDraft, setMesaEditDraft] = useState<{ nombre: string; pax_max: number }>({ nombre: "", pax_max: 4 });
+  const [savingMesa, setSavingMesa] = useState(false);
 
   const mesasRef = useRef(mesas);
   useEffect(() => {
@@ -416,7 +385,6 @@ function ReservasPlanoInner() {
     // En modo agenda (plano bloqueado): el Drawer es para reservas manuales.
     // Decorativos no abren agenda cuando está bloqueado.
     if (!planoUnlocked && isDecorativo(m)) return;
-    setManageOpen(isDecorativo(m) && planoUnlocked);
     setSheetOpen(true);
     setMergeMode(false);
     setEditingReservaId(null);
@@ -426,6 +394,10 @@ function ReservasPlanoInner() {
       pax: 2,
       hora: horaFocus || (turno === "comida" ? "14:00" : "21:00"),
       notas: ""
+    });
+    setMesaEditDraft({
+      nombre: String(m?.nombre ?? "").trim(),
+      pax_max: Math.max(1, Math.trunc(Number(m?.pax_max ?? 4) || 4))
     });
   }
 
@@ -588,7 +560,6 @@ function ReservasPlanoInner() {
       if (newId) {
         setSelMesaId(newId);
         setSheetOpen(true);
-        setManageOpen(isPared || isTexto);
       }
       // El realtime traerá la nueva mesa; refrescamos por si acaso.
       void load();
@@ -604,7 +575,6 @@ function ReservasPlanoInner() {
     // Si estamos editando y hay panel abierto, tocar el fondo cierra el panel.
     if (planoUnlocked && sheetOpen) {
       setSheetOpen(false);
-      setManageOpen(false);
       setSelMesaId(null);
       setMergeMode(false);
       return;
@@ -796,19 +766,29 @@ function ReservasPlanoInner() {
     }
   }
 
-  async function setEstado(estado: MesaEstado) {
-    if (!selMesa || !activeEstablishmentId) return;
-    setMesas((prev) => prev.map((m) => (m.id === selMesa.id ? { ...m, estado } : m)));
+  async function saveMesaEdicion() {
+    if (!activeEstablishmentId || !selMesa) return;
+    if (!canDrag || !planoUnlocked) return;
+    if (isDecorativo(selMesa)) return;
+    setSavingMesa(true);
+    setErrMsg(null);
     try {
+      const nombre = String(mesaEditDraft.nombre ?? "").trim();
+      const pax_max = Math.max(1, Math.trunc(Number(mesaEditDraft.pax_max) || 1));
       const res = await supabase()
         .from("sala_mesas")
-        .update({ estado })
+        .update({ nombre: nombre || null, pax_max })
         .eq("id", selMesa.id)
         .eq("establecimiento_id", activeEstablishmentId);
       if (res.error) throw res.error;
+      setMesas((prev) => prev.map((m) => (m.id === selMesa.id ? { ...m, nombre: nombre || null, pax_max } : m)));
+      setSheetOpen(false);
+      setSelMesaId(null);
     } catch (e) {
       setErrMsg(supabaseErrToString(e));
       void load();
+    } finally {
+      setSavingMesa(false);
     }
   }
 
@@ -862,7 +842,6 @@ function ReservasPlanoInner() {
       await loadReservasForDate();
       setSheetOpen(false);
       setSelMesaId(null);
-      setManageOpen(false);
       setEditingReservaId(null);
     } catch (e) {
       setErrMsg(supabaseErrToString(e));
@@ -889,7 +868,6 @@ function ReservasPlanoInner() {
       await loadReservasForDate();
       setSheetOpen(false);
       setSelMesaId(null);
-      setManageOpen(false);
       setEditingReservaId(null);
     } catch (e) {
       setErrMsg(supabaseErrToString(e));
@@ -907,96 +885,6 @@ function ReservasPlanoInner() {
       hora: String(r.hora ?? "").trim() || (turno === "comida" ? "14:00" : "21:00"),
       notas: String(r.notas ?? "").trim()
     });
-  }
-
-  async function deleteMesa() {
-    if (!selMesa || !activeEstablishmentId) return;
-    // Permitir borrar desde "Gestionar" aunque el plano esté bloqueado.
-    if (!canDrag) return;
-    if (deletingMesa) return;
-    const decor = isDecorativo(selMesa);
-    const label = decor
-      ? String(selMesa.nombre ?? "").trim() || "este elemento estructural"
-      : `la mesa ${selMesa.numero}`;
-    const ok = typeof window !== "undefined" ? window.confirm(`¿Eliminar ${label}?`) : false;
-    if (!ok) return;
-    setDeletingMesa(true);
-    setErrMsg(null);
-    try {
-      const res = await supabase()
-        .from("sala_mesas")
-        .delete()
-        .eq("id", selMesa.id)
-        .eq("establecimiento_id", activeEstablishmentId);
-      if (res.error) throw res.error;
-      setSheetOpen(false);
-      setManageOpen(false);
-      setMergeMode(false);
-      setSelMesaId(null);
-      void load();
-    } catch (e) {
-      setErrMsg(supabaseErrToString(e));
-    } finally {
-      setDeletingMesa(false);
-    }
-  }
-
-  async function updateMesaFields(patch: Partial<Pick<Mesa, "numero" | "pax_max" | "rotacion_deg" | "width" | "height" | "nombre">>) {
-    if (!selMesa || !activeEstablishmentId) return;
-    if (!canDrag) return;
-    setErrMsg(null);
-    setMesas((prev) => prev.map((m) => (m.id === selMesa.id ? { ...m, ...patch } : m)));
-    const selectCols = ["id", ...Object.keys(patch)].join(",");
-    try {
-      let last = await supabase()
-        .from("sala_mesas")
-        .update(patch)
-        .eq("id", selMesa.id)
-        .eq("establecimiento_id", activeEstablishmentId)
-        .select(selectCols)
-        .single();
-      if (last.error && (patch.rotacion_deg !== undefined || patch.width !== undefined || patch.height !== undefined || patch.nombre !== undefined)) {
-        const rotacionErr = last.error;
-        const rest = { ...patch };
-        delete (rest as Record<string, unknown>).rotacion_deg;
-        delete (rest as Record<string, unknown>).width;
-        delete (rest as Record<string, unknown>).height;
-        delete (rest as Record<string, unknown>).nombre;
-        if (Object.keys(rest).length > 0) {
-          const sel2 = ["id", ...Object.keys(rest)].join(",");
-          last = await supabase()
-            .from("sala_mesas")
-            .update(rest)
-            .eq("id", selMesa.id)
-            .eq("establecimiento_id", activeEstablishmentId)
-            .select(sel2)
-            .single();
-        } else {
-          throw rotacionErr;
-        }
-      }
-      if (last.error) throw last.error;
-      const updated = last.data as Partial<Mesa> | null;
-      if (updated && typeof updated === "object") {
-        setMesas((prev) => prev.map((m) => (m.id === selMesa.id ? { ...m, ...updated } : m)));
-      }
-    } catch (e) {
-      const msg = supabaseErrToString(e);
-      const missingRot =
-        patch.rotacion_deg !== undefined &&
-        (/rotacion|column|schema|42703|does not exist/i.test(msg) || msg.toLowerCase().includes("rotacion"));
-      const missingSize =
-        (patch.width !== undefined || patch.height !== undefined) &&
-        (/width|height|column|schema|42703|does not exist/i.test(msg) || msg.toLowerCase().includes("width") || msg.toLowerCase().includes("height"));
-      setErrMsg(
-        missingRot
-          ? `${msg} Añade la columna ejecutando en Supabase: supabase/patches/sala-mesas-rotacion-pared.sql`
-          : missingSize
-            ? `${msg} Añade las columnas ejecutando en Supabase: supabase/patches/sala-mesas-size.sql`
-            : msg
-      );
-      void load();
-    }
   }
 
   // Nota: merge por "hover 1s" retirado en esta versión simplificada.
@@ -1370,14 +1258,8 @@ function ReservasPlanoInner() {
                         }
                         // En modo edición: priorizamos layout (sin abrir Drawer).
                         if (planoUnlocked) {
-                          setSelMesaId(m.id);
+                          openMesa(m.id);
                           haptic(20);
-                          // Decorativos: en edición el tap no abría el drawer; abrimos Gestionar para poder eliminar.
-                          if (isDecorativo(m)) {
-                            setSheetOpen(true);
-                            setManageOpen(true);
-                            setMergeMode(false);
-                          }
                           return;
                         }
                         openMesa(m.id);
@@ -1395,7 +1277,8 @@ function ReservasPlanoInner() {
                       {!decor ? (
                         <div className="text-center">
                           {(() => {
-                            const label = String(m.nombre ?? "").trim() || `Mesa ${m.numero}`;
+                            const rNow = !planoUnlocked ? (mesaReservaNowById.get(m.id) ?? null) : null;
+                            const label = (rNow ? String(rNow.nombre ?? "").trim() : "") || String(m.nombre ?? "").trim() || `Mesa ${m.numero}`;
                             const len = label.length;
                             const cls = len <= 3 ? "text-3xl" : len <= 10 ? "text-lg" : "text-sm";
                             return <p className={[cls, "font-extrabold text-slate-900 leading-tight"].join(" ")}>{label}</p>;
@@ -1420,56 +1303,63 @@ function ReservasPlanoInner() {
             </div>
           </div>
 
-          {/* BottomSheet */}
-          <Drawer
-            open={sheetOpen}
-            title={
-              selMesa
-                ? isDecorativo(selMesa)
-                  ? String(selMesa.nombre ?? "").trim() || "Elemento"
-                  : !planoUnlocked
-                    ? "Reserva"
-                    : `Mesa ${selMesa.numero}`
-                : "Mesa"
-            }
-            onClose={() => {
-              setSheetOpen(false);
-              setManageOpen(false);
-              setSelMesaId(null);
-              setMergeMode(false);
-              setEditingReservaId(null);
-            }}
-            variant="light"
-          >
-            {!selMesa ? null : (
-              <div className="space-y-4 pb-6">
-                {!manageOpen && planoUnlocked ? (
+          {/* Drawer inferior absoluto (no empuja el plano) */}
+          {sheetOpen && selMesa ? (
+            <div className="absolute inset-0 z-[1000]">
+              <button
+                type="button"
+                className="absolute inset-0 bg-black/30"
+                aria-label="Cerrar"
+                onClick={() => {
+                  setSheetOpen(false);
+                  setSelMesaId(null);
+                  setMergeMode(false);
+                  setEditingReservaId(null);
+                }}
+              />
+              <div
+                className="absolute bottom-0 left-0 w-full rounded-t-3xl border border-slate-200 bg-white shadow-2xl"
+                style={{ maxHeight: "72vh" }}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+                  <p className="text-sm font-extrabold text-slate-900">
+                    {planoUnlocked ? "Edición de mesa" : "Agenda"}
+                  </p>
                   <button
                     type="button"
-                    className="min-h-12 w-full rounded-2xl bg-blue-600 text-sm font-extrabold text-white hover:bg-blue-700"
-                    onClick={() => setManageOpen(true)}
+                    className="min-h-9 rounded-2xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-700 hover:bg-slate-50"
+                    onClick={() => {
+                      setSheetOpen(false);
+                      setSelMesaId(null);
+                      setMergeMode(false);
+                      setEditingReservaId(null);
+                    }}
                   >
-                    Gestionar
+                    Cerrar
                   </button>
-                ) : null}
+                </div>
 
-                {/* Modo agenda (plano bloqueado): crear/editar/liberar reservas */}
-                {!planoUnlocked && !selIsDecor ? (
-                  <div className="space-y-3">
-                    {(() => {
-                      const now = selMesa ? (mesaReservaNowById.get(selMesa.id) ?? null) : null;
-                      const later = selMesa ? (mesaHasLaterById.get(selMesa.id) ?? false) : false;
-                      const statusLabel = now ? "Ocupada ahora" : later ? "Tiene reserva más tarde" : "Libre";
-                      const statusClass = now ? "border-rose-200 bg-rose-50 text-rose-900" : later ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-900";
-                      return (
-                        <div className={["rounded-3xl border p-3 text-sm font-semibold", statusClass].join(" ")}>
-                          {statusLabel} · {selectedDate} · {turno} · {horaFocus}
-                        </div>
-                      );
-                    })()}
+                <div className="max-h-[72vh] overflow-auto px-4 py-4 pb-8">
+                  {/* BLOQUEADO: agenda */}
+                  {!planoUnlocked && !selIsDecor ? (
+                    <div className="space-y-3">
+                      {(() => {
+                        const now = mesaReservaNowById.get(selMesa.id) ?? null;
+                        const later = mesaHasLaterById.get(selMesa.id) ?? false;
+                        const statusLabel = now ? "Ocupada ahora" : later ? "Tiene reserva más tarde" : "Libre";
+                        const statusClass = now
+                          ? "border-rose-200 bg-rose-50 text-rose-900"
+                          : later
+                            ? "border-amber-200 bg-amber-50 text-amber-900"
+                            : "border-emerald-200 bg-emerald-50 text-emerald-900";
+                        return <div className={["rounded-3xl border p-3 text-sm font-semibold", statusClass].join(" ")}>{statusLabel} · {selectedDate} · {turno} · {horaFocus}</div>;
+                      })()}
 
-                    {selMesa ? (
-                      (() => {
+                      {(() => {
                         const rNow = mesaReservaNowById.get(selMesa.id) ?? null;
                         if (rNow) {
                           return (
@@ -1482,28 +1372,13 @@ function ReservasPlanoInner() {
                                   <span className="font-semibold tabular-nums">{Math.max(1, Math.trunc(Number(rNow.pax) || 1))} pax</span>
                                 </p>
                                 <p className="mt-1 text-sm font-semibold text-slate-700">{String(rNow.hora ?? "").trim() || "—"}</p>
-                                {String(rNow.notas ?? "").trim() ? (
-                                  <p className="mt-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                                    {String(rNow.notas ?? "").trim()}
-                                  </p>
-                                ) : null}
                               </div>
                               <div className="grid grid-cols-2 gap-2">
-                                <button
-                                  type="button"
-                                  className="min-h-12 rounded-2xl border border-slate-200 bg-white text-sm font-extrabold text-slate-900 hover:bg-slate-50 disabled:opacity-60"
-                                  disabled={savingReserva}
-                                  onClick={() => startEditarReserva(rNow)}
-                                >
+                                <button type="button" className="min-h-12 rounded-2xl border border-slate-200 bg-white text-sm font-extrabold text-slate-900 hover:bg-slate-50 disabled:opacity-60" disabled={savingReserva} onClick={() => startEditarReserva(rNow)}>
                                   Editar
                                 </button>
-                                <button
-                                  type="button"
-                                  className="min-h-12 rounded-2xl border border-rose-200 bg-rose-50 text-sm font-extrabold text-rose-700 hover:bg-rose-100 disabled:opacity-60"
-                                  disabled={savingReserva}
-                                  onClick={() => void liberarMesa()}
-                                >
-                                  Liberar mesa
+                                <button type="button" className="min-h-12 rounded-2xl border border-rose-200 bg-rose-50 text-sm font-extrabold text-rose-700 hover:bg-rose-100 disabled:opacity-60" disabled={savingReserva} onClick={() => void liberarMesa()}>
+                                  Eliminar
                                 </button>
                               </div>
                             </div>
@@ -1513,261 +1388,69 @@ function ReservasPlanoInner() {
                         return (
                           <div className="space-y-3">
                             <div className="rounded-3xl border border-slate-200 bg-white p-3">
-                              <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">
-                                {editingReservaId ? "Editar reserva manual" : "Crear reserva manual"}
-                              </p>
+                              <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">{editingReservaId ? "Editar reserva" : "Crear reserva"}</p>
                               <div className="mt-3 grid gap-2">
                                 <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Nombre</label>
-                                <input
-                                  className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900"
-                                  value={reservaDraft.nombre}
-                                  onChange={(e) => setReservaDraft((d) => ({ ...d, nombre: (e.target as HTMLInputElement).value }))}
-                                  placeholder="Nombre del cliente"
-                                />
+                                <input className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900" value={reservaDraft.nombre} onChange={(e) => setReservaDraft((d) => ({ ...d, nombre: (e.target as HTMLInputElement).value }))} />
                               </div>
                               <div className="mt-3 grid gap-2">
                                 <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Teléfono</label>
-                                <input
-                                  className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900"
-                                  value={reservaDraft.telefono}
-                                  onChange={(e) => setReservaDraft((d) => ({ ...d, telefono: (e.target as HTMLInputElement).value }))}
-                                  placeholder="+34 600 000 000"
-                                  inputMode="tel"
-                                />
+                                <input className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900" value={reservaDraft.telefono} onChange={(e) => setReservaDraft((d) => ({ ...d, telefono: (e.target as HTMLInputElement).value }))} />
                               </div>
                               <div className="mt-3 grid grid-cols-2 gap-3">
                                 <div className="grid gap-2">
                                   <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Comensales</label>
-                                  <input
-                                    type="number"
-                                    min={1}
-                                    className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900"
-                                    value={String(reservaDraft.pax)}
-                                    onChange={(e) => setReservaDraft((d) => ({ ...d, pax: Math.max(1, Math.trunc(Number((e.target as HTMLInputElement).value) || 1)) }))}
-                                  />
+                                  <input type="number" min={1} className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900" value={String(reservaDraft.pax)} onChange={(e) => setReservaDraft((d) => ({ ...d, pax: Math.max(1, Math.trunc(Number((e.target as HTMLInputElement).value) || 1)) }))} />
                                 </div>
                                 <div className="grid gap-2">
                                   <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Hora</label>
-                                  <input
-                                    type="time"
-                                    className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900"
-                                    value={reservaDraft.hora}
-                                    onChange={(e) => setReservaDraft((d) => ({ ...d, hora: (e.target as HTMLInputElement).value }))}
-                                  />
+                                  <input type="time" className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900" value={reservaDraft.hora} onChange={(e) => setReservaDraft((d) => ({ ...d, hora: (e.target as HTMLInputElement).value }))} />
                                 </div>
                               </div>
-                              <div className="mt-3 grid gap-2">
-                                <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Notas</label>
-                                <textarea
-                                  className="min-h-24 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                                  value={reservaDraft.notas}
-                                  onChange={(e) => setReservaDraft((d) => ({ ...d, notas: (e.target as HTMLTextAreaElement).value }))}
-                                  placeholder="Ej: Alérgico al gluten"
-                                />
-                              </div>
                             </div>
-
-                            <button
-                              type="button"
-                              className="min-h-12 w-full rounded-2xl bg-slate-900 text-sm font-extrabold text-white hover:bg-black disabled:opacity-60"
-                              disabled={savingReserva}
-                              onClick={() => void saveReservaManual()}
-                            >
-                              {savingReserva ? "Guardando…" : editingReservaId ? "Guardar cambios" : "Crear reserva"}
+                            <button type="button" className="min-h-12 w-full rounded-2xl bg-slate-900 text-sm font-extrabold text-white hover:bg-black disabled:opacity-60" disabled={savingReserva} onClick={() => void saveReservaManual()}>
+                              {savingReserva ? "Guardando…" : "Confirmar cambios"}
                             </button>
                           </div>
                         );
-                      })()
-                    ) : null}
-                  </div>
-                ) : null}
+                      })()}
+                    </div>
+                  ) : null}
 
-                {manageOpen ? (
-                  <div className="space-y-3">
-                    {mergeMode ? (
-                      <div className="rounded-3xl border border-violet-400/20 bg-violet-500/10 p-3">
-                        <p className="text-sm font-extrabold text-violet-100">Modo fusión activo</p>
-                        <p className="mt-1 text-xs font-semibold text-violet-100/80">Toca otra mesa para fusionar capacidades (la secundaria se elimina).</p>
-                        <button
-                          type="button"
-                          className="mt-3 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 text-sm font-extrabold text-white hover:bg-white/10"
-                          onClick={() => setMergeMode(false)}
-                        >
-                          Cancelar fusión
-                        </button>
-                      </div>
-                    ) : null}
-
-                    {!selIsDecor ? (
-                      <>
-                        <div className="rounded-3xl border border-slate-200 bg-white p-3">
-                          <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Tamaño</p>
-                          <p className="mt-2 text-sm text-slate-600">
-                            Con el plano desbloqueado, usa <span className="font-semibold">dos dedos</span> sobre la mesa seleccionada para redimensionarla.
-                          </p>
-                        </div>
-
-                        {/* Identificador de Mesa */}
-                        <div className="rounded-3xl border border-slate-200 bg-white p-3">
-                          <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Identificador de Mesa</p>
-                          <p className="mt-1 text-sm text-slate-600">Puede ser número o nombre (ej: “Mesa 1”, “Rincón VIP”).</p>
-                          <input
-                            className="mt-3 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-60"
-                            value={String(selMesa.nombre ?? "").trim()}
-                            onChange={(e) => {
-                              const val = (e.target as HTMLInputElement).value;
-                              setMesas((prev) => prev.map((m) => (m.id === selMesa.id ? { ...m, nombre: val } : m)));
-                            }}
-                            onBlur={() => void updateMesaFields({ nombre: String(selMesa.nombre ?? "").trim() })}
-                            disabled={!canDrag}
-                            placeholder={`Mesa ${selMesa.numero}`}
-                            aria-label="Identificador de mesa"
-                          />
-                          {!canDrag ? <p className="mt-2 text-xs font-semibold text-slate-500">Solo Admin puede editar el identificador.</p> : null}
-                        </div>
-
-                        {/* Comensales (pax) */}
-                        <div className="rounded-3xl border border-slate-200 bg-white p-3">
-                          <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Comensales</p>
-                          <div className="mt-2 grid grid-cols-6 gap-2">
-                            {Array.from({ length: 12 }).map((_, i) => {
-                              const n = i + 1;
-                              const active = selMesa.pax_max === n;
-                              return (
-                                <button
-                                  key={n}
-                                  type="button"
-                                  className={[
-                                    "h-11 rounded-full border text-sm font-extrabold",
-                                    active ? "border-blue-600/30 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-800 hover:bg-slate-50",
-                                    !canDrag ? "opacity-50" : ""
-                                  ].join(" ")}
-                                  disabled={!canDrag}
-                                  onClick={() => {
-                                    haptic(20);
-                                    void updateMesaFields({ pax_max: n });
-                                  }}
-                                  aria-label={`Pax ${n}`}
-                                >
-                                  {n}
-                                </button>
-                              );
-                            })}
-                          </div>
-                          {!canDrag ? <p className="mt-2 text-xs font-semibold text-slate-500">Solo Admin puede editar comensales.</p> : null}
-                        </div>
-
-                        <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Estado</p>
-                        <div className="grid grid-cols-2 gap-2">
-                          <button type="button" className="min-h-12 rounded-2xl border border-slate-200 bg-white text-sm font-extrabold text-slate-900 hover:bg-slate-50" onClick={() => void setEstado("libre")}>
-                            Libre
-                          </button>
-                          <button type="button" className="min-h-12 rounded-2xl border border-slate-200 bg-white text-sm font-extrabold text-slate-900 hover:bg-slate-50" onClick={() => void setEstado("reservada")}>
-                            Reservada
-                          </button>
-                        </div>
-
-                        {/* Reservas del día */}
-                        <div className="rounded-3xl border border-slate-200 bg-white p-3">
-                          <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Reservas ({selectedDate})</p>
-                          {(() => {
-                            const rows = reservasByMesa.get(selMesa.id) ?? [];
-                            if (!rows.length) {
-                              return <p className="mt-2 text-sm text-slate-600">Sin reservas confirmadas para esta mesa.</p>;
-                            }
-                            return (
-                              <ul className="mt-2 space-y-2">
-                                {rows.map((r) => {
-                                  const ini = String(r.hora ?? "").trim() || "—";
-                                  const fin = ini && ini !== "—" ? addMinutesToHora(ini, 90) : "";
-                                  const rango = fin ? `${ini}–${fin}` : ini;
-                                  const nombre = String(r.nombre ?? "").trim() || "Reserva";
-                                  const pax = Math.max(1, Math.trunc(Number(r.pax) || 1));
-                                  return (
-                                    <li key={r.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                                      <p className="text-sm font-extrabold text-slate-900">{rango}</p>
-                                      <p className="mt-0.5 text-sm text-slate-700">
-                                        {nombre} · <span className="font-semibold tabular-nums">{pax} pax</span>
-                                      </p>
-                                    </li>
-                                  );
-                                })}
-                              </ul>
-                            );
-                          })()}
-                          <p className="mt-2 text-xs text-slate-500">Duración estimada: 90 min (ajustable en una siguiente iteración).</p>
-                        </div>
-                      </>
-                    ) : (
+                  {/* DESBLOQUEADO: edición técnica */}
+                  {planoUnlocked && !selIsDecor ? (
+                    <div className="space-y-3">
                       <div className="rounded-3xl border border-slate-200 bg-white p-3">
-                        <p className="text-sm font-semibold text-slate-900">
-                          {decorKind(selMesa) === "pared"
-                            ? "Pared"
-                            : decorKind(selMesa) === "barra"
-                              ? "Barra"
-                              : decorKind(selMesa) === "texto"
-                                ? "Texto"
-                                : "Elemento estructural"}
-                        </p>
-                        <p className="mt-1 text-sm text-slate-600">
-                          {selPuedeGirarDecor
-                            ? "Puedes moverlo, girarlo o eliminarlo."
-                            : "Solo se puede mover o eliminar."}
-                        </p>
-                        {decorKind(selMesa) === "texto" && canDrag ? (
-                          <div className="mt-3 grid gap-2">
-                            <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Contenido</label>
-                            <input
-                              className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                              value={String(selMesa.nombre ?? "").replace(/^texto:\s*/i, "")}
-                              onChange={(e) => {
-                                const newValue = (e.target as HTMLInputElement).value;
-                                const v = newValue;
-                                setMesas((prev) => prev.map((m) => (m.id === selMesa.id ? { ...m, nombre: `Texto: ${v}` } : m)));
-                              }}
-                              onBlur={() => {
-                                const v = String(selMesa.nombre ?? "").replace(/^texto:\s*/i, "");
-                                void updateMesaFields({ nombre: `Texto: ${v}` });
-                              }}
-                              placeholder="Ej: Zona Barra"
-                              aria-label="Texto"
-                            />
-                          </div>
-                        ) : null}
-                        {selPuedeGirarDecor && canDrag ? (
-                          <button
-                            type="button"
-                            className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white text-sm font-extrabold text-slate-900 hover:bg-slate-50"
-                            onClick={() => {
-                              haptic(25);
-                              const cur = Number(selMesa.rotacion_deg ?? 0) || 0;
-                              void updateMesaFields({ rotacion_deg: (cur + 90) % 360 });
-                            }}
-                          >
-                            <RotateCw className="h-5 w-5" aria-hidden />
-                            Girar 90°
-                          </button>
-                        ) : null}
+                        <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Identificador de mesa</label>
+                        <input
+                          className="mt-2 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900"
+                          value={mesaEditDraft.nombre}
+                          onChange={(e) => setMesaEditDraft((d) => ({ ...d, nombre: (e.target as HTMLInputElement).value }))}
+                          placeholder={`Mesa ${selMesa.numero}`}
+                        />
+                        <label className="mt-4 block text-[11px] font-bold uppercase tracking-wide text-slate-500">Capacidad (pax)</label>
+                        <input
+                          type="number"
+                          min={1}
+                          className="mt-2 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900"
+                          value={String(mesaEditDraft.pax_max)}
+                          onChange={(e) => setMesaEditDraft((d) => ({ ...d, pax_max: Math.max(1, Math.trunc(Number((e.target as HTMLInputElement).value) || 1)) }))}
+                        />
                       </div>
-                    )}
-
-                    {canDrag ? (
-                      <div className="pt-2">
-                        <button
-                          type="button"
-                          className="min-h-12 w-full rounded-2xl border border-rose-300 bg-rose-50 text-sm font-extrabold text-rose-700 hover:bg-rose-100 disabled:opacity-60"
-                          onClick={() => void deleteMesa()}
-                          disabled={deletingMesa}
-                        >
-                          {deletingMesa ? "Eliminando…" : "Eliminar"}
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
+                      <button
+                        type="button"
+                        className="min-h-12 w-full rounded-2xl bg-blue-600 text-sm font-extrabold text-white hover:bg-blue-700 disabled:opacity-60"
+                        disabled={savingMesa}
+                        onClick={() => void saveMesaEdicion()}
+                      >
+                        {savingMesa ? "Guardando…" : "Confirmar cambios"}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
               </div>
-            )}
-          </Drawer>
+            </div>
+          ) : null}
         </main>
       )}
     </div>
