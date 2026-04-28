@@ -954,7 +954,6 @@ function ReservasPlanoInner() {
                   const ui = mesaUi(m.estado, selected);
                   const elapsed = m.estado === "ocupada" ? elapsedLabel(m.hora_checkin) : null;
                   const isRound = m.forma === "round";
-                  const isVip = (m.forma ?? "rect") === "rect" && (m.pax_max ?? 0) >= 6;
                   const left = `${m.x * 100}%`;
                   const top = `${m.y * 100}%`;
                   const puedeGirar = decor && dk !== "barra";
