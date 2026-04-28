@@ -1180,11 +1180,11 @@ function ReservasPlanoInner() {
           />
 
           {/* Top bar */}
-          <div className="absolute left-0 right-0 top-0 z-30 px-4 pt-3">
+          <div className="absolute left-0 right-0 top-0 z-30 px-2 pt-2 sm:px-4 sm:pt-3">
             <div className="flex items-center justify-between gap-3">
               <button
                 type="button"
-                className="grid h-10 w-10 place-items-center rounded-2xl border border-slate-200 bg-white shadow-sm hover:bg-slate-50"
+                className="grid h-9 w-9 place-items-center rounded-2xl border border-slate-200 bg-white shadow-sm hover:bg-slate-50 sm:h-10 sm:w-10"
                 aria-label="Volver"
                 onClick={() => {
                   try {
@@ -1202,16 +1202,16 @@ function ReservasPlanoInner() {
               </button>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-black tracking-tight text-slate-900">{(activeEstablishmentName ?? "").trim() || "Mi local"}</p>
-                <div className="mt-1 flex gap-2">
+                <div className="mt-1 -mx-2 flex gap-2 overflow-x-auto whitespace-nowrap px-2 pb-1">
                   <input
                     type="date"
-                    className="min-h-9 rounded-2xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 shadow-sm"
+                    className="min-h-8 rounded-2xl border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-800 shadow-sm sm:min-h-9 sm:px-3 sm:text-xs"
                     value={selectedDate}
                     onChange={(e) => setSelectedDate((e.target as HTMLInputElement).value)}
                     aria-label="Fecha"
                   />
                   <select
-                    className="min-h-9 rounded-2xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 shadow-sm"
+                    className="min-h-8 rounded-2xl border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-800 shadow-sm sm:min-h-9 sm:px-3 sm:text-xs"
                     value={turno}
                     onChange={(e) => {
                       const next = (e.target as HTMLSelectElement).value as TurnoKey;
@@ -1225,14 +1225,14 @@ function ReservasPlanoInner() {
                   </select>
                   <input
                     type="time"
-                    className="min-h-9 rounded-2xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 shadow-sm"
+                    className="min-h-8 rounded-2xl border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-800 shadow-sm sm:min-h-9 sm:px-3 sm:text-xs"
                     value={horaFocus}
                     onChange={(e) => setHoraFocus((e.target as HTMLInputElement).value)}
                     aria-label="Hora"
                   />
                   {canDrag && planoUnlocked ? (
                     <input
-                      className="min-h-9 max-w-[220px] rounded-2xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="min-h-8 max-w-[190px] rounded-2xl border border-slate-200 bg-white px-2 text-[11px] font-extrabold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 sm:min-h-9 sm:max-w-[220px] sm:px-3 sm:text-xs"
                       value={zonaNameDraft}
                       onChange={(e) => {
                         const newValue = (e.target as HTMLInputElement).value;
@@ -1244,7 +1244,7 @@ function ReservasPlanoInner() {
                     />
                   ) : (
                     <select
-                      className="min-h-9 max-w-[220px] rounded-2xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 shadow-sm"
+                      className="min-h-8 max-w-[190px] rounded-2xl border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-800 shadow-sm sm:min-h-9 sm:max-w-[220px] sm:px-3 sm:text-xs"
                       value={zonaId ?? ""}
                       onChange={(e) => {
                         const newValue = (e.target as HTMLSelectElement).value;
@@ -1261,7 +1261,7 @@ function ReservasPlanoInner() {
                   {canDrag && planoUnlocked ? (
                     <button
                       type="button"
-                      className="inline-flex min-h-9 items-center gap-1 rounded-2xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-700 shadow-sm hover:bg-slate-50"
+                      className="inline-flex min-h-8 items-center gap-1 rounded-2xl border border-slate-200 bg-white px-2 text-[11px] font-extrabold text-slate-700 shadow-sm hover:bg-slate-50 sm:min-h-9 sm:px-3 sm:text-xs"
                       onClick={() => void createNuevaZona()}
                       title="Crear una nueva sala (zona) en el plano"
                     >
@@ -1272,7 +1272,7 @@ function ReservasPlanoInner() {
                   {canDrag && planoUnlocked ? (
                     <button
                       type="button"
-                      className="inline-flex min-h-9 items-center gap-1 rounded-2xl border border-rose-200 bg-rose-50 px-3 text-xs font-extrabold text-rose-700 shadow-sm hover:bg-rose-100"
+                      className="inline-flex min-h-8 items-center gap-1 rounded-2xl border border-rose-200 bg-rose-50 px-2 text-[11px] font-extrabold text-rose-700 shadow-sm hover:bg-rose-100 sm:min-h-9 sm:px-3 sm:text-xs"
                       onClick={() => void deleteZonaActual()}
                       title="Eliminar sala actual"
                       disabled={!zonaId}
@@ -1282,7 +1282,7 @@ function ReservasPlanoInner() {
                   ) : null}
                   <button
                     type="button"
-                    className="min-h-9 rounded-2xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-700 shadow-sm hover:bg-slate-50"
+                    className="min-h-8 rounded-2xl border border-slate-200 bg-white px-2 text-[11px] font-extrabold text-slate-700 shadow-sm hover:bg-slate-50 sm:min-h-9 sm:px-3 sm:text-xs"
                     onClick={() => {
                       setPan({ x: 0, y: 0 });
                       setScale(1);
