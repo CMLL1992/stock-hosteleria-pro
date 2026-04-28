@@ -220,6 +220,8 @@ function ReservasPlanoInner() {
   const [resizingMesaId, setResizingMesaId] = useState<string | null>(null);
   const [mesaEditDraft, setMesaEditDraft] = useState<{ nombre: string; pax_max: number }>({ nombre: "", pax_max: 4 });
   const [savingMesa, setSavingMesa] = useState(false);
+  const [textoEditDraft, setTextoEditDraft] = useState<string>("");
+  const [savingTexto, setSavingTexto] = useState(false);
 
   const mesasRef = useRef(mesas);
   useEffect(() => {
@@ -399,6 +401,7 @@ function ReservasPlanoInner() {
       nombre: String(m?.nombre ?? "").trim(),
       pax_max: Math.max(1, Math.trunc(Number(m?.pax_max ?? 4) || 4))
     });
+    setTextoEditDraft(String(m?.nombre ?? "").replace(/^texto:\s*/i, "").trim());
   }
 
   useEffect(() => {
@@ -792,6 +795,31 @@ function ReservasPlanoInner() {
     }
   }
 
+  async function saveTextoEdicion(nextRaw: string) {
+    if (!activeEstablishmentId || !selMesa) return;
+    if (!canDrag || !planoUnlocked) return;
+    if (!isDecorativo(selMesa)) return;
+    if (decorKind(selMesa) !== "texto") return;
+    setSavingTexto(true);
+    setErrMsg(null);
+    try {
+      const v = String(nextRaw ?? "").trim();
+      const nombre = v ? `Texto: ${v}` : "Texto: Zona";
+      const res = await supabase()
+        .from("sala_mesas")
+        .update({ nombre })
+        .eq("id", selMesa.id)
+        .eq("establecimiento_id", activeEstablishmentId);
+      if (res.error) throw res.error;
+      setMesas((prev) => prev.map((m) => (m.id === selMesa.id ? { ...m, nombre } : m)));
+    } catch (e) {
+      setErrMsg(supabaseErrToString(e));
+      void load();
+    } finally {
+      setSavingTexto(false);
+    }
+  }
+
   function mesaAgendaColor(mesa: Mesa): { dot: string; bg: string; border: string } {
     const now = mesaReservaNowById.get(mesa.id) ?? null;
     if (now) return { dot: "bg-rose-600", bg: "bg-rose-50", border: "border-rose-300" }; // rojo: ocupada ahora
@@ -1176,7 +1204,7 @@ function ReservasPlanoInner() {
           <div className="absolute inset-x-0 bottom-0 top-0 pt-14" style={{ height: "100vh", overflow: "hidden", position: "relative" }}>
             <div
               ref={boardRef}
-              className="relative h-[calc(100dvh-56px)] w-full"
+              className="relative z-10 h-[calc(100dvh-56px)] w-full"
               style={{
                 touchAction: "none",
                 overscrollBehavior: "none"
@@ -1308,7 +1336,7 @@ function ReservasPlanoInner() {
             <div className="absolute inset-0 z-[1000]">
               <button
                 type="button"
-                className="absolute inset-0 bg-black/30"
+                className="absolute inset-0 z-0 bg-black/30"
                 aria-label="Cerrar"
                 onClick={() => {
                   setSheetOpen(false);
@@ -1318,12 +1346,10 @@ function ReservasPlanoInner() {
                 }}
               />
               <div
-                className="absolute bottom-0 left-0 w-full rounded-t-3xl border border-slate-200 bg-white shadow-2xl"
+                className="absolute bottom-0 left-0 z-10 w-full rounded-t-3xl border border-slate-200 bg-white shadow-2xl"
                 style={{ maxHeight: "72vh" }}
-                onPointerDown={(e) => {
-                  e.stopPropagation();
-                }}
-                onClick={(e) => e.stopPropagation()}
+                onPointerDownCapture={(e) => e.stopPropagation()}
+                onClickCapture={(e) => e.stopPropagation()}
               >
                 <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
                   <p className="text-sm font-extrabold text-slate-900">
@@ -1331,7 +1357,8 @@ function ReservasPlanoInner() {
                   </p>
                   <button
                     type="button"
-                    className="min-h-9 rounded-2xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-700 hover:bg-slate-50"
+                    className="relative z-20 min-h-9 rounded-2xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-700 hover:bg-slate-50"
+                    onPointerDown={(e) => e.stopPropagation()}
                     onClick={() => {
                       setSheetOpen(false);
                       setSelMesaId(null);
@@ -1408,7 +1435,13 @@ function ReservasPlanoInner() {
                                 </div>
                               </div>
                             </div>
-                            <button type="button" className="min-h-12 w-full rounded-2xl bg-slate-900 text-sm font-extrabold text-white hover:bg-black disabled:opacity-60" disabled={savingReserva} onClick={() => void saveReservaManual()}>
+                            <button
+                              type="button"
+                              className="relative z-20 min-h-12 w-full rounded-2xl bg-slate-900 text-sm font-extrabold text-white hover:bg-black disabled:opacity-60"
+                              disabled={savingReserva}
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onClick={() => void saveReservaManual()}
+                            >
                               {savingReserva ? "Guardando…" : "Confirmar cambios"}
                             </button>
                           </div>
@@ -1425,6 +1458,7 @@ function ReservasPlanoInner() {
                         <input
                           className="mt-2 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900"
                           value={mesaEditDraft.nombre}
+                          onPointerDown={(e) => e.stopPropagation()}
                           onChange={(e) => setMesaEditDraft((d) => ({ ...d, nombre: (e.target as HTMLInputElement).value }))}
                           placeholder={`Mesa ${selMesa.numero}`}
                         />
@@ -1434,17 +1468,40 @@ function ReservasPlanoInner() {
                           min={1}
                           className="mt-2 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900"
                           value={String(mesaEditDraft.pax_max)}
+                          onPointerDown={(e) => e.stopPropagation()}
                           onChange={(e) => setMesaEditDraft((d) => ({ ...d, pax_max: Math.max(1, Math.trunc(Number((e.target as HTMLInputElement).value) || 1)) }))}
                         />
                       </div>
                       <button
                         type="button"
-                        className="min-h-12 w-full rounded-2xl bg-blue-600 text-sm font-extrabold text-white hover:bg-blue-700 disabled:opacity-60"
+                        className="relative z-20 min-h-12 w-full rounded-2xl bg-blue-600 text-sm font-extrabold text-white hover:bg-blue-700 disabled:opacity-60"
                         disabled={savingMesa}
+                        onPointerDown={(e) => e.stopPropagation()}
                         onClick={() => void saveMesaEdicion()}
                       >
                         {savingMesa ? "Guardando…" : "Confirmar cambios"}
                       </button>
+                    </div>
+                  ) : null}
+
+                  {/* DESBLOQUEADO: edición de texto */}
+                  {planoUnlocked && selIsDecor && decorKind(selMesa) === "texto" ? (
+                    <div className="space-y-3">
+                      <div className="rounded-3xl border border-slate-200 bg-white p-3">
+                        <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Contenido del texto</label>
+                        <input
+                          className="mt-2 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900 disabled:opacity-60"
+                          value={textoEditDraft}
+                          disabled={!canDrag}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onChange={(e) => setTextoEditDraft((e.target as HTMLInputElement).value)}
+                          onBlur={() => void saveTextoEdicion(textoEditDraft)}
+                          placeholder="Ej: Zona Barra"
+                          aria-label="Contenido del texto"
+                        />
+                        {!canDrag ? <p className="mt-2 text-xs font-semibold text-slate-500">Solo Admin puede editar textos.</p> : null}
+                      </div>
+                      {savingTexto ? <p className="text-xs font-semibold text-slate-600">Guardando…</p> : null}
                     </div>
                   ) : null}
                 </div>

@@ -1,0 +1,606 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowLeft, Phone, UserPlus } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import { supabaseErrToString } from "@/lib/supabaseErrToString";
+import { useActiveEstablishment } from "@/lib/useActiveEstablishment";
+import { useMyRole } from "@/lib/useMyRole";
+import { getEffectiveRole, hasPermission } from "@/lib/permissions";
+import { digitsWaPhone, urlWhatsApp } from "@/lib/whatsappPedido";
+
+type Turno = "Mañana" | "Comida" | "Tarde" | "Noche";
+type Rol = "Barra" | "Sala" | "Cocina";
+
+type Empleado = {
+  id: string;
+  establecimiento_id: string;
+  nombre: string;
+  telefono: string | null;
+  rol: Rol;
+  tipo: "Fijo" | "Extra";
+  notas_rendimiento: string | null;
+  activo: boolean;
+};
+
+type Restriccion = {
+  id: string;
+  empleado_id: string;
+  dia_semana: number; // 1..7
+  turno: Turno;
+  motivo: string | null;
+};
+
+type SemanaRow = { id: string; semana_start: string };
+type CeldaRow = { id: string; semana_id: string; dia_semana: number; turno: Turno; rol: Rol; required_count: number };
+type AsigRow = { id: string; celda_id: string; empleado_id: string };
+
+const TURNOS: Turno[] = ["Mañana", "Comida", "Tarde", "Noche"];
+const ROLES: Rol[] = ["Barra", "Sala", "Cocina"];
+const DIA_LABEL: Array<{ n: number; label: string }> = [
+  { n: 1, label: "Lun" },
+  { n: 2, label: "Mar" },
+  { n: 3, label: "Mié" },
+  { n: 4, label: "Jue" },
+  { n: 5, label: "Vie" },
+  { n: 6, label: "Sáb" },
+  { n: 7, label: "Dom" }
+];
+
+function toIsoDate(d: Date): string {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function mondayOf(dateIso: string): string {
+  const d = new Date(`${dateIso}T00:00:00`);
+  const day = d.getDay(); // 0..6 (Dom..Sáb)
+  const diff = (day === 0 ? -6 : 1) - day; // a Lunes
+  d.setDate(d.getDate() + diff);
+  return toIsoDate(d);
+}
+
+function addDays(dateIso: string, days: number): string {
+  const d = new Date(`${dateIso}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  return toIsoDate(d);
+}
+
+function fmtDia(dateIso: string): string {
+  const d = new Date(`${dateIso}T00:00:00`);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}/${mm}`;
+}
+
+function WaIcon(props: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={props.className} aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M20.52 3.48A11.86 11.86 0 0 0 12.01 0C5.39 0 .01 5.38.01 12c0 2.11.55 4.17 1.59 5.99L0 24l6.2-1.63A11.97 11.97 0 0 0 12.01 24C18.63 24 24 18.62 24 12c0-3.19-1.24-6.19-3.48-8.52ZM12.01 21.93c-1.9 0-3.76-.51-5.39-1.48l-.39-.23-3.68.97.98-3.59-.25-.41A9.92 9.92 0 0 1 2.1 12c0-5.46 4.45-9.9 9.91-9.9 2.65 0 5.14 1.03 7.01 2.9A9.85 9.85 0 0 1 21.92 12c0 5.46-4.45 9.93-9.91 9.93Zm5.76-7.44c-.31-.16-1.85-.91-2.13-1.01-.29-.11-.5-.16-.7.16-.2.31-.81 1.01-.99 1.22-.18.2-.36.23-.67.08-.31-.16-1.31-.48-2.5-1.54-.92-.82-1.54-1.83-1.72-2.14-.18-.31-.02-.48.14-.63.14-.14.31-.36.47-.54.16-.18.2-.31.31-.52.11-.2.05-.39-.03-.54-.08-.16-.7-1.68-.96-2.3-.25-.61-.5-.52-.7-.53h-.6c-.2 0-.54.08-.82.39-.28.31-1.07 1.04-1.07 2.54 0 1.5 1.1 2.95 1.25 3.15.16.2 2.16 3.29 5.25 4.61.73.31 1.3.49 1.74.63.73.23 1.39.2 1.92.12.58-.09 1.85-.75 2.11-1.47.26-.72.26-1.34.18-1.47-.08-.13-.28-.2-.59-.36Z"
+      />
+    </svg>
+  );
+}
+
+function buildWaMessage(opts: {
+  nombreExtra: string;
+  establecimiento: string;
+  rol: Rol;
+  diaLabel: string;
+  turno: Turno;
+}): string {
+  const est = opts.establecimiento.trim() || "Piquillos Blinders";
+  const nombre = opts.nombreExtra.trim() || "¿qué tal?";
+  return `Hola ${nombre}, soy el gerente de ${est}. He visto que tenemos un hueco libre para ${opts.rol} este ${opts.diaLabel} en el turno de ${opts.turno}. ¿Te cuadra venir? Confírmame por aquí. ¡Gracias!`;
+}
+
+export default function AdminStaffPage() {
+  const { data: me } = useMyRole();
+  const role = getEffectiveRole(me ?? null);
+  const canEdit = hasPermission(role, "admin");
+  const canView = hasPermission(role, "staff");
+
+  const { activeEstablishmentId, activeEstablishmentName } = useActiveEstablishment();
+
+  const [err, setErr] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const [semanaAnchor, setSemanaAnchor] = useState<string>(() => toIsoDate(new Date()));
+  const semanaStart = useMemo(() => mondayOf(semanaAnchor), [semanaAnchor]);
+  const weekDays = useMemo(() => Array.from({ length: 7 }).map((_, i) => addDays(semanaStart, i)), [semanaStart]);
+
+  const [empleados, setEmpleados] = useState<Empleado[]>([]);
+  const [restricciones, setRestricciones] = useState<Restriccion[]>([]);
+  const [semanaRow, setSemanaRow] = useState<SemanaRow | null>(null);
+  const [celdas, setCeldas] = useState<CeldaRow[]>([]);
+  const [asigs, setAsigs] = useState<AsigRow[]>([]);
+
+  const empleadosById = useMemo(() => {
+    const m = new Map<string, Empleado>();
+    for (const e of empleados) m.set(e.id, e);
+    return m;
+  }, [empleados]);
+
+  const restriccionesByEmpleado = useMemo(() => {
+    const m = new Map<string, Restriccion[]>();
+    for (const r of restricciones) m.set(r.empleado_id, [...(m.get(r.empleado_id) ?? []), r]);
+    return m;
+  }, [restricciones]);
+
+  const celdasKeyed = useMemo(() => {
+    const m = new Map<string, CeldaRow>();
+    for (const c of celdas) m.set(`${c.dia_semana}|${c.turno}|${c.rol}`, c);
+    return m;
+  }, [celdas]);
+
+  const asigsByCelda = useMemo(() => {
+    const m = new Map<string, AsigRow[]>();
+    for (const a of asigs) m.set(a.celda_id, [...(m.get(a.celda_id) ?? []), a]);
+    return m;
+  }, [asigs]);
+
+  const fijosPorRol = useMemo(() => {
+    const m = new Map<Rol, Empleado[]>();
+    for (const r of ROLES) m.set(r, []);
+    for (const e of empleados) {
+      if (!e.activo) continue;
+      if (e.tipo !== "Fijo") continue;
+      m.set(e.rol, [...(m.get(e.rol) ?? []), e]);
+    }
+    for (const [k, v] of m.entries()) {
+      v.sort((a, b) => a.nombre.localeCompare(b.nombre));
+      m.set(k, v);
+    }
+    return m;
+  }, [empleados]);
+
+  const extrasPorRol = useMemo(() => {
+    const m = new Map<Rol, Empleado[]>();
+    for (const r of ROLES) m.set(r, []);
+    for (const e of empleados) {
+      if (!e.activo) continue;
+      if (e.tipo !== "Extra") continue;
+      m.set(e.rol, [...(m.get(e.rol) ?? []), e]);
+    }
+    for (const [k, v] of m.entries()) {
+      v.sort((a, b) => a.nombre.localeCompare(b.nombre));
+      m.set(k, v);
+    }
+    return m;
+  }, [empleados]);
+
+  const loadAll = useCallback(async () => {
+    if (!activeEstablishmentId) return;
+    setLoading(true);
+    setErr(null);
+    setOk(null);
+    try {
+      const emp = await supabase()
+        .from("staff_empleados")
+        .select("id,establecimiento_id,nombre,telefono,rol,tipo,notas_rendimiento,activo")
+        .eq("establecimiento_id", activeEstablishmentId)
+        .order("nombre", { ascending: true });
+      if (emp.error) throw emp.error;
+      setEmpleados((emp.data ?? []) as unknown as Empleado[]);
+
+      const resR = await supabase()
+        .from("staff_restricciones")
+        .select("id,empleado_id,dia_semana,turno,motivo")
+        .eq("establecimiento_id", activeEstablishmentId);
+      if (resR.error) throw resR.error;
+      setRestricciones((resR.data ?? []) as unknown as Restriccion[]);
+
+      const sem = await supabase()
+        .from("staff_cuadrante_semanas")
+        .upsert({ establecimiento_id: activeEstablishmentId, semana_start: semanaStart }, { onConflict: "establecimiento_id,semana_start" })
+        .select("id,semana_start")
+        .single();
+      if (sem.error) throw sem.error;
+      const semRow = sem.data as unknown as SemanaRow;
+      setSemanaRow(semRow);
+
+      const cel = await supabase()
+        .from("staff_cuadrante_celdas")
+        .select("id,semana_id,dia_semana,turno,rol,required_count")
+        .eq("establecimiento_id", activeEstablishmentId)
+        .eq("semana_id", semRow.id);
+      if (cel.error) throw cel.error;
+      setCeldas((cel.data ?? []) as unknown as CeldaRow[]);
+
+      const as = await supabase()
+        .from("staff_cuadrante_asignaciones")
+        .select("id,celda_id,empleado_id")
+        .eq("establecimiento_id", activeEstablishmentId)
+        .in("celda_id", (cel.data ?? []).map((c) => String((c as { id?: string }).id ?? "")).filter(Boolean));
+      if (as.error) throw as.error;
+      setAsigs((as.data ?? []) as unknown as AsigRow[]);
+    } catch (e) {
+      setErr(supabaseErrToString(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [activeEstablishmentId, semanaStart]);
+
+  useEffect(() => {
+    if (!canView) return;
+    loadAll().catch((e) => setErr(supabaseErrToString(e)));
+  }, [canView, loadAll]);
+
+  async function ensureCelda(dia: number, turno: Turno, rol: Rol): Promise<CeldaRow> {
+    if (!activeEstablishmentId || !semanaRow) throw new Error("Falta establecimiento o semana.");
+    const key = `${dia}|${turno}|${rol}`;
+    const cached = celdasKeyed.get(key) ?? null;
+    if (cached) return cached;
+
+    const up = await supabase()
+      .from("staff_cuadrante_celdas")
+      .upsert(
+        {
+          establecimiento_id: activeEstablishmentId,
+          semana_id: semanaRow.id,
+          dia_semana: dia,
+          turno,
+          rol,
+          required_count: 0
+        },
+        { onConflict: "semana_id,dia_semana,turno,rol" }
+      )
+      .select("id,semana_id,dia_semana,turno,rol,required_count")
+      .single();
+    if (up.error) throw up.error;
+    const row = up.data as unknown as CeldaRow;
+    setCeldas((prev) => {
+      const next = [...prev.filter((x) => x.id !== row.id), row];
+      return next;
+    });
+    return row;
+  }
+
+  async function setRequiredCount(dia: number, turno: Turno, rol: Rol, required: number) {
+    if (!canEdit) return;
+    setErr(null);
+    setOk(null);
+    try {
+      const celda = await ensureCelda(dia, turno, rol);
+      const required_count = Math.max(0, Math.trunc(Number(required) || 0));
+      setCeldas((prev) => prev.map((c) => (c.id === celda.id ? { ...c, required_count } : c)));
+      const up = await supabase()
+        .from("staff_cuadrante_celdas")
+        .update({ required_count })
+        .eq("id", celda.id)
+        .eq("establecimiento_id", activeEstablishmentId ?? "");
+      if (up.error) throw up.error;
+      setOk("Cuadrante guardado.");
+      setTimeout(() => setOk(null), 1200);
+    } catch (e) {
+      setErr(supabaseErrToString(e));
+    }
+  }
+
+  async function addAsignacion(dia: number, turno: Turno, rol: Rol, empleadoId: string) {
+    if (!canEdit) return;
+    setErr(null);
+    setOk(null);
+    try {
+      const celda = await ensureCelda(dia, turno, rol);
+      const already = (asigsByCelda.get(celda.id) ?? []).some((a) => a.empleado_id === empleadoId);
+      if (already) return;
+
+      const ins = await supabase()
+        .from("staff_cuadrante_asignaciones")
+        .insert({ establecimiento_id: activeEstablishmentId, celda_id: celda.id, empleado_id: empleadoId })
+        .select("id,celda_id,empleado_id")
+        .single();
+      if (ins.error) throw ins.error;
+      const row = ins.data as unknown as AsigRow;
+      setAsigs((prev) => [...prev, row]);
+      setOk("Asignación guardada.");
+      setTimeout(() => setOk(null), 1200);
+    } catch (e) {
+      setErr(supabaseErrToString(e));
+    }
+  }
+
+  async function removeAsignacion(asigId: string) {
+    if (!canEdit) return;
+    setErr(null);
+    setOk(null);
+    try {
+      const del = await supabase().from("staff_cuadrante_asignaciones").delete().eq("id", asigId).eq("establecimiento_id", activeEstablishmentId ?? "");
+      if (del.error) throw del.error;
+      setAsigs((prev) => prev.filter((a) => a.id !== asigId));
+      setOk("Asignación eliminada.");
+      setTimeout(() => setOk(null), 1200);
+    } catch (e) {
+      setErr(supabaseErrToString(e));
+    }
+  }
+
+  function conflictText(opts: { empleadoId: string; dia: number; turno: Turno }): string | null {
+    const rs = restriccionesByEmpleado.get(opts.empleadoId) ?? [];
+    const hit = rs.find((r) => Number(r.dia_semana) === opts.dia && r.turno === opts.turno) ?? null;
+    if (!hit) return null;
+    return String(hit.motivo ?? "").trim() || "No disponible (restricción)";
+  }
+
+  const [extraPicker, setExtraPicker] = useState<null | { dia: number; turno: Turno; rol: Rol }>(null);
+
+  if (!canView) {
+    return <main className="p-4 text-sm text-slate-700">No tienes permisos para ver esta sección.</main>;
+  }
+
+  return (
+    <main className="relative h-[100vh] w-full overflow-hidden bg-slate-50">
+      <div className="absolute left-0 right-0 top-0 z-30 px-2 pt-2 sm:px-4 sm:pt-3">
+        <div className="flex items-center justify-between gap-3">
+          <button
+            type="button"
+            className="grid h-9 w-9 place-items-center rounded-2xl border border-slate-200 bg-white shadow-sm hover:bg-slate-50 sm:h-10 sm:w-10"
+            aria-label="Volver"
+            onClick={() => {
+              if (typeof window !== "undefined") window.history.back();
+            }}
+          >
+            <ArrowLeft className="h-5 w-5 text-slate-700" />
+          </button>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-black tracking-tight text-slate-900">
+              Staff · {(activeEstablishmentName ?? "").trim() || "Mi local"}
+            </p>
+            <div className="mt-1 -mx-2 flex gap-2 overflow-x-auto whitespace-nowrap px-2 pb-1">
+              <input
+                type="date"
+                className="min-h-8 rounded-2xl border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-800 shadow-sm sm:min-h-9 sm:px-3 sm:text-xs"
+                value={semanaAnchor}
+                onChange={(e) => setSemanaAnchor((e.target as HTMLInputElement).value)}
+                aria-label="Semana"
+              />
+              <div className="min-h-8 rounded-2xl border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-700 shadow-sm sm:min-h-9 sm:text-xs flex items-center">
+                Semana {fmtDia(semanaStart)}–{fmtDia(addDays(semanaStart, 6))}
+              </div>
+              <button
+                type="button"
+                className="min-h-8 rounded-2xl border border-slate-200 bg-white px-3 text-[11px] font-extrabold text-slate-900 shadow-sm hover:bg-slate-50 sm:min-h-9 sm:text-xs disabled:opacity-60"
+                onClick={() => void loadAll()}
+                disabled={loading}
+              >
+                {loading ? "Cargando…" : "Recargar"}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {err ? <div className="mt-2 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-800">{err}</div> : null}
+        {ok ? <div className="mt-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{ok}</div> : null}
+      </div>
+
+      <div className="absolute inset-x-0 bottom-0 top-16 overflow-hidden sm:top-20" style={{ height: "100vh", overflow: "hidden", position: "relative" }}>
+        <div className="absolute inset-0 overflow-auto p-2 pt-3 sm:p-4 sm:pt-4">
+          <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+            <div className="overflow-auto rounded-3xl">
+              <table className="min-w-[980px] w-full border-collapse">
+                <thead className="sticky top-0 z-10 bg-white">
+                  <tr>
+                    <th className="sticky left-0 z-20 w-[140px] border-b border-slate-200 bg-white p-3 text-left text-xs font-extrabold uppercase tracking-wide text-slate-600">
+                      Turno / Rol
+                    </th>
+                    {DIA_LABEL.map((d, idx) => (
+                      <th key={d.n} className="border-b border-slate-200 p-3 text-left">
+                        <p className="text-xs font-extrabold text-slate-900">
+                          {d.label} <span className="text-slate-500">{fmtDia(weekDays[idx])}</span>
+                        </p>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {TURNOS.map((t) =>
+                    ROLES.map((r) => {
+                      return (
+                        <tr key={`${t}|${r}`} className="align-top">
+                          <td className="sticky left-0 z-10 border-b border-slate-100 bg-white p-3">
+                            <p className="text-sm font-extrabold text-slate-900">{t}</p>
+                            <p className="mt-0.5 text-xs font-semibold text-slate-600">{r}</p>
+                          </td>
+                          {DIA_LABEL.map((d) => {
+                            const cel = celdasKeyed.get(`${d.n}|${t}|${r}`) ?? null;
+                            const assigned = cel ? (asigsByCelda.get(cel.id) ?? []) : [];
+                            const assignedEmps = assigned.map((a) => empleadosById.get(a.empleado_id)).filter(Boolean) as Empleado[];
+                            const required = cel?.required_count ?? 0;
+                            const deficit = Math.max(0, required - assigned.length);
+                            const conflictNames = assigned
+                              .map((a) => {
+                                const e = empleadosById.get(a.empleado_id);
+                                if (!e) return null;
+                                const c = conflictText({ empleadoId: a.empleado_id, dia: d.n, turno: t });
+                                return c ? `${e.nombre}: ${c}` : null;
+                              })
+                              .filter(Boolean) as string[];
+                            const hasConflict = conflictNames.length > 0;
+
+                            const cellClass = hasConflict
+                              ? "border-amber-200 bg-amber-50"
+                              : deficit > 0
+                                ? "border-slate-200 bg-slate-50"
+                                : "border-slate-200 bg-white";
+
+                            return (
+                              <td key={`${d.n}|${t}|${r}`} className={["border-b border-slate-100 p-3", cellClass].join(" ")}>
+                                <div className="space-y-2" title={hasConflict ? `Conflicto de restricción:\n${conflictNames.join("\n")}` : ""}>
+                                  <div className="flex items-center justify-between gap-2">
+                                    <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Necesarios</label>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      className="h-9 w-20 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-extrabold text-slate-900 disabled:opacity-60"
+                                      defaultValue={String(required)}
+                                      disabled={!canEdit}
+                                      onBlur={(e) => void setRequiredCount(d.n, t, r, Number((e.target as HTMLInputElement).value))}
+                                    />
+                                  </div>
+
+                                  <div className="flex flex-wrap gap-2">
+                                    {assignedEmps.length ? (
+                                      assignedEmps.map((e) => {
+                                        const a = assigned.find((x) => x.empleado_id === e.id) ?? null;
+                                        return (
+                                          <button
+                                            key={e.id}
+                                            type="button"
+                                            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-extrabold text-slate-900 hover:bg-slate-50 disabled:opacity-60"
+                                            disabled={!canEdit}
+                                            onClick={() => {
+                                              if (!a) return;
+                                              void removeAsignacion(a.id);
+                                            }}
+                                            aria-label={`Quitar ${e.nombre}`}
+                                          >
+                                            <span className="truncate max-w-[140px]">{e.nombre}</span>
+                                            <span className="text-slate-400">×</span>
+                                          </button>
+                                        );
+                                      })
+                                    ) : (
+                                      <p className="text-sm font-semibold text-slate-600">Sin asignaciones.</p>
+                                    )}
+                                  </div>
+
+                                  <div className="flex items-center gap-2">
+                                    <select
+                                      className="h-10 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 disabled:opacity-60"
+                                      disabled={!canEdit || (fijosPorRol.get(r) ?? []).length === 0}
+                                      value=""
+                                      onChange={(e) => {
+                                        const v = (e.target as HTMLSelectElement).value;
+                                        if (!v) return;
+                                        void addAsignacion(d.n, t, r, v);
+                                        (e.target as HTMLSelectElement).value = "";
+                                      }}
+                                    >
+                                      <option value="">{(fijosPorRol.get(r) ?? []).length ? "Añadir fijo…" : "Sin fijos"}</option>
+                                      {(fijosPorRol.get(r) ?? []).map((e) => (
+                                        <option key={e.id} value={e.id}>
+                                          {e.nombre}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+
+                                  <div className="flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2">
+                                    <p className="text-sm font-extrabold text-slate-900">
+                                      {assigned.length}/{required} asignados
+                                    </p>
+                                    {deficit > 0 ? (
+                                      <button
+                                        type="button"
+                                        className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-extrabold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+                                        disabled={!canEdit}
+                                        onClick={() => setExtraPicker({ dia: d.n, turno: t, rol: r })}
+                                      >
+                                        <UserPlus className="h-4 w-4" />
+                                        + Añadir Extra
+                                      </button>
+                                    ) : null}
+                                  </div>
+
+                                  {hasConflict ? (
+                                    <p className="text-xs font-semibold text-amber-800">
+                                      Conflicto detectado (se permite mantener la asignación).
+                                    </p>
+                                  ) : null}
+                                </div>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Modal simple de extras */}
+      {extraPicker ? (
+        <div className="absolute inset-0 z-[1000]">
+          <button type="button" className="absolute inset-0 bg-black/30" aria-label="Cerrar" onClick={() => setExtraPicker(null)} />
+          <div
+            className="absolute bottom-0 left-0 w-full rounded-t-3xl border border-slate-200 bg-white shadow-2xl"
+            style={{ maxHeight: "70vh" }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+              <p className="text-sm font-extrabold text-slate-900">Extras disponibles · {extraPicker.rol}</p>
+              <button type="button" className="min-h-9 rounded-2xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-700 hover:bg-slate-50" onClick={() => setExtraPicker(null)}>
+                Cerrar
+              </button>
+            </div>
+            <div className="max-h-[70vh] overflow-auto px-4 py-4 pb-8">
+              {(() => {
+                const list = extrasPorRol.get(extraPicker.rol) ?? [];
+                if (!list.length) return <p className="text-sm font-semibold text-slate-700">No hay extras configurados para este rol.</p>;
+                const diaLabel = `${DIA_LABEL.find((x) => x.n === extraPicker.dia)?.label ?? "Día"} (${fmtDia(weekDays[extraPicker.dia - 1] ?? weekDays[0])})`;
+                const estName = (activeEstablishmentName ?? "").trim() || "Piquillos Blinders";
+                return (
+                  <div className="space-y-2">
+                    {list.map((e) => {
+                      const phoneDigits = digitsWaPhone(e.telefono);
+                      const msg = buildWaMessage({ nombreExtra: e.nombre, establecimiento: estName, rol: extraPicker.rol, diaLabel, turno: extraPicker.turno });
+                      const href = phoneDigits ? urlWhatsApp(phoneDigits, msg) : null;
+                      return (
+                        <div key={e.id} className="flex items-center justify-between gap-3 rounded-3xl border border-slate-200 bg-white p-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-extrabold text-slate-900">{e.nombre}</p>
+                            <p className="mt-0.5 text-xs font-semibold text-slate-600">{(e.telefono ?? "").trim() || "Sin teléfono"}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                              onClick={() => {
+                                if (typeof window === "undefined") return;
+                                window.location.href = href ?? `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`;
+                              }}
+                              aria-label="Abrir WhatsApp"
+                              title="Abrir WhatsApp"
+                            >
+                              <WaIcon className="h-5 w-5 text-emerald-600" />
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                              onClick={() => {
+                                if (typeof window === "undefined") return;
+                                const tel = (e.telefono ?? "").trim();
+                                if (!tel) return;
+                                window.location.href = `tel:${tel}`;
+                              }}
+                              aria-label="Llamar"
+                              title="Llamar"
+                            >
+                              <Phone className="h-5 w-5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </main>
+  );
+}
+
