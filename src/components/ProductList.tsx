@@ -210,6 +210,7 @@ export function ProductList() {
   const [modTipo, setModTipo] = useState<QuickMovimientoTipo>("entrada_compra");
   const [modBusy, setModBusy] = useState(false);
   const [modErr, setModErr] = useState<string | null>(null);
+  const [modSubmitAttempted, setModSubmitAttempted] = useState(false);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["productos", establecimientoId],
@@ -317,6 +318,7 @@ export function ProductList() {
     setModPickedIds(new Set());
     setModQty({});
     setModTipo("entrada_compra");
+    setModSubmitAttempted(false);
     if (opts?.preselect) {
       const p = opts.preselect;
       setModPickedIds(new Set([p.id]));
@@ -504,18 +506,23 @@ export function ProductList() {
     if (!modPicked.length) return;
     setModBusy(true);
     setModErr(null);
+    setModSubmitAttempted(true);
     try {
       const usuario_id = await requireUserId();
       const nowIso = new Date().toISOString();
-      const cambios = modPicked
-        .map((p) => ({ p, n: Math.max(0, Math.trunc(Number(modQty[p.id] ?? "0") || 0)) }))
-        .filter((x) => x.n > 0);
-      if (!cambios.length) {
+      const cambios = modPicked.map((p) => ({ p, n: Math.max(0, Math.trunc(Number(modQty[p.id] ?? "0") || 0)) }));
+      const invalidos = cambios.filter((x) => x.n <= 0);
+      const efectivos = cambios.filter((x) => x.n > 0);
+      if (!efectivos.length) {
         setModErr("Indica al menos una cantidad > 0.");
         return;
       }
+      if (invalidos.length) {
+        setModErr("Revisa las cantidades marcadas en rojo (deben ser > 0).");
+        return;
+      }
 
-      const movimientos = cambios.map(({ p, n }) => ({
+      const movimientos = efectivos.map(({ p, n }) => ({
         client_uuid: newClientUuid(),
         producto_id: p.id,
         establecimiento_id: establecimientoId,
@@ -527,7 +534,11 @@ export function ProductList() {
 
       if (typeof navigator !== "undefined" && navigator.onLine) {
         const { error } = await supabase().from("movimientos").upsert(movimientos, { onConflict: "client_uuid", ignoreDuplicates: true });
-        if (error) throw error;
+        if (error) {
+          // eslint-disable-next-line no-console
+          console.error("Error completo de Supabase:", error);
+          throw error;
+        }
       } else {
         for (const m of movimientos) {
           await enqueueMovimiento(m as Parameters<typeof enqueueMovimiento>[0]);
@@ -536,7 +547,7 @@ export function ProductList() {
 
       const applyOptimistic = (prev: Producto[]) =>
         prev.map((x) => {
-          const c = cambios.find((t) => t.p.id === x.id);
+          const c = efectivos.find((t) => t.p.id === x.id);
           if (!c) return x;
           const delta = modTipo === "entrada_compra" ? c.n : modTipo === "salida_barra" ? -c.n : 0;
           const nextStock = Math.max(0, Math.trunc(Number(x.stock_actual ?? 0) || 0) + delta);
@@ -554,7 +565,7 @@ export function ProductList() {
         icon: "stock",
         message: `ha modificado stock (${modTipoLabel}).`,
         actorName: me?.email ?? null,
-        metadata: { tipo: modTipo, productos: cambios.map((c) => ({ producto_id: c.p.id, cantidad: c.n })) }
+        metadata: { tipo: modTipo, productos: efectivos.map((c) => ({ producto_id: c.p.id, cantidad: c.n })) }
       });
 
       setModOpen(false);
@@ -1002,7 +1013,12 @@ export function ProductList() {
                     <p className="truncate text-xs text-slate-500">Stock: {Math.max(0, Math.trunc(Number(p.stock_actual) || 0))}</p>
                   </div>
                   <input
-                    className="min-h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-center text-base font-bold tabular-nums text-slate-900"
+                    className={[
+                      "min-h-10 w-full rounded-xl border px-3 text-center text-base font-bold tabular-nums text-slate-900",
+                      modSubmitAttempted && Math.max(0, Math.trunc(Number(modQty[p.id] ?? "0") || 0)) <= 0
+                        ? "border-red-300 bg-red-50"
+                        : "border-slate-200 bg-slate-50"
+                    ].join(" ")}
                     inputMode="numeric"
                     pattern="[0-9]*"
                     value={modQty[p.id] ?? ""}

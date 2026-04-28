@@ -568,7 +568,11 @@ export default function AdminProductosPage() {
               },
               { onConflict: "client_uuid" }
             );
-            if (mvErr) throw mvErr;
+            if (mvErr) {
+              // eslint-disable-next-line no-console
+              console.error("Error completo de Supabase:", mvErr);
+              throw mvErr;
+            }
           } else {
             await enqueueMovimiento({
               client_uuid: newClientUuid(),
@@ -619,7 +623,11 @@ export default function AdminProductosPage() {
             },
             { onConflict: "client_uuid" }
           );
-          if (error) throw error;
+          if (error) {
+            // eslint-disable-next-line no-console
+            console.error("Error completo de Supabase:", error);
+            throw error;
+          }
         } else {
           await enqueueMovimiento({
             client_uuid: newClientUuid(),
