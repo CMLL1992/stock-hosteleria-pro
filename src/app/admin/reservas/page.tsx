@@ -10,7 +10,7 @@ import { getEffectiveRole, hasPermission } from "@/lib/permissions";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { useCambiosGlobalesRealtime } from "@/lib/useCambiosGlobalesRealtime";
 
-type MesaEstado = "libre" | "reservada" | "ocupada" | "sucia";
+type MesaEstado = "libre" | "reservada";
 
 type Mesa = {
   id: string;
@@ -33,6 +33,16 @@ type Mesa = {
 };
 
 type Zona = { id: string; nombre: string; sort: number };
+type ReservaEstado = "pendiente" | "confirmada" | "cancelada";
+type ReservaRow = {
+  id: string;
+  mesa_id: string;
+  fecha: string;
+  hora: string;
+  pax: number;
+  nombre: string;
+  estado?: ReservaEstado | string | null;
+};
 
 function clamp01(n: number) {
   return Math.max(0, Math.min(1, n));
@@ -55,9 +65,7 @@ function haptic(ms = 50) {
 
 function mesaUi(estado: MesaEstado, selected: boolean) {
   const base = { border: "border-slate-300", ring: "", dot: "bg-slate-400", bg: "bg-white" };
-  if (estado === "ocupada") return { ...base, dot: "bg-rose-500", bg: "bg-rose-50" };
   if (estado === "reservada") return { ...base, dot: "bg-sky-500", bg: "bg-sky-50" };
-  if (estado === "sucia") return { ...base, dot: "bg-amber-500", bg: "bg-amber-50" };
   if (selected) return { ...base, ring: "ring-2 ring-blue-500/30" };
   return base;
 }
@@ -78,15 +86,15 @@ function decorKind(m: Pick<Mesa, "nombre"> | null | undefined): "pared" | "barra
   return "decor";
 }
 
-function elapsedLabel(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  const t = Date.parse(iso);
-  if (!Number.isFinite(t)) return null;
-  const mins = Math.max(0, Math.floor((Date.now() - t) / 60000));
-  if (mins < 60) return `${mins}m`;
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return m ? `${h}h ${m}m` : `${h}h`;
+function addMinutesToHora(hora: string, minsToAdd: number): string {
+  const m = String(hora ?? "").trim().match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return "";
+  const hh = Math.max(0, Math.min(23, Number(m[1]) || 0));
+  const mm = Math.max(0, Math.min(59, Number(m[2]) || 0));
+  const total = hh * 60 + mm + minsToAdd;
+  const nh = Math.floor(((total % (24 * 60)) + 24 * 60) % (24 * 60) / 60);
+  const nm = ((total % 60) + 60) % 60;
+  return `${String(nh).padStart(2, "0")}:${String(nm).padStart(2, "0")}`;
 }
 
 export default function ReservasPlanoPage() {
@@ -118,6 +126,27 @@ function ReservasPlanoInner() {
   const [zonas, setZonas] = useState<Zona[]>([]);
   const [zonaId, setZonaId] = useState<string | null>(null);
   const [mesas, setMesas] = useState<Mesa[]>([]);
+  const [selectedDate, setSelectedDate] = useState<string>(() => {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  });
+  const [reservasDia, setReservasDia] = useState<ReservaRow[]>([]);
+  const reservasByMesa = useMemo(() => {
+    const map = new Map<string, ReservaRow[]>();
+    for (const r of reservasDia) {
+      const id = String(r.mesa_id ?? "").trim();
+      if (!id) continue;
+      map.set(id, [...(map.get(id) ?? []), r]);
+    }
+    for (const [k, v] of map.entries()) {
+      v.sort((a, b) => String(a.hora ?? "").localeCompare(String(b.hora ?? "")));
+      map.set(k, v);
+    }
+    return map;
+  }, [reservasDia]);
 
   const [planoUnlocked, setPlanoUnlocked] = useState(false);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -128,6 +157,8 @@ function ReservasPlanoInner() {
   const boardRef = useRef<HTMLDivElement | null>(null);
   const draggingRef = useRef<null | { mesaId: string; startClientX: number; startClientY: number; startX: number; startY: number }>(null);
   const panningRef = useRef<null | { startClientX: number; startClientY: number; startPanX: number; startPanY: number }>(null);
+  const pointersRef = useRef(new Map<number, { x: number; y: number; mesaId: string | null }>());
+  const pinchRef = useRef<null | { mesaId: string; a: number; b: number; startDist: number; startW: number; startH: number }>(null);
   // mergeHoverRef: retirado en versión simplificada
 
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -189,6 +220,52 @@ function ReservasPlanoInner() {
 
   const loadRef = useRef(load);
   loadRef.current = load;
+
+  const loadReservasForDate = useCallback(async () => {
+    if (!activeEstablishmentId) {
+      setReservasDia([]);
+      return;
+    }
+    if (!selectedDate) {
+      setReservasDia([]);
+      return;
+    }
+    setErrMsg(null);
+    try {
+      const selects = [
+        "id,mesa_id,fecha,hora,pax,nombre,estado",
+        "id,mesa_id,fecha,hora,pax,nombre"
+      ] as const;
+      let lastErr: unknown = null;
+      for (const sel of selects) {
+        const q = supabase()
+          .from("sala_reservas")
+          .select(sel)
+          .eq("establecimiento_id", activeEstablishmentId)
+          .eq("fecha", selectedDate)
+          .order("hora", { ascending: true });
+        const r = await q;
+        if (!r.error) {
+          const rows = ((r.data ?? []) as unknown as ReservaRow[]) ?? [];
+          // Solo confirmadas (si existe columna estado); si no existe, mostramos todas.
+          const filtered =
+            sel.includes("estado") ? rows.filter((x) => String((x as ReservaRow).estado ?? "").toLowerCase() === "confirmada") : rows;
+          setReservasDia(filtered);
+          lastErr = null;
+          break;
+        }
+        lastErr = r.error;
+      }
+      if (lastErr) throw lastErr;
+    } catch (e) {
+      setErrMsg(supabaseErrToString(e));
+      setReservasDia([]);
+    }
+  }, [activeEstablishmentId, selectedDate]);
+
+  useEffect(() => {
+    void loadReservasForDate();
+  }, [loadReservasForDate]);
 
   const realtimeReloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -441,6 +518,14 @@ function ReservasPlanoInner() {
 
   function onPointerDownBoard(e: React.PointerEvent) {
     if (draggingRef.current) return;
+    // Si estamos editando y hay panel abierto, tocar el fondo cierra el panel.
+    if (planoUnlocked && sheetOpen) {
+      setSheetOpen(false);
+      setManageOpen(false);
+      setSelMesaId(null);
+      setMergeMode(false);
+      return;
+    }
     e.preventDefault();
     e.stopPropagation();
     setIsInteracting(true);
@@ -458,17 +543,58 @@ function ReservasPlanoInner() {
     e.stopPropagation();
     setIsInteracting(true);
     haptic(20);
-    try {
-      // eslint-disable-next-line no-console
-      console.log("Interacción detectada en mesa:", mesa.id);
-    } catch {
-      // ignore
-    }
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    draggingRef.current = { mesaId: mesa.id, startClientX: e.clientX, startClientY: e.clientY, startX: mesa.x, startY: mesa.y };
+
+    // Track pointers para pinch-to-zoom
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY, mesaId: mesa.id });
+    const activeForMesa = Array.from(pointersRef.current.entries())
+      .filter(([, v]) => v.mesaId === mesa.id)
+      .map(([id]) => id);
+
+    // Pinch solo si la mesa está seleccionada y hay 2 punteros
+    if (selMesaId === mesa.id && activeForMesa.length >= 2) {
+      const [a, b] = activeForMesa.slice(-2);
+      const pa = pointersRef.current.get(a)!;
+      const pb = pointersRef.current.get(b)!;
+      const dist = Math.hypot(pa.x - pb.x, pa.y - pb.y);
+      const defaultW = boardSize.w > 0 ? 60 / boardSize.w : 0.18;
+      const defaultH = boardSize.h > 0 ? 60 / boardSize.h : 0.18;
+      const startW = clampRange(Number(mesa.width ?? defaultW) || defaultW, SIZE_MIN, SIZE_MAX);
+      const startH = clampRange(Number(mesa.height ?? defaultH) || defaultH, SIZE_MIN, SIZE_MAX);
+      pinchRef.current = { mesaId: mesa.id, a, b, startDist: Math.max(10, dist), startW, startH };
+      draggingRef.current = null;
+      panningRef.current = null;
+      return;
+    }
+
+    // Drag normal con 1 dedo
+    if (!pinchRef.current) {
+      draggingRef.current = { mesaId: mesa.id, startClientX: e.clientX, startClientY: e.clientY, startX: mesa.x, startY: mesa.y };
+    }
   }
 
   function onPointerMove(e: React.PointerEvent) {
+    // Actualizar puntero
+    const existing = pointersRef.current.get(e.pointerId);
+    if (existing) pointersRef.current.set(e.pointerId, { ...existing, x: e.clientX, y: e.clientY });
+
+    // Pinch-to-zoom activo
+    const pinch = pinchRef.current;
+    if (pinch && pinch.mesaId) {
+      const pa = pointersRef.current.get(pinch.a) ?? null;
+      const pb = pointersRef.current.get(pinch.b) ?? null;
+      if (pa && pb) {
+        e.preventDefault();
+        e.stopPropagation();
+        const dist = Math.hypot(pa.x - pb.x, pa.y - pb.y);
+        const factor = dist / Math.max(10, pinch.startDist);
+        const nextW = clampRange(pinch.startW * factor, SIZE_MIN, SIZE_MAX);
+        const nextH = clampRange(pinch.startH * factor, SIZE_MIN, SIZE_MAX);
+        setMesas((prev) => prev.map((m) => (m.id === pinch.mesaId ? { ...m, width: nextW, height: nextH } : m)));
+        return;
+      }
+    }
+
     const drag = draggingRef.current;
     if (drag && boardRef.current) {
       e.preventDefault();
@@ -490,11 +616,36 @@ function ReservasPlanoInner() {
     }
   }
 
-  async function onPointerUp() {
+  async function onPointerUp(e: React.PointerEvent) {
+    pointersRef.current.delete(e.pointerId);
     const drag = draggingRef.current;
     draggingRef.current = null;
     panningRef.current = null;
     setIsInteracting(false);
+
+    // Finalizar pinch si estaba activo (cuando ya no quedan 2 punteros)
+    const pinch = pinchRef.current;
+    if (pinch) {
+      const stillA = pointersRef.current.has(pinch.a);
+      const stillB = pointersRef.current.has(pinch.b);
+      if (stillA && stillB) return;
+      pinchRef.current = null;
+      const m = mesas.find((x) => x.id === pinch.mesaId) ?? null;
+      if (m && activeEstablishmentId) {
+        try {
+          const patch = {
+            width: m.width != null ? clampRange(Number(m.width) || 0, SIZE_MIN, SIZE_MAX) : null,
+            height: m.height != null ? clampRange(Number(m.height) || 0, SIZE_MIN, SIZE_MAX) : null
+          } as const;
+          const res = await supabase().from("sala_mesas").update(patch).eq("id", m.id).eq("establecimiento_id", activeEstablishmentId);
+          if (res.error) throw res.error;
+        } catch (err) {
+          setErrMsg(supabaseErrToString(err));
+          void load();
+        }
+      }
+    }
+
     if (!drag) return;
     const mesa = mesas.find((m) => m.id === drag.mesaId) ?? null;
     if (!mesa) return;
@@ -771,6 +922,13 @@ function ReservasPlanoInner() {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-black tracking-tight text-slate-900">{(activeEstablishmentName ?? "").trim() || "Mi local"}</p>
                 <div className="mt-1 flex gap-2">
+                  <input
+                    type="date"
+                    className="min-h-9 rounded-2xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 shadow-sm"
+                    value={selectedDate}
+                    onChange={(e) => setSelectedDate((e.target as HTMLInputElement).value)}
+                    aria-label="Fecha"
+                  />
                   {canDrag && planoUnlocked ? (
                     <input
                       className="min-h-9 max-w-[220px] rounded-2xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
@@ -929,6 +1087,19 @@ function ReservasPlanoInner() {
             </div>
           ) : null}
 
+          {/* Botón de bloquear prominente (al tocar fondo se cierra el panel) */}
+          {canDrag && planoUnlocked && !selMesaId ? (
+            <button
+              type="button"
+              className="absolute bottom-32 right-6 z-[999] grid h-14 w-14 place-items-center rounded-full border border-slate-200 bg-white shadow-lg hover:bg-slate-50"
+              aria-label="Bloquear plano"
+              onClick={() => setPlanoUnlocked(false)}
+              title="Bloquear"
+            >
+              <Lock className="h-6 w-6 text-slate-800" />
+            </button>
+          ) : null}
+
           {/* Board */}
           <div className="absolute inset-x-0 bottom-0 top-0 pt-14">
             <div
@@ -956,7 +1127,6 @@ function ReservasPlanoInner() {
                   const decor = isDecorativo(m);
                   const dk = decorKind(m);
                   const ui = mesaUi(m.estado, selected);
-                  const elapsed = m.estado === "ocupada" ? elapsedLabel(m.hora_checkin) : null;
                   const isRound = m.forma === "round";
                   const left = `${m.x * 100}%`;
                   const top = `${m.y * 100}%`;
@@ -988,6 +1158,7 @@ function ReservasPlanoInner() {
                       className={[
                         "absolute select-none",
                         "grid place-items-center",
+                        decor && dk === "texto" && !planoUnlocked ? "pointer-events-none" : "",
                         decor ? (dk === "texto" ? "" : "border border-slate-300") : isRound ? "rounded-full" : "rounded-2xl",
                         decor
                           ? dk === "texto"
@@ -1036,9 +1207,10 @@ function ReservasPlanoInner() {
                       {!decor ? <span className={["absolute left-2 top-2 h-2 w-2 rounded-full", ui.dot].join(" ")} aria-hidden /> : null}
                       {!decor ? (
                         <div className="text-center">
-                          <p className="text-xl font-black tabular-nums text-slate-900">{m.numero}</p>
+                          <p className="text-base font-extrabold text-slate-900">
+                            {String(m.nombre ?? "").trim() || `Mesa ${m.numero}`}
+                          </p>
                           <p className="mt-1 text-sm font-extrabold tabular-nums text-slate-700">{`${m.pax_max} pax`}</p>
-                          {elapsed ? <p className="mt-1 text-[11px] font-extrabold text-slate-700">{elapsed}</p> : null}
                         </div>
                       ) : null}
                     </div>
@@ -1090,91 +1262,30 @@ function ReservasPlanoInner() {
 
                     {!selIsDecor ? (
                       <>
-                        {/* Tamaño */}
                         <div className="rounded-3xl border border-slate-200 bg-white p-3">
                           <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Tamaño</p>
-                          <div className="mt-3 grid gap-4">
-                            {(() => {
-                              const w = clampRange(Number(selMesa.width ?? 0.18) || 0.18, SIZE_MIN, SIZE_MAX);
-                              return (
-                                <div className="grid gap-2">
-                                  <div className="flex items-baseline justify-between gap-3">
-                                    <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Ancho</label>
-                                    <span className="text-xs font-semibold tabular-nums text-slate-700">{Math.round(w * 100)}%</span>
-                                  </div>
-                                  <input
-                                    type="range"
-                                    min={SIZE_MIN}
-                                    max={SIZE_MAX}
-                                    step={0.01}
-                                    value={w}
-                                    disabled={!canDrag}
-                                    onChange={(e) => {
-                                      const newValue = (e.target as HTMLInputElement).value;
-                                      const next = clampRange(Number(newValue) || 0, SIZE_MIN, SIZE_MAX);
-                                      setMesas((prev) => prev.map((m) => (m.id === selMesa.id ? { ...m, width: next } : m)));
-                                    }}
-                                    onPointerUp={() => void updateMesaFields({ width: clampRange(Number(selMesa.width ?? 0.18) || 0.18, SIZE_MIN, SIZE_MAX) })}
-                                    className="w-full"
-                                    aria-label="Ancho"
-                                  />
-                                </div>
-                              );
-                            })()}
-                            {(() => {
-                              const h = clampRange(Number(selMesa.height ?? 0.18) || 0.18, SIZE_MIN, SIZE_MAX);
-                              return (
-                                <div className="grid gap-2">
-                                  <div className="flex items-baseline justify-between gap-3">
-                                    <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Alto</label>
-                                    <span className="text-xs font-semibold tabular-nums text-slate-700">{Math.round(h * 100)}%</span>
-                                  </div>
-                                  <input
-                                    type="range"
-                                    min={SIZE_MIN}
-                                    max={SIZE_MAX}
-                                    step={0.01}
-                                    value={h}
-                                    disabled={!canDrag}
-                                    onChange={(e) => {
-                                      const newValue = (e.target as HTMLInputElement).value;
-                                      const next = clampRange(Number(newValue) || 0, SIZE_MIN, SIZE_MAX);
-                                      setMesas((prev) => prev.map((m) => (m.id === selMesa.id ? { ...m, height: next } : m)));
-                                    }}
-                                    onPointerUp={() => void updateMesaFields({ height: clampRange(Number(selMesa.height ?? 0.18) || 0.18, SIZE_MIN, SIZE_MAX) })}
-                                    className="w-full"
-                                    aria-label="Alto"
-                                  />
-                                </div>
-                              );
-                            })()}
-                          </div>
-                          {!canDrag ? <p className="mt-2 text-xs font-semibold text-slate-500">Solo Admin puede redimensionar.</p> : null}
+                          <p className="mt-2 text-sm text-slate-600">
+                            Con el plano desbloqueado, usa <span className="font-semibold">dos dedos</span> sobre la mesa seleccionada para redimensionarla.
+                          </p>
                         </div>
 
-                        {/* Número */}
+                        {/* Identificador */}
                         <div className="rounded-3xl border border-slate-200 bg-white p-3">
-                          <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Número</p>
-                          <div className="mt-2 flex items-center justify-between gap-3">
-                            <button
-                              type="button"
-                              className="grid h-12 w-12 place-items-center rounded-2xl border border-slate-200 bg-white text-lg font-black text-slate-900 disabled:opacity-50"
-                              onClick={() => void updateMesaFields({ numero: Math.max(1, (selMesa.numero ?? 1) - 1) })}
-                              disabled={!canDrag}
-                            >
-                              −
-                            </button>
-                            <p className="text-3xl font-black tabular-nums text-slate-900">{selMesa.numero}</p>
-                            <button
-                              type="button"
-                              className="grid h-12 w-12 place-items-center rounded-2xl border border-slate-200 bg-white text-lg font-black text-slate-900 disabled:opacity-50"
-                              onClick={() => void updateMesaFields({ numero: (selMesa.numero ?? 1) + 1 })}
-                              disabled={!canDrag}
-                            >
-                              +
-                            </button>
-                          </div>
-                          {!canDrag ? <p className="mt-2 text-xs font-semibold text-slate-500">Solo Admin puede editar el número.</p> : null}
+                          <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Identificador</p>
+                          <p className="mt-1 text-sm text-slate-600">Puede ser número o nombre (ej: “Mesa 1”, “Rincón VIP”).</p>
+                          <input
+                            className="mt-3 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-60"
+                            value={String(selMesa.nombre ?? "").trim()}
+                            onChange={(e) => {
+                              const val = (e.target as HTMLInputElement).value;
+                              setMesas((prev) => prev.map((m) => (m.id === selMesa.id ? { ...m, nombre: val } : m)));
+                            }}
+                            onBlur={() => void updateMesaFields({ nombre: String(selMesa.nombre ?? "").trim() })}
+                            disabled={!canDrag}
+                            placeholder={`Mesa ${selMesa.numero}`}
+                            aria-label="Identificador de mesa"
+                          />
+                          {!canDrag ? <p className="mt-2 text-xs font-semibold text-slate-500">Solo Admin puede editar el identificador.</p> : null}
                         </div>
 
                         {/* Comensales (pax) */}
@@ -1216,12 +1327,37 @@ function ReservasPlanoInner() {
                           <button type="button" className="min-h-12 rounded-2xl border border-slate-200 bg-white text-sm font-extrabold text-slate-900 hover:bg-slate-50" onClick={() => void setEstado("reservada")}>
                             Reservada
                           </button>
-                          <button type="button" className="min-h-12 rounded-2xl border border-slate-200 bg-white text-sm font-extrabold text-slate-900 hover:bg-slate-50" onClick={() => void setEstado("ocupada")}>
-                            Ocupada
-                          </button>
-                          <button type="button" className="min-h-12 rounded-2xl border border-slate-200 bg-white text-sm font-extrabold text-slate-900 hover:bg-slate-50" onClick={() => void setEstado("sucia")}>
-                            Sucia
-                          </button>
+                        </div>
+
+                        {/* Reservas del día */}
+                        <div className="rounded-3xl border border-slate-200 bg-white p-3">
+                          <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Reservas ({selectedDate})</p>
+                          {(() => {
+                            const rows = reservasByMesa.get(selMesa.id) ?? [];
+                            if (!rows.length) {
+                              return <p className="mt-2 text-sm text-slate-600">Sin reservas confirmadas para esta mesa.</p>;
+                            }
+                            return (
+                              <ul className="mt-2 space-y-2">
+                                {rows.map((r) => {
+                                  const ini = String(r.hora ?? "").trim() || "—";
+                                  const fin = ini && ini !== "—" ? addMinutesToHora(ini, 90) : "";
+                                  const rango = fin ? `${ini}–${fin}` : ini;
+                                  const nombre = String(r.nombre ?? "").trim() || "Reserva";
+                                  const pax = Math.max(1, Math.trunc(Number(r.pax) || 1));
+                                  return (
+                                    <li key={r.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                                      <p className="text-sm font-extrabold text-slate-900">{rango}</p>
+                                      <p className="mt-0.5 text-sm text-slate-700">
+                                        {nombre} · <span className="font-semibold tabular-nums">{pax} pax</span>
+                                      </p>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            );
+                          })()}
+                          <p className="mt-2 text-xs text-slate-500">Duración estimada: 90 min (ajustable en una siguiente iteración).</p>
                         </div>
                       </>
                     ) : (
