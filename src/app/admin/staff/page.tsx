@@ -133,6 +133,7 @@ export default function AdminStaffPage() {
   const semanaStart = useMemo(() => mondayOf(semanaAnchor), [semanaAnchor]);
   const weekDays = useMemo(() => Array.from({ length: 7 }).map((_, i) => addDays(semanaStart, i)), [semanaStart]);
   const [mobileDia, setMobileDia] = useState<number>(1);
+  const [mobileTurno, setMobileTurno] = useState<Turno | "todos">("todos");
 
   const [empleados, setEmpleados] = useState<Empleado[]>([]);
   const [restricciones, setRestricciones] = useState<Restriccion[]>([]);
@@ -589,46 +590,48 @@ export default function AdminStaffPage() {
             <p className="truncate text-sm font-black tracking-tight text-slate-900">
               Staff · {(activeEstablishmentName ?? "").trim() || "Mi local"}
             </p>
-            <div className="mt-1 -mx-2 flex gap-2 overflow-x-auto whitespace-nowrap px-2 pb-1">
-              <input
-                type="date"
-                className="min-h-8 rounded-2xl border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-800 shadow-sm sm:min-h-9 sm:px-3 sm:text-xs"
-                value={semanaAnchor}
-                onChange={(e) => setSemanaAnchor((e.target as HTMLInputElement).value)}
-                aria-label="Semana"
-              />
-              <div className="min-h-8 rounded-2xl border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-700 shadow-sm sm:min-h-9 sm:text-xs flex items-center">
-                Semana {fmtDia(semanaStart)}–{fmtDia(addDays(semanaStart, 6))}
+            <div className="mt-1 -mx-2 px-2 pb-1">
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-2 sm:overflow-x-auto sm:whitespace-nowrap">
+                <input
+                  type="date"
+                  className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm sm:min-h-9 sm:w-auto sm:px-3 sm:text-xs"
+                  value={semanaAnchor}
+                  onChange={(e) => setSemanaAnchor((e.target as HTMLInputElement).value)}
+                  aria-label="Semana"
+                />
+                <div className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm sm:min-h-9 sm:w-auto sm:text-xs flex items-center">
+                  Semana {fmtDia(semanaStart)}–{fmtDia(addDays(semanaStart, 6))}
+                </div>
+                <button
+                  type="button"
+                  className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-extrabold text-slate-900 shadow-sm hover:bg-slate-50 sm:min-h-9 sm:w-auto sm:text-xs disabled:opacity-60"
+                  onClick={() => void loadAll()}
+                  disabled={loading}
+                >
+                  {loading ? "Cargando…" : "Recargar"}
+                </button>
+                <button
+                  type="button"
+                  className="min-h-11 w-full rounded-2xl bg-slate-900 px-3 text-sm font-extrabold text-white shadow-sm hover:bg-black sm:min-h-9 sm:w-auto sm:text-xs disabled:opacity-60"
+                  disabled={!canEdit}
+                  onClick={() => {
+                    setPlantillaOpen(true);
+                    if (!selectedEmpleadoId) setSelectedEmpleadoId(empleados[0]?.id ?? "");
+                  }}
+                  title={!canEdit ? "Solo Admin puede gestionar plantilla" : "Gestionar empleados y restricciones"}
+                >
+                  Plantilla
+                </button>
+                <button
+                  type="button"
+                  className="col-span-2 min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-extrabold text-slate-900 shadow-sm hover:bg-slate-50 sm:min-h-9 sm:w-auto sm:text-xs disabled:opacity-60"
+                  disabled={!canEdit}
+                  onClick={() => openNuevoEmpleado()}
+                  title={!canEdit ? "Solo Admin puede crear empleados" : "Añadir empleado"}
+                >
+                  + Empleado
+                </button>
               </div>
-              <button
-                type="button"
-                className="min-h-8 rounded-2xl border border-slate-200 bg-white px-3 text-[11px] font-extrabold text-slate-900 shadow-sm hover:bg-slate-50 sm:min-h-9 sm:text-xs disabled:opacity-60"
-                onClick={() => void loadAll()}
-                disabled={loading}
-              >
-                {loading ? "Cargando…" : "Recargar"}
-              </button>
-              <button
-                type="button"
-                className="min-h-8 rounded-2xl bg-slate-900 px-3 text-[11px] font-extrabold text-white shadow-sm hover:bg-black sm:min-h-9 sm:text-xs disabled:opacity-60"
-                disabled={!canEdit}
-                onClick={() => {
-                  setPlantillaOpen(true);
-                  if (!selectedEmpleadoId) setSelectedEmpleadoId(empleados[0]?.id ?? "");
-                }}
-                title={!canEdit ? "Solo Admin puede gestionar plantilla" : "Gestionar empleados y restricciones"}
-              >
-                Plantilla
-              </button>
-              <button
-                type="button"
-                className="min-h-8 rounded-2xl border border-slate-200 bg-white px-3 text-[11px] font-extrabold text-slate-900 shadow-sm hover:bg-slate-50 sm:min-h-9 sm:text-xs disabled:opacity-60"
-                disabled={!canEdit}
-                onClick={() => openNuevoEmpleado()}
-                title={!canEdit ? "Solo Admin puede crear empleados" : "Añadir empleado"}
-              >
-                + Empleado
-              </button>
             </div>
           </div>
         </div>
@@ -792,26 +795,40 @@ export default function AdminStaffPage() {
             if (isMobile) {
               return (
                 <div className="space-y-3">
-                  <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-                    {DIA_LABEL.map((d, idx) => {
-                      const active = mobileDia === d.n;
-                      return (
-                        <button
-                          key={d.n}
-                          type="button"
-                          className={[
-                            "min-h-10 shrink-0 rounded-2xl border px-3 text-xs font-extrabold",
-                            active ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-900"
-                          ].join(" ")}
-                          onClick={() => setMobileDia(d.n)}
-                        >
-                          {d.label} {fmtDia(weekDays[idx])}
-                        </button>
-                      );
-                    })}
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <label className="grid gap-1">
+                      <span className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Día</span>
+                      <select
+                        className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900"
+                        value={String(mobileDia)}
+                        onChange={(e) => setMobileDia(Number((e.target as HTMLSelectElement).value) || 1)}
+                      >
+                        {DIA_LABEL.map((d, idx) => (
+                          <option key={d.n} value={String(d.n)}>
+                            {d.label} · {fmtDia(weekDays[idx])}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="grid gap-1">
+                      <span className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Turno</span>
+                      <select
+                        className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900"
+                        value={mobileTurno}
+                        onChange={(e) => setMobileTurno(((e.target as HTMLSelectElement).value as Turno | "todos") ?? "todos")}
+                      >
+                        <option value="todos">Todos</option>
+                        {TURNOS.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                   </div>
 
-                  {TURNOS.map((t) => (
+                  {(mobileTurno === "todos" ? TURNOS : [mobileTurno]).map((t) => (
                     <section key={t} className="space-y-2">
                       <p className="px-1 text-xs font-extrabold uppercase tracking-wide text-slate-600">{t}</p>
                       <div className="grid gap-2">
