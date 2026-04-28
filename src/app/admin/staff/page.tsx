@@ -47,6 +47,14 @@ const DIA_LABEL: Array<{ n: number; label: string }> = [
   { n: 7, label: "Dom" }
 ];
 
+function isMissingStaffSchema(e: unknown): boolean {
+  const anyErr = e as { code?: unknown; message?: unknown };
+  const code = typeof anyErr?.code === "string" ? anyErr.code : "";
+  const msg = typeof anyErr?.message === "string" ? anyErr.message : "";
+  if (code === "PGRST205") return true;
+  return /staff_empleados|staff_restricciones|staff_cuadrante/i.test(msg) && /schema cache|could not find the table/i.test(msg);
+}
+
 function toIsoDate(d: Date): string {
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
@@ -109,10 +117,22 @@ export default function AdminStaffPage() {
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [missingSchema, setMissingSchema] = useState(false);
+
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 640px)");
+    const apply = () => setIsMobile(!!mq.matches);
+    apply();
+    mq.addEventListener?.("change", apply);
+    return () => mq.removeEventListener?.("change", apply);
+  }, []);
 
   const [semanaAnchor, setSemanaAnchor] = useState<string>(() => toIsoDate(new Date()));
   const semanaStart = useMemo(() => mondayOf(semanaAnchor), [semanaAnchor]);
   const weekDays = useMemo(() => Array.from({ length: 7 }).map((_, i) => addDays(semanaStart, i)), [semanaStart]);
+  const [mobileDia, setMobileDia] = useState<number>(1);
 
   const [empleados, setEmpleados] = useState<Empleado[]>([]);
   const [restricciones, setRestricciones] = useState<Restriccion[]>([]);
@@ -195,13 +215,25 @@ export default function AdminStaffPage() {
     setLoading(true);
     setErr(null);
     setOk(null);
+    setMissingSchema(false);
     try {
       const emp = await supabase()
         .from("staff_empleados")
         .select("id,establecimiento_id,nombre,telefono,rol,tipo,notas_rendimiento,activo")
         .eq("establecimiento_id", activeEstablishmentId)
         .order("nombre", { ascending: true });
-      if (emp.error) throw emp.error;
+      if (emp.error) {
+        if (isMissingStaffSchema(emp.error)) {
+          setMissingSchema(true);
+          setEmpleados([]);
+          setRestricciones([]);
+          setSemanaRow(null);
+          setCeldas([]);
+          setAsigs([]);
+          return;
+        }
+        throw emp.error;
+      }
       setEmpleados((emp.data ?? []) as unknown as Empleado[]);
 
       const resR = await supabase()
@@ -243,7 +275,12 @@ export default function AdminStaffPage() {
         setAsigs((((as.data ?? []) as unknown as AsigRow[]) ?? []) as AsigRow[]);
       }
     } catch (e) {
-      setErr(supabaseErrToString(e));
+      if (isMissingStaffSchema(e)) {
+        setMissingSchema(true);
+        setErr("Falta aplicar el esquema de Staff en Supabase. Ejecuta: `supabase/patches/staff-cuadrante.sql`");
+      } else {
+        setErr(supabaseErrToString(e));
+      }
     } finally {
       setLoading(false);
     }
@@ -484,6 +521,33 @@ export default function AdminStaffPage() {
     return <main className="p-4 text-sm text-slate-700">No tienes permisos para ver esta sección.</main>;
   }
 
+  if (missingSchema) {
+    return (
+      <main className="min-h-dvh bg-slate-50 p-4 pb-28">
+        <div className="mx-auto w-full max-w-3xl space-y-3">
+          <h1 className="text-lg font-extrabold text-slate-900">Staff / Turnos</h1>
+          <div className="rounded-3xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
+            <p className="font-extrabold">Falta el esquema en Supabase.</p>
+            <p className="mt-2 font-semibold">
+              El error de la imagen corresponde a tablas no creadas (por ejemplo, <span className="font-mono">staff_empleados</span>).
+            </p>
+            <p className="mt-2">
+              Ejecuta en Supabase SQL Editor el archivo: <span className="font-mono">supabase/patches/staff-cuadrante.sql</span>
+            </p>
+          </div>
+          {err ? <div className="rounded-2xl border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-700">{err}</div> : null}
+          <button
+            type="button"
+            className="min-h-12 w-full rounded-2xl bg-slate-900 text-sm font-extrabold text-white hover:bg-black"
+            onClick={() => void loadAll()}
+          >
+            Reintentar
+          </button>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="relative h-[100vh] w-full overflow-hidden bg-slate-50">
       <div className="absolute left-0 right-0 top-0 z-30 px-2 pt-2 sm:px-4 sm:pt-3">
@@ -603,150 +667,184 @@ export default function AdminStaffPage() {
             </div>
           </div>
 
-          <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
-            <div className="overflow-auto rounded-3xl">
-              <table className="min-w-[980px] w-full border-collapse">
-                <thead className="sticky top-0 z-10 bg-white">
-                  <tr>
-                    <th className="sticky left-0 z-20 w-[140px] border-b border-slate-200 bg-white p-3 text-left text-xs font-extrabold uppercase tracking-wide text-slate-600">
-                      Turno / Rol
-                    </th>
-                    {DIA_LABEL.map((d, idx) => (
-                      <th key={d.n} className="border-b border-slate-200 p-3 text-left">
-                        <p className="text-xs font-extrabold text-slate-900">
-                          {d.label} <span className="text-slate-500">{fmtDia(weekDays[idx])}</span>
-                        </p>
-                      </th>
+          {(() => {
+            const renderCell = (dia: number, t: Turno, r: Rol) => {
+              const cel = celdasKeyed.get(`${dia}|${t}|${r}`) ?? null;
+              const assigned = cel ? (asigsByCelda.get(cel.id) ?? []) : [];
+              const assignedEmps = assigned.map((a) => empleadosById.get(a.empleado_id)).filter(Boolean) as Empleado[];
+              const required = cel?.required_count ?? 0;
+              const deficit = Math.max(0, required - assigned.length);
+              const conflictNames = assigned
+                .map((a) => {
+                  const e = empleadosById.get(a.empleado_id);
+                  if (!e) return null;
+                  const c = conflictText({ empleadoId: a.empleado_id, dia, turno: t });
+                  return c ? `${e.nombre}: ${c}` : null;
+                })
+                .filter(Boolean) as string[];
+              const hasConflict = conflictNames.length > 0;
+              const cellClass = hasConflict ? "border-amber-200 bg-amber-50" : deficit > 0 ? "border-slate-200 bg-slate-50" : "border-slate-200 bg-white";
+
+              return (
+                <div className={["space-y-2 rounded-3xl border p-3", cellClass].join(" ")} title={hasConflict ? `Conflicto de restricción:\n${conflictNames.join("\n")}` : ""}>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Necesarios</label>
+                    <input
+                      type="number"
+                      min={0}
+                      className="h-9 w-20 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-extrabold text-slate-900 disabled:opacity-60"
+                      defaultValue={String(required)}
+                      disabled={!canEdit}
+                      onBlur={(e) => void setRequiredCount(dia, t, r, Number((e.target as HTMLInputElement).value))}
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {assignedEmps.length ? (
+                      assignedEmps.map((e) => {
+                        const a = assigned.find((x) => x.empleado_id === e.id) ?? null;
+                        return (
+                          <button
+                            key={e.id}
+                            type="button"
+                            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-extrabold text-slate-900 hover:bg-slate-50 disabled:opacity-60"
+                            disabled={!canEdit}
+                            onClick={() => {
+                              if (!a) return;
+                              void removeAsignacion(a.id);
+                            }}
+                            aria-label={`Quitar ${e.nombre}`}
+                          >
+                            <span className="truncate max-w-[140px]">{e.nombre}</span>
+                            <span className="text-slate-400">×</span>
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <p className="text-sm font-semibold text-slate-600">Sin asignaciones.</p>
+                    )}
+                  </div>
+
+                  <select
+                    className="h-10 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 disabled:opacity-60"
+                    disabled={!canEdit || (fijosPorRol.get(r) ?? []).length === 0}
+                    value=""
+                    onChange={(e) => {
+                      const v = (e.target as HTMLSelectElement).value;
+                      if (!v) return;
+                      void addAsignacion(dia, t, r, v);
+                      (e.target as HTMLSelectElement).value = "";
+                    }}
+                  >
+                    <option value="">{(fijosPorRol.get(r) ?? []).length ? "Añadir fijo…" : "Sin fijos"}</option>
+                    {(fijosPorRol.get(r) ?? []).map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.nombre}
+                      </option>
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {TURNOS.map((t) =>
-                    ROLES.map((r) => {
+                  </select>
+
+                  <div className="flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2">
+                    <p className="text-sm font-extrabold text-slate-900">
+                      {assigned.length}/{required} asignados
+                    </p>
+                    {deficit > 0 ? (
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-extrabold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+                        disabled={!canEdit}
+                        onClick={() => setExtraPicker({ dia, turno: t, rol: r })}
+                      >
+                        <UserPlus className="h-4 w-4" />
+                        + Añadir Extra
+                      </button>
+                    ) : null}
+                  </div>
+
+                  {hasConflict ? <p className="text-xs font-semibold text-amber-800">Conflicto detectado (se permite mantener la asignación).</p> : null}
+                </div>
+              );
+            };
+
+            if (isMobile) {
+              return (
+                <div className="space-y-3">
+                  <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+                    {DIA_LABEL.map((d, idx) => {
+                      const active = mobileDia === d.n;
                       return (
-                        <tr key={`${t}|${r}`} className="align-top">
-                          <td className="sticky left-0 z-10 border-b border-slate-100 bg-white p-3">
-                            <p className="text-sm font-extrabold text-slate-900">{t}</p>
-                            <p className="mt-0.5 text-xs font-semibold text-slate-600">{r}</p>
-                          </td>
-                          {DIA_LABEL.map((d) => {
-                            const cel = celdasKeyed.get(`${d.n}|${t}|${r}`) ?? null;
-                            const assigned = cel ? (asigsByCelda.get(cel.id) ?? []) : [];
-                            const assignedEmps = assigned.map((a) => empleadosById.get(a.empleado_id)).filter(Boolean) as Empleado[];
-                            const required = cel?.required_count ?? 0;
-                            const deficit = Math.max(0, required - assigned.length);
-                            const conflictNames = assigned
-                              .map((a) => {
-                                const e = empleadosById.get(a.empleado_id);
-                                if (!e) return null;
-                                const c = conflictText({ empleadoId: a.empleado_id, dia: d.n, turno: t });
-                                return c ? `${e.nombre}: ${c}` : null;
-                              })
-                              .filter(Boolean) as string[];
-                            const hasConflict = conflictNames.length > 0;
-
-                            const cellClass = hasConflict
-                              ? "border-amber-200 bg-amber-50"
-                              : deficit > 0
-                                ? "border-slate-200 bg-slate-50"
-                                : "border-slate-200 bg-white";
-
-                            return (
-                              <td key={`${d.n}|${t}|${r}`} className={["border-b border-slate-100 p-3", cellClass].join(" ")}>
-                                <div className="space-y-2" title={hasConflict ? `Conflicto de restricción:\n${conflictNames.join("\n")}` : ""}>
-                                  <div className="flex items-center justify-between gap-2">
-                                    <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Necesarios</label>
-                                    <input
-                                      type="number"
-                                      min={0}
-                                      className="h-9 w-20 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-extrabold text-slate-900 disabled:opacity-60"
-                                      defaultValue={String(required)}
-                                      disabled={!canEdit}
-                                      onBlur={(e) => void setRequiredCount(d.n, t, r, Number((e.target as HTMLInputElement).value))}
-                                    />
-                                  </div>
-
-                                  <div className="flex flex-wrap gap-2">
-                                    {assignedEmps.length ? (
-                                      assignedEmps.map((e) => {
-                                        const a = assigned.find((x) => x.empleado_id === e.id) ?? null;
-                                        return (
-                                          <button
-                                            key={e.id}
-                                            type="button"
-                                            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-extrabold text-slate-900 hover:bg-slate-50 disabled:opacity-60"
-                                            disabled={!canEdit}
-                                            onClick={() => {
-                                              if (!a) return;
-                                              void removeAsignacion(a.id);
-                                            }}
-                                            aria-label={`Quitar ${e.nombre}`}
-                                          >
-                                            <span className="truncate max-w-[140px]">{e.nombre}</span>
-                                            <span className="text-slate-400">×</span>
-                                          </button>
-                                        );
-                                      })
-                                    ) : (
-                                      <p className="text-sm font-semibold text-slate-600">Sin asignaciones.</p>
-                                    )}
-                                  </div>
-
-                                  <div className="flex items-center gap-2">
-                                    <select
-                                      className="h-10 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 disabled:opacity-60"
-                                      disabled={!canEdit || (fijosPorRol.get(r) ?? []).length === 0}
-                                      value=""
-                                      onChange={(e) => {
-                                        const v = (e.target as HTMLSelectElement).value;
-                                        if (!v) return;
-                                        void addAsignacion(d.n, t, r, v);
-                                        (e.target as HTMLSelectElement).value = "";
-                                      }}
-                                    >
-                                      <option value="">{(fijosPorRol.get(r) ?? []).length ? "Añadir fijo…" : "Sin fijos"}</option>
-                                      {(fijosPorRol.get(r) ?? []).map((e) => (
-                                        <option key={e.id} value={e.id}>
-                                          {e.nombre}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </div>
-
-                                  <div className="flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2">
-                                    <p className="text-sm font-extrabold text-slate-900">
-                                      {assigned.length}/{required} asignados
-                                    </p>
-                                    {deficit > 0 ? (
-                                      <button
-                                        type="button"
-                                        className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-extrabold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
-                                        disabled={!canEdit}
-                                        onClick={() => setExtraPicker({ dia: d.n, turno: t, rol: r })}
-                                      >
-                                        <UserPlus className="h-4 w-4" />
-                                        + Añadir Extra
-                                      </button>
-                                    ) : null}
-                                  </div>
-
-                                  {hasConflict ? (
-                                    <p className="text-xs font-semibold text-amber-800">
-                                      Conflicto detectado (se permite mantener la asignación).
-                                    </p>
-                                  ) : null}
-                                </div>
-                              </td>
-                            );
-                          })}
-                        </tr>
+                        <button
+                          key={d.n}
+                          type="button"
+                          className={[
+                            "min-h-10 shrink-0 rounded-2xl border px-3 text-xs font-extrabold",
+                            active ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-900"
+                          ].join(" ")}
+                          onClick={() => setMobileDia(d.n)}
+                        >
+                          {d.label} {fmtDia(weekDays[idx])}
+                        </button>
                       );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+                    })}
+                  </div>
+
+                  {TURNOS.map((t) => (
+                    <section key={t} className="space-y-2">
+                      <p className="px-1 text-xs font-extrabold uppercase tracking-wide text-slate-600">{t}</p>
+                      <div className="grid gap-2">
+                        {ROLES.map((r) => (
+                          <div key={r} className="rounded-3xl border border-slate-200 bg-white p-3 shadow-sm">
+                            <p className="text-sm font-extrabold text-slate-900">{r}</p>
+                            <div className="mt-2">{renderCell(mobileDia, t, r)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              );
+            }
+
+            return (
+              <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+                <div className="overflow-auto rounded-3xl">
+                  <table className="min-w-[980px] w-full border-collapse">
+                    <thead className="sticky top-0 z-10 bg-white">
+                      <tr>
+                        <th className="sticky left-0 z-20 w-[140px] border-b border-slate-200 bg-white p-3 text-left text-xs font-extrabold uppercase tracking-wide text-slate-600">
+                          Turno / Rol
+                        </th>
+                        {DIA_LABEL.map((d, idx) => (
+                          <th key={d.n} className="border-b border-slate-200 p-3 text-left">
+                            <p className="text-xs font-extrabold text-slate-900">
+                              {d.label} <span className="text-slate-500">{fmtDia(weekDays[idx])}</span>
+                            </p>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {TURNOS.map((t) =>
+                        ROLES.map((r) => (
+                          <tr key={`${t}|${r}`} className="align-top">
+                            <td className="sticky left-0 z-10 border-b border-slate-100 bg-white p-3">
+                              <p className="text-sm font-extrabold text-slate-900">{t}</p>
+                              <p className="mt-0.5 text-xs font-semibold text-slate-600">{r}</p>
+                            </td>
+                            {DIA_LABEL.map((d) => (
+                              <td key={`${d.n}|${t}|${r}`} className="border-b border-slate-100 p-3">
+                                {renderCell(d.n, t, r)}
+                              </td>
+                            ))}
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </div>
 
