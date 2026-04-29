@@ -70,6 +70,10 @@ export default function AdminEventosPage() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  const setDraftField = (field: "nombre" | "fecha" | "descripcion", value: string) => {
+    setDraft((prev) => ({ ...prev, [field]: value ?? "" }));
+  };
+
   const sorted = useMemo(() => {
     const list = [...eventos];
     list.sort((a, b) => String(b.fecha ?? "").localeCompare(String(a.fecha ?? "")));
@@ -316,8 +320,8 @@ export default function AdminEventosPage() {
             <span className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Nombre</span>
             <input
               className="premium-input"
-              value={draft.nombre}
-              onChange={(e) => setDraft((d) => ({ ...d, nombre: e.currentTarget.value }))}
+              value={draft.nombre || ""}
+              onChange={(e) => setDraftField("nombre", e.currentTarget.value)}
               placeholder="Ej: Feria de Abril"
               disabled={saving || !canEdit}
             />
@@ -328,8 +332,8 @@ export default function AdminEventosPage() {
             <input
               type="date"
               className="premium-input"
-              value={draft.fecha}
-              onChange={(e) => setDraft((d) => ({ ...d, fecha: e.currentTarget.value }))}
+              value={draft.fecha || ""}
+              onChange={(e) => setDraftField("fecha", e.currentTarget.value)}
               disabled={saving || !canEdit}
             />
           </label>
@@ -338,8 +342,8 @@ export default function AdminEventosPage() {
             <span className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Descripción</span>
             <textarea
               className="premium-input min-h-28 py-3"
-              value={draft.descripcion}
-              onChange={(e) => setDraft((d) => ({ ...d, descripcion: e.currentTarget.value }))}
+              value={draft.descripcion || ""}
+              onChange={(e) => setDraftField("descripcion", e.currentTarget.value)}
               placeholder="Notas, detalles, previsión…"
               disabled={saving || !canEdit}
             />
