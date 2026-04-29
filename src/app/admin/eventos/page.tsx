@@ -17,7 +17,7 @@ type EventoRow = {
   fecha: string; // YYYY-MM-DD
   descripcion: string | null;
   created_at: string;
-  updated_at: string;
+  updated_at: string | null;
 };
 
 function isoToday(): string {
@@ -125,17 +125,26 @@ export default function AdminEventosPage() {
     setSaving(true);
     setErr(null);
     try {
-      const payload = {
+      const insertPayload = {
         establecimiento_id: activeEstablishmentId,
         nombre,
         fecha,
         descripcion: draft.descripcion.trim() || null
       };
+      const updatePayload = {
+        nombre,
+        fecha,
+        descripcion: draft.descripcion.trim() || null
+      };
       if (editing?.id) {
-        const up = await supabase().from("eventos").update(payload).eq("id", editing.id).eq("establecimiento_id", activeEstablishmentId);
+        const up = await supabase()
+          .from("eventos")
+          .update(updatePayload)
+          .eq("id", editing.id)
+          .eq("establecimiento_id", activeEstablishmentId);
         if (up.error) throw up.error;
       } else {
-        const ins = await supabase().from("eventos").insert(payload).select("id").single();
+        const ins = await supabase().from("eventos").insert(insertPayload).select("id").single();
         if (ins.error) throw ins.error;
       }
       setEditorOpen(false);
