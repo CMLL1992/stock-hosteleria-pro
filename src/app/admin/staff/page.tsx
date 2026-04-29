@@ -55,6 +55,17 @@ function isMissingStaffSchema(e: unknown): boolean {
   return /staff_empleados|staff_restricciones|staff_cuadrante/i.test(msg) && /schema cache|could not find the table/i.test(msg);
 }
 
+function isForbiddenRls(e: unknown): boolean {
+  const anyErr = e as { code?: unknown; message?: unknown; status?: unknown };
+  const code = typeof anyErr?.code === "string" ? anyErr.code : "";
+  const msg = typeof anyErr?.message === "string" ? anyErr.message : "";
+  const status = typeof anyErr?.status === "number" ? anyErr.status : null;
+  if (status === 401 || status === 403) return true;
+  if (code === "42501") return true; // insufficient_privilege
+  if (/permission denied|not allowed|forbidden/i.test(msg)) return true;
+  return false;
+}
+
 function toIsoDate(d: Date): string {
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
@@ -264,8 +275,15 @@ export default function AdminStaffPage() {
           )
           .select("id,semana_start")
           .single();
-        if (sem.error) throw sem.error;
-        semRow = sem.data as unknown as SemanaRow;
+        if (sem.error) {
+          if (isForbiddenRls(sem.error)) {
+            semRow = null;
+          } else {
+            throw sem.error;
+          }
+        } else {
+          semRow = sem.data as unknown as SemanaRow;
+        }
       } else {
         const sem = await supabase()
           .from("staff_cuadrante_semanas")
@@ -273,10 +291,27 @@ export default function AdminStaffPage() {
           .eq("establecimiento_id", activeEstablishmentId)
           .eq("semana_start", semanaStart)
           .maybeSingle();
-        if (sem.error) throw sem.error;
-        semRow = (sem.data as unknown as SemanaRow | null) ?? null;
+        if (sem.error) {
+          if (isForbiddenRls(sem.error)) {
+            semRow = null;
+          } else {
+            throw sem.error;
+          }
+        } else {
+          semRow = (sem.data as unknown as SemanaRow | null) ?? null;
+        }
       }
       setSemanaRow(semRow);
+
+      // Requerido: debug en puntos clave
+      // eslint-disable-next-line no-console
+      console.log("DEBUG STAFF:", {
+        establecimiento_id: activeEstablishmentId,
+        semana_start: semanaStart,
+        empleados: (emp.data ?? []).length,
+        restricciones: (resR.data ?? []).length,
+        semanaRow: semRow
+      });
 
       if (!semRow?.id) {
         setCeldas([]);
@@ -874,7 +909,7 @@ export default function AdminStaffPage() {
                         >
                           {DIA_LABEL.map((d, idx) => (
                             <option key={d.n} value={String(d.n)}>
-                              {d.label} · {fmtDia(weekDays[idx])}
+                              {d.label} · {fmtDia(weekDays[idx] ?? semanaStart)}
                             </option>
                           ))}
                         </select>
@@ -914,7 +949,7 @@ export default function AdminStaffPage() {
                       >
                         {DIA_LABEL.map((d, idx) => (
                           <option key={d.n} value={String(d.n)}>
-                            {d.label} · {fmtDia(weekDays[idx])}
+                            {d.label} · {fmtDia(weekDays[idx] ?? semanaStart)}
                           </option>
                         ))}
                       </select>
@@ -966,7 +1001,7 @@ export default function AdminStaffPage() {
                         {DIA_LABEL.map((d, idx) => (
                           <th key={d.n} className="border-b border-slate-200 p-3 text-left">
                             <p className="text-xs font-extrabold text-slate-900">
-                              {d.label} <span className="text-slate-500">{fmtDia(weekDays[idx])}</span>
+                              {d.label} <span className="text-slate-500">{fmtDia(weekDays[idx] ?? semanaStart)}</span>
                             </p>
                           </th>
                         ))}

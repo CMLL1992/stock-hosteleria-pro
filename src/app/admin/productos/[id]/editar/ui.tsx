@@ -285,13 +285,14 @@ export function EditarProductoClient({ id }: { id: string }) {
                 <div className="space-y-1">
                   <label className="text-sm font-semibold text-gray-900">Stock mínimo</label>
                   <input
-                    className={FORM_CONTROL_CLASS_GRAY}
+                    className={[FORM_CONTROL_CLASS_GRAY, role === "staff" ? "opacity-60" : ""].join(" ")}
                     type="text"
                     inputMode="numeric"
                     pattern="[0-9]*"
                     min={0}
                     value={stockMinimo}
                     onChange={(e) => setStockMinimo(e.currentTarget.value)}
+                    disabled={role === "staff"}
                   />
                 </div>
 

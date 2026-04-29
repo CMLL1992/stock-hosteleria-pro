@@ -134,7 +134,8 @@ function EditProductDrawer({
   onClose,
   onSave,
   hasPrecioTarifa,
-  onDelete
+  onDelete,
+  userRole
 }: {
   open: boolean;
   producto: ProductoRow | null;
@@ -143,6 +144,7 @@ function EditProductDrawer({
   onSave: (patch: Partial<ProductoRow>) => Promise<void>;
   hasPrecioTarifa: boolean;
   onDelete: () => void;
+  userRole: ReturnType<typeof getEffectiveRole>;
 }) {
   const [articulo, setArticulo] = useState("");
   const [categoriaVal, setCategoriaVal] = useState<CategoriaProductoValor>("otros");
@@ -253,10 +255,14 @@ function EditProductDrawer({
             <div className="space-y-1">
               <label className="text-sm font-semibold text-slate-900">Stock mínimo</label>
               <input
-                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 font-mono text-base text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-black/10"
+                className={[
+                  "min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 font-mono text-base text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-black/10",
+                  userRole === "staff" ? "opacity-60" : ""
+                ].join(" ")}
                 value={stockMinimo}
                 onChange={(e) => setStockMinimo(e.currentTarget.value)}
                 inputMode="numeric"
+                disabled={userRole === "staff"}
               />
             </div>
           </div>
@@ -886,6 +892,7 @@ export default function AdminProductosPage() {
         producto={editing}
         proveedores={proveedoresOpts}
         hasPrecioTarifa={hasPrecioTarifa}
+        userRole={role}
         onClose={() => {
           setEditOpen(false);
           setEditing(null);

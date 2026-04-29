@@ -333,8 +333,17 @@ export function ProductByUidClient({ uid }: { uid: string }) {
               value={cantidad === 0 ? "" : String(cantidad)}
               onChange={(e: ChangeEvent<HTMLInputElement>) => {
                 try {
-                  const val = e.target.value;
-                  setCantidad(val === "" ? 0 : Number(val));
+                  const raw = e.target.value;
+                  const cleaned = String(raw ?? "").trim().replace(",", ".");
+                  // Requerido: debug en puntos clave
+                  // eslint-disable-next-line no-console
+                  console.log("DEBUG STOCK:", cleaned);
+                  if (cleaned === "") {
+                    setCantidad(0);
+                    return;
+                  }
+                  const n = parseFloat(cleaned);
+                  setCantidad(Number.isFinite(n) ? n : 0);
                 } catch (err) {
                   // eslint-disable-next-line no-console
                   console.error(err);

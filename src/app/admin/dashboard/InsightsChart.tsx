@@ -12,13 +12,17 @@ import {
 
 export type CategoriaStockPoint = { name: string; total: number };
 
-export function InsightsChart({ data }: { data: CategoriaStockPoint[] }) {
-  const safe = (data ?? [])
+export function InsightsChart({ data }: { data: unknown }) {
+  if (!Array.isArray(data)) {
+    return <div className="py-8 text-center text-sm text-slate-500">Cargando estadísticas…</div>;
+  }
+
+  const safe = (data as CategoriaStockPoint[])
     .map((d) => ({ name: String(d?.name ?? "").trim() || "—", total: Number((d as { total?: unknown }).total ?? 0) || 0 }))
     .filter((d) => Number.isFinite(d.total) && d.total > 0);
 
   if (!safe.length) {
-    return <p className="py-8 text-center text-sm text-slate-500">Sin datos agrupables por categoría.</p>;
+    return <div className="py-8 text-center text-sm text-slate-500">Cargando estadísticas…</div>;
   }
 
   return (
