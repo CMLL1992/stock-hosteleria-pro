@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Pencil, Phone, Plus, Trash2, UserPlus, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
@@ -176,6 +176,15 @@ export default function AdminStaffPage() {
   const [selectedEmpleadoId, setSelectedEmpleadoId] = useState<string>("");
   const [restrDraft, setRestrDraft] = useState<{ dia_semana: number; turno: Turno; motivo: string }>({ dia_semana: 1, turno: "Comida", motivo: "" });
   const [savingRestr, setSavingRestr] = useState(false);
+  const empleadoEditorRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!plantillaOpen) return;
+    // UX: al crear/editar, baja automáticamente al formulario para evitar la sensación de “no hace nada”.
+    window.setTimeout(() => {
+      empleadoEditorRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    }, 80);
+  }, [plantillaOpen, empleadoEditing?.id]);
 
   const empleadosById = useMemo(() => {
     const m = new Map<string, Empleado>();
@@ -1207,6 +1216,8 @@ export default function AdminStaffPage() {
             </div>
 
             <div className="max-h-[80vh] overflow-auto px-4 py-4 pb-10">
+              {err ? <div className="mb-3 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-800">{err}</div> : null}
+              {ok ? <div className="mb-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{ok}</div> : null}
               {/* Empleados */}
               <div className="rounded-3xl border border-slate-200 bg-white p-3">
                 <div className="flex items-center justify-between gap-2">
@@ -1257,7 +1268,7 @@ export default function AdminStaffPage() {
                 </div>
 
                 {/* Editor empleado */}
-                <div className="mt-4 rounded-3xl border border-slate-200 bg-slate-50 p-3">
+                <div ref={empleadoEditorRef} className="mt-4 rounded-3xl border border-slate-200 bg-slate-50 p-3">
                   <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">{empleadoEditing ? "Editar empleado" : "Nuevo empleado"}</p>
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
                     <div className="grid gap-2">
