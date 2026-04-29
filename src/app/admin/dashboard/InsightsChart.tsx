@@ -13,7 +13,11 @@ import {
 export type CategoriaStockPoint = { name: string; total: number };
 
 export function InsightsChart({ data }: { data: CategoriaStockPoint[] }) {
-  if (!data.length) {
+  const safe = (data ?? [])
+    .map((d) => ({ name: String(d?.name ?? "").trim() || "—", total: Number((d as { total?: unknown }).total ?? 0) || 0 }))
+    .filter((d) => Number.isFinite(d.total) && d.total > 0);
+
+  if (!safe.length) {
     return <p className="py-8 text-center text-sm text-slate-500">Sin datos agrupables por categoría.</p>;
   }
 
@@ -22,7 +26,7 @@ export function InsightsChart({ data }: { data: CategoriaStockPoint[] }) {
       <ResponsiveContainer width="100%" height="100%">
         <BarChart
           layout="vertical"
-          data={data}
+          data={safe}
           margin={{ top: 4, right: 12, left: 4, bottom: 4 }}
           barCategoryGap="18%"
         >

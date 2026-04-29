@@ -348,6 +348,28 @@ export function ProductList() {
     return cleaned === "" ? "" : String(Math.max(0, Math.trunc(Number(cleaned) || 0)));
   }
 
+function sanitizeDecimalString(raw: string): string {
+  const s = String(raw ?? "").replace(",", ".").replace(/[^\d.]/g, "");
+  if (!s) return "";
+  const firstDot = s.indexOf(".");
+  if (firstDot === -1) return s.replace(/^0+(\d)/, "$1");
+  const head = s.slice(0, firstDot).replace(/^0+(\d)/, "$1");
+  const tail = s
+    .slice(firstDot + 1)
+    .replace(/\./g, "")
+    .slice(0, 3);
+  // Permitimos estados intermedios tipo "12." durante la escritura.
+  return `${head || "0"}.${tail}`.replace(/\.?0+$/, (m) => (m === "." ? "." : m));
+}
+
+function parseCantidad(raw: string | null | undefined): number {
+  const s = String(raw ?? "").trim().replace(",", ".");
+  if (!s) return 0;
+  const n = Number(s);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, n);
+}
+
   function familyLabel(p: { categoria: string | null; tipo: string | null }): string {
     const fam = (p.categoria ?? p.tipo ?? "Otros").toString().trim();
     return fam || "Otros";
@@ -509,7 +531,7 @@ export function ProductList() {
     try {
       const usuario_id = await requireUserId();
       const nowIso = new Date().toISOString();
-      const cambios = modPicked.map((p) => ({ p, n: Math.max(0, Math.trunc(Number(modQty[p.id] ?? "0") || 0)) }));
+      const cambios = modPicked.map((p) => ({ p, n: parseCantidad(modQty[p.id]) }));
       const invalidos = cambios.filter((x) => x.n <= 0);
       const efectivos = cambios.filter((x) => x.n > 0);
       if (!efectivos.length) {
@@ -549,7 +571,7 @@ export function ProductList() {
           const c = efectivos.find((t) => t.p.id === x.id);
           if (!c) return x;
           const delta = modTipo === "entrada_compra" ? c.n : modTipo === "salida_barra" ? -c.n : 0;
-          const nextStock = Math.max(0, Math.trunc(Number(x.stock_actual ?? 0) || 0) + delta);
+          const nextStock = Math.max(0, Number(x.stock_actual ?? 0) || 0) + delta;
           return { ...x, stock_actual: nextStock };
         });
 
@@ -1003,14 +1025,14 @@ export function ProductList() {
                   <input
                     className={[
                       "min-h-10 w-full rounded-xl border px-3 text-center text-base font-bold tabular-nums text-slate-900",
-                      modSubmitAttempted && Math.max(0, Math.trunc(Number(modQty[p.id] ?? "0") || 0)) <= 0
+                      modSubmitAttempted && parseCantidad(modQty[p.id]) <= 0
                         ? "border-red-300 bg-red-50"
                         : "border-slate-200 bg-slate-50"
                     ].join(" ")}
-                    inputMode="numeric"
-                    pattern="[0-9]*"
+                    inputMode="decimal"
+                    pattern="[0-9]*[.,]?[0-9]*"
                     value={modQty[p.id] ?? ""}
-                    onChange={(e) => setModQty((d) => ({ ...d, [p.id]: sanitizeIntString(e.currentTarget.value) }))}
+                    onChange={(e) => setModQty((d) => ({ ...d, [p.id]: sanitizeDecimalString(e.currentTarget.value) }))}
                     disabled={modBusy}
                     aria-label={`Cantidad de ${p.articulo}`}
                   />

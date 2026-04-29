@@ -62,8 +62,16 @@ function toIsoDate(d: Date): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function safeParseDateIso(dateIso: string): Date | null {
+  const s = String(dateIso ?? "").trim();
+  if (!s) return null;
+  const d = new Date(`${s}T00:00:00`);
+  if (!Number.isFinite(d.getTime())) return null;
+  return d;
+}
+
 function mondayOf(dateIso: string): string {
-  const d = new Date(`${dateIso}T00:00:00`);
+  const d = safeParseDateIso(dateIso) ?? new Date();
   const day = d.getDay(); // 0..6 (Dom..Sáb)
   const diff = (day === 0 ? -6 : 1) - day; // a Lunes
   d.setDate(d.getDate() + diff);
@@ -71,13 +79,13 @@ function mondayOf(dateIso: string): string {
 }
 
 function addDays(dateIso: string, days: number): string {
-  const d = new Date(`${dateIso}T00:00:00`);
+  const d = safeParseDateIso(dateIso) ?? new Date();
   d.setDate(d.getDate() + days);
   return toIsoDate(d);
 }
 
 function fmtDia(dateIso: string): string {
-  const d = new Date(`${dateIso}T00:00:00`);
+  const d = safeParseDateIso(dateIso) ?? new Date();
   const dd = String(d.getDate()).padStart(2, "0");
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   return `${dd}/${mm}`;
@@ -545,6 +553,19 @@ export default function AdminStaffPage() {
     return <main className="p-4 text-sm text-slate-700">No tienes permisos para ver esta sección.</main>;
   }
 
+  if (!activeEstablishmentId) {
+    return (
+      <main className="min-h-dvh bg-slate-50 p-4 pb-28 text-slate-900">
+        <div className="mx-auto w-full max-w-3xl space-y-3">
+          <h1 className="text-lg font-extrabold">Staff / Turnos</h1>
+          <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+            No hay establecimiento activo para tu usuario. Selecciona/solicita un establecimiento en tu perfil para ver el cuadrante.
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   if (missingSchema) {
     return (
       <main className="min-h-dvh bg-slate-50 p-4 pb-28">
@@ -573,8 +594,8 @@ export default function AdminStaffPage() {
   }
 
   return (
-    <main className="relative h-[100vh] w-full overflow-hidden bg-slate-50">
-      <div className="absolute left-0 right-0 top-0 z-30 px-2 pt-2 sm:px-4 sm:pt-3">
+    <main className="min-h-dvh w-full bg-slate-50">
+      <div className="sticky top-0 z-30 border-b border-slate-200/70 bg-slate-50/95 px-2 pt-2 backdrop-blur sm:px-4 sm:pt-3">
         <div className="flex items-center justify-between gap-3">
           <button
             type="button"
@@ -640,8 +661,7 @@ export default function AdminStaffPage() {
         {ok ? <div className="mt-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{ok}</div> : null}
       </div>
 
-      <div className="absolute inset-x-0 bottom-0 top-16 overflow-hidden sm:top-20" style={{ height: "100vh", overflow: "hidden", position: "relative" }}>
-        <div className="absolute inset-0 overflow-auto p-2 pt-3 sm:p-4 sm:pt-4">
+      <div className="h-[calc(100dvh-64px)] overflow-auto p-2 pt-3 pb-28 sm:h-[calc(100dvh-80px)] sm:p-4 sm:pt-4">
           {/* Plantilla: resumen rápido */}
           <div className="mb-3 grid gap-3 md:grid-cols-2">
             <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -793,6 +813,95 @@ export default function AdminStaffPage() {
             };
 
             if (isMobile) {
+              // Staff en móvil: modo lectura en tarjetas por turno (evita tablas anchas y reduce posibilidad de crash).
+              if (!canEdit) {
+                const turnosToShow = mobileTurno === "todos" ? TURNOS : [mobileTurno];
+                const dayIdx = Math.max(0, Math.min(6, mobileDia - 1));
+                const diaLabel = `${DIA_LABEL.find((d) => d.n === mobileDia)?.label ?? `Día ${mobileDia}`} · ${fmtDia(weekDays[dayIdx] ?? weekDays[0])}`;
+
+                const turnoCard = (t: Turno) => {
+                  return (
+                    <section key={t} className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">{diaLabel}</p>
+                          <p className="mt-1 text-lg font-extrabold text-slate-900">{t}</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid gap-3">
+                        {ROLES.map((r) => {
+                          const cel = celdasKeyed.get(`${mobileDia}|${t}|${r}`) ?? null;
+                          const assigned = cel ? (asigsByCelda.get(cel.id) ?? []) : [];
+                          const assignedEmps = assigned
+                            .map((a) => empleadosById.get(a.empleado_id))
+                            .filter(Boolean) as Empleado[];
+                          const names = assignedEmps.map((e) => e.nombre).filter(Boolean);
+                          return (
+                            <div key={r} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                              <p className="text-sm font-extrabold text-slate-900">{r}</p>
+                              {names.length ? (
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {names.map((n) => (
+                                    <span
+                                      key={n}
+                                      className="inline-flex min-h-9 items-center rounded-full border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
+                                    >
+                                      {n}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="mt-2 text-sm font-semibold text-slate-600">Sin asignar.</p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  );
+                };
+
+                return (
+                  <div className="space-y-3">
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <label className="grid gap-1">
+                        <span className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Día</span>
+                        <select
+                          className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900"
+                          value={String(mobileDia)}
+                          onChange={(e) => setMobileDia(Number((e.target as HTMLSelectElement).value) || 1)}
+                        >
+                          {DIA_LABEL.map((d, idx) => (
+                            <option key={d.n} value={String(d.n)}>
+                              {d.label} · {fmtDia(weekDays[idx])}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="grid gap-1">
+                        <span className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Turno</span>
+                        <select
+                          className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900"
+                          value={mobileTurno}
+                          onChange={(e) => setMobileTurno(((e.target as HTMLSelectElement).value as Turno | "todos") ?? "todos")}
+                        >
+                          <option value="todos">Todos</option>
+                          {TURNOS.map((t) => (
+                            <option key={t} value={t}>
+                              {t}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    <div className="space-y-3">{turnosToShow.map((t) => turnoCard(t))}</div>
+                  </div>
+                );
+              }
+
               return (
                 <div className="space-y-3">
                   <div className="grid gap-2 sm:grid-cols-2">
@@ -885,7 +994,6 @@ export default function AdminStaffPage() {
               </div>
             );
           })()}
-        </div>
       </div>
 
       {/* Modal simple de extras */}

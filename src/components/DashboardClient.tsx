@@ -467,9 +467,11 @@ export function DashboardClient() {
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
           <div className="grid gap-4 sm:grid-cols-3 lg:col-span-2">
             {valoracionItems.map((it) => {
+              const totalEUR = Math.max(0, Number(valorEconomicoInventario.totalEUR) || 0);
+              const hasEnough = totalEUR > 0 && Number.isFinite(totalEUR);
               const donutData = [
                 { key: it.key, label: it.label, value: Math.max(0, Number(it.value) || 0), color: it.color },
-                { key: `${it.key}-rest`, label: "resto", value: Math.max(0, (Number(valorEconomicoInventario.totalEUR) || 0) - (Number(it.value) || 0)), color: "#E2E8F0" }
+                { key: `${it.key}-rest`, label: "resto", value: Math.max(0, totalEUR - (Number(it.value) || 0)), color: "#E2E8F0" }
               ];
               return (
                 <div
@@ -485,28 +487,34 @@ export function DashboardClient() {
                     <span className="mt-1 inline-flex h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: it.color }} aria-hidden />
                   </div>
 
-                  <div className="relative mt-3 h-36 w-full min-w-0">
-                    <ResponsiveContainer width="100%" height="100%" style={{ pointerEvents: "none" }}>
-                      <PieChart>
-                        <Pie
-                          data={donutData}
-                          dataKey="value"
-                          nameKey="label"
-                          innerRadius={44}
-                          outerRadius={62}
-                          paddingAngle={1}
-                          isAnimationActive={false}
-                        >
-                          {donutData.map((d) => (
-                            <Cell key={d.key} fill={(d as { color?: string }).color ?? "#94A3B8"} />
-                          ))}
-                        </Pie>
-                      </PieChart>
-                    </ResponsiveContainer>
-                    <div className="pointer-events-none absolute inset-0 grid place-items-center">
-                      <p className="text-sm font-extrabold tabular-nums text-slate-900">{Math.round(it.pct * 100)}%</p>
+                  {hasEnough ? (
+                    <div className="relative mt-3 h-36 w-full min-w-0">
+                      <ResponsiveContainer width="100%" height="100%" style={{ pointerEvents: "none" }}>
+                        <PieChart>
+                          <Pie
+                            data={donutData}
+                            dataKey="value"
+                            nameKey="label"
+                            innerRadius={44}
+                            outerRadius={62}
+                            paddingAngle={1}
+                            isAnimationActive={false}
+                          >
+                            {donutData.map((d) => (
+                              <Cell key={d.key} fill={(d as { color?: string }).color ?? "#94A3B8"} />
+                            ))}
+                          </Pie>
+                        </PieChart>
+                      </ResponsiveContainer>
+                      <div className="pointer-events-none absolute inset-0 grid place-items-center">
+                        <p className="text-sm font-extrabold tabular-nums text-slate-900">{Math.round(it.pct * 100)}%</p>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                      Sin datos suficientes para mostrar la gráfica.
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -583,7 +591,7 @@ export function DashboardClient() {
           </p>
           {!canOrder ? (
             <p className="rounded-2xl border border-slate-200 bg-white p-3 text-sm text-slate-700">
-              Visualización: Staff puede consultar bajo mínimos, pero el envío de pedidos (WhatsApp) está reservado a Admin/Superadmin.
+              Visualización: Staff puede consultar bajo mínimos, pero la edición de cantidades y el envío de pedidos (WhatsApp) está reservado a Admin/Superadmin.
             </p>
           ) : null}
           {bajoMinimos.length === 0 ? (
@@ -644,11 +652,12 @@ export function DashboardClient() {
                           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
                             <div className="grid grid-cols-[1fr_148px] gap-2 border-b border-slate-100 px-4 py-2 text-[11px] font-extrabold uppercase tracking-wide text-slate-500">
                               <div>Producto</div>
-                              <div className="text-center">Pedir</div>
+                              <div className="text-center">{canOrder ? "Pedir" : "Estado"}</div>
                             </div>
                             {g.items.map((p) => {
                               const min = Number(p.stock_minimo) || 0;
                               const act = Number(p.stock_actual) || 0;
+                              const faltan = Math.max(0, min - act);
                               return (
                                 <div key={p.id} className="grid grid-cols-[1fr_148px] items-center gap-2 border-b border-slate-100 px-4 py-2">
                                   <div className="min-w-0">
@@ -659,87 +668,91 @@ export function DashboardClient() {
                                     </p>
                                   </div>
                                   <div className="flex items-center justify-center">
-                                    <input
-                                      type="number"
-                                      min={0}
-                                      step={1}
-                                      className={[
-                                        "min-h-11 w-full min-w-24 rounded-2xl border border-slate-200 bg-white px-3 text-center text-lg font-bold tabular-nums text-slate-900 shadow-sm ring-1 ring-slate-100",
-                                        "focus:outline-none focus:ring-2 focus:ring-premium-blue/20"
-                                      ].join(" ")}
-                                      inputMode="numeric"
-                                      value={pedidoRapidoQty[p.id] ?? "0"}
-                                      onChange={(e) =>
-                                        setPedidoRapidoQty((d) => ({ ...d, [p.id]: sanitizeIntString(e.currentTarget.value) }))
-                                      }
-                                      onBlur={() =>
-                                        setPedidoRapidoQty((d) => {
-                                          const curr = String(d[p.id] ?? "").trim();
-                                          if (curr !== "") return d;
-                                          return { ...d, [p.id]: "0" };
-                                        })
-                                      }
-                                      aria-label={`Cantidad a pedir de ${p.articulo}`}
-                                    />
+                                    {canOrder ? (
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        step={1}
+                                        className={[
+                                          "min-h-11 w-full min-w-24 rounded-2xl border border-slate-200 bg-white px-3 text-center text-lg font-bold tabular-nums text-slate-900 shadow-sm ring-1 ring-slate-100",
+                                          "focus:outline-none focus:ring-2 focus:ring-premium-blue/20"
+                                        ].join(" ")}
+                                        inputMode="numeric"
+                                        value={pedidoRapidoQty[p.id] ?? "0"}
+                                        onChange={(e) =>
+                                          setPedidoRapidoQty((d) => ({ ...d, [p.id]: sanitizeIntString(e.currentTarget.value) }))
+                                        }
+                                        onBlur={() =>
+                                          setPedidoRapidoQty((d) => {
+                                            const curr = String(d[p.id] ?? "").trim();
+                                            if (curr !== "") return d;
+                                            return { ...d, [p.id]: "0" };
+                                          })
+                                        }
+                                        aria-label={`Cantidad a pedir de ${p.articulo}`}
+                                      />
+                                    ) : (
+                                      <span className="text-sm font-extrabold tabular-nums text-red-700">{faltan > 0 ? `Faltan ${faltan}` : "OK"}</span>
+                                    )}
                                   </div>
                                 </div>
                               );
                             })}
                           </div>
 
-                          <button
-                            type="button"
-                            className={[
-                              "premium-btn-primary w-full justify-center inline-flex mt-2",
-                              canOrder && g.items.some((p) => qtyNum(p.id) > 0) ? "" : "pointer-events-none opacity-50"
-                            ].join(" ")}
-                            aria-disabled={!canOrder}
-                            onClick={async () => {
-                              if (!canOrder) return;
-                              if (!establecimientoId) return;
-                              const ok = window.confirm("¿Deseas enviar este pedido al proveedor por WhatsApp?");
-                              if (!ok) return;
+                          {canOrder ? (
+                            <button
+                              type="button"
+                              className={[
+                                "premium-btn-primary w-full justify-center inline-flex mt-2",
+                                g.items.some((p) => qtyNum(p.id) > 0) ? "" : "pointer-events-none opacity-50"
+                              ].join(" ")}
+                              onClick={async () => {
+                                if (!establecimientoId) return;
+                                const ok = window.confirm("¿Deseas enviar este pedido al proveedor por WhatsApp?");
+                                if (!ok) return;
 
-                              const lineas = g.items
-                                .map((p) => ({
-                                  articulo: p.articulo,
-                                  cantidad: qtyNum(p.id),
-                                  unidad: p.unidad
-                                }))
-                                .filter((l) => (Number(l.cantidad) || 0) > 0);
+                                const lineas = g.items
+                                  .map((p) => ({
+                                    articulo: p.articulo,
+                                    cantidad: qtyNum(p.id),
+                                    unidad: p.unidad
+                                  }))
+                                  .filter((l) => (Number(l.cantidad) || 0) > 0);
 
-                              const msg = buildReposicionWhatsAppText({
-                                nombreEstablecimiento: (activeEstablishmentName ?? "").trim() || "mi local",
-                                nombreProveedor: g.nombre,
-                                lineas
-                              });
+                                const msg = buildReposicionWhatsAppText({
+                                  nombreEstablecimiento: (activeEstablishmentName ?? "").trim() || "mi local",
+                                  nombreProveedor: g.nombre,
+                                  lineas
+                                });
 
-                              void logReposicionIfPossible({
-                                establecimiento_id: establecimientoId,
-                                detalle_json: {
-                                  tipo: "reposicion_bajo_minimos",
-                                  proveedor: { nombre: g.nombre, telefono_whatsapp: g.telefono },
-                                  establecimiento: { id: establecimientoId, nombre: (activeEstablishmentName ?? "").trim() || null },
-                                  lineas,
-                                  created_at: new Date().toISOString()
-                                }
-                              });
+                                void logReposicionIfPossible({
+                                  establecimiento_id: establecimientoId,
+                                  detalle_json: {
+                                    tipo: "reposicion_bajo_minimos",
+                                    proveedor: { nombre: g.nombre, telefono_whatsapp: g.telefono },
+                                    establecimiento: { id: establecimientoId, nombre: (activeEstablishmentName ?? "").trim() || null },
+                                    lineas,
+                                    created_at: new Date().toISOString()
+                                  }
+                                });
 
-                              const url = waMeUrl(g.telefono, msg);
-                              // UX (PWA/iOS): abre fuera sin reemplazar la ruta actual (evita “pantalla en blanco” al volver)
-                              window.open(url, "_blank", "noreferrer");
+                                const url = waMeUrl(g.telefono, msg);
+                                // UX (PWA/iOS): abre fuera sin reemplazar la ruta actual (evita “pantalla en blanco” al volver)
+                                window.open(url, "_blank", "noreferrer");
 
-                              // Limpieza: resetea inputs a 0 (solo los productos de este proveedor)
-                              setPedidoRapidoQty((prev) => {
-                                const next = { ...prev };
-                                for (const p of g.items) next[p.id] = "0";
-                                return next;
-                              });
-                              setPedidoRapidoOpen(false);
-                            }}
-                          >
-                            Enviar Pedido
-                          </button>
+                                // Limpieza: resetea inputs a 0 (solo los productos de este proveedor)
+                                setPedidoRapidoQty((prev) => {
+                                  const next = { ...prev };
+                                  for (const p of g.items) next[p.id] = "0";
+                                  return next;
+                                });
+                                setPedidoRapidoOpen(false);
+                              }}
+                            >
+                              Enviar Pedido
+                            </button>
+                          ) : null}
                         </div>
                       ) : null}
 
