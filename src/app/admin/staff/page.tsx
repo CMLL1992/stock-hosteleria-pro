@@ -67,6 +67,15 @@ function isForbiddenRls(e: unknown): boolean {
   return false;
 }
 
+function userFacingOpsError(e: unknown): string {
+  if (isForbiddenRls(e)) return "Error de permisos o conexión.";
+  const msg = String((e as { message?: unknown })?.message ?? "").toLowerCase();
+  if (msg.includes("failed to fetch") || msg.includes("network") || msg.includes("timeout")) {
+    return "Error de permisos o conexión.";
+  }
+  return supabaseErrToString(e);
+}
+
 function toIsoDate(d: Date): string {
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
@@ -203,21 +212,6 @@ export default function AdminStaffPage() {
     }, 80);
   }, [plantillaOpen, empleadoEditing?.id]);
 
-  // DEBUG temporal: ver qué elemento recibe el click cuando el modal está abierto.
-  useEffect(() => {
-    if (!plantillaOpen) return;
-    const handleGlobalClick = (e: MouseEvent) => {
-      try {
-        // eslint-disable-next-line no-console
-        console.log("Clic en:", e.target);
-      } catch {
-        // ignore
-      }
-    };
-    window.addEventListener("click", handleGlobalClick, { capture: true });
-    return () => window.removeEventListener("click", handleGlobalClick, { capture: true } as unknown as boolean);
-  }, [plantillaOpen]);
-
   const empleadosById = useMemo(() => {
     const m = new Map<string, Empleado>();
     for (const e of empleados) m.set(e.id, e);
@@ -345,16 +339,6 @@ export default function AdminStaffPage() {
       }
       setSemanaRow(semRow);
 
-      // Requerido: debug en puntos clave
-      // eslint-disable-next-line no-console
-      console.log("DEBUG STAFF:", {
-        establecimiento_id: activeEstablishmentId,
-        semana_start: semanaStart,
-        empleados: (emp.data ?? []).length,
-        restricciones: (resR.data ?? []).length,
-        semanaRow: semRow
-      });
-
       if (!semRow?.id) {
         setCeldas([]);
         setAsigs([]);
@@ -388,7 +372,7 @@ export default function AdminStaffPage() {
         setMissingSchema(true);
         setErr("Falta aplicar el esquema de Staff en Supabase. Ejecuta: `supabase/patches/staff-cuadrante.sql`");
       } else {
-        setErr(supabaseErrToString(e));
+        setErr(userFacingOpsError(e));
       }
     } finally {
       setLoading(false);
@@ -448,7 +432,7 @@ export default function AdminStaffPage() {
       setOk("Empleado guardado.");
       await loadAll();
     } catch (e) {
-      setErr(supabaseErrToString(e));
+      setErr(userFacingOpsError(e));
     } finally {
       setSavingEmpleado(false);
     }
@@ -469,7 +453,7 @@ export default function AdminStaffPage() {
       setOk("Empleado eliminado.");
       await loadAll();
     } catch (e) {
-      setErr(supabaseErrToString(e));
+      setErr(userFacingOpsError(e));
     }
   }
 
@@ -499,7 +483,7 @@ export default function AdminStaffPage() {
       setOk("Restricción guardada.");
       await loadAll();
     } catch (e) {
-      setErr(supabaseErrToString(e));
+      setErr(userFacingOpsError(e));
     } finally {
       setSavingRestr(false);
     }
@@ -518,13 +502,13 @@ export default function AdminStaffPage() {
       setOk("Restricción eliminada.");
       await loadAll();
     } catch (e) {
-      setErr(supabaseErrToString(e));
+      setErr(userFacingOpsError(e));
     }
   }
 
   useEffect(() => {
     if (!canView) return;
-    loadAll().catch((e) => setErr(supabaseErrToString(e)));
+    loadAll().catch((e) => setErr(userFacingOpsError(e)));
   }, [canView, loadAll]);
 
   async function ensureCelda(dia: number, turno: Turno, rol: Rol): Promise<CeldaRow> {
@@ -574,7 +558,7 @@ export default function AdminStaffPage() {
       setOk("Cuadrante guardado.");
       setTimeout(() => setOk(null), 1200);
     } catch (e) {
-      setErr(supabaseErrToString(e));
+      setErr(userFacingOpsError(e));
     }
   }
 
@@ -598,7 +582,7 @@ export default function AdminStaffPage() {
       setOk("Asignación guardada.");
       setTimeout(() => setOk(null), 1200);
     } catch (e) {
-      setErr(supabaseErrToString(e));
+      setErr(userFacingOpsError(e));
     }
   }
 
@@ -613,7 +597,7 @@ export default function AdminStaffPage() {
       setOk("Asignación eliminada.");
       setTimeout(() => setOk(null), 1200);
     } catch (e) {
-      setErr(supabaseErrToString(e));
+      setErr(userFacingOpsError(e));
     }
   }
 
@@ -695,7 +679,7 @@ export default function AdminStaffPage() {
           <button
             type="button"
             className={[
-              "min-h-11 rounded-2xl bg-slate-900 text-sm font-extrabold text-white shadow-sm hover:bg-black disabled:opacity-60 md:min-h-10 md:text-xs",
+              "min-h-11 flex-shrink-0 rounded-2xl bg-slate-900 text-sm font-extrabold text-white shadow-sm hover:bg-black disabled:opacity-60 md:min-h-10 md:text-xs",
               isMobile ? "px-3" : "px-3",
               isMobile && isNarrow ? "min-w-11 px-0 grid place-items-center" : ""
             ].join(" ")}
@@ -1233,14 +1217,6 @@ export default function AdminStaffPage() {
               <div
                 className="fixed bottom-0 left-0 z-10 w-full rounded-t-3xl border border-slate-200 bg-white shadow-2xl"
                 style={{ maxHeight: "80vh", pointerEvents: "auto" }}
-                onClickCapture={(e) => {
-                  try {
-                    // eslint-disable-next-line no-console
-                    console.log("DOM Element Clicked:", e.target);
-                  } catch {
-                    // ignore
-                  }
-                }}
               >
                 <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
                   <p className="text-sm font-extrabold text-slate-900">Plantilla</p>
