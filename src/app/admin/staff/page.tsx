@@ -153,6 +153,7 @@ export default function AdminStaffPage() {
   const weekDays = useMemo(() => Array.from({ length: 7 }).map((_, i) => addDays(semanaStart, i)), [semanaStart]);
   const [mobileDia, setMobileDia] = useState<number>(1);
   const [mobileOpenTurno, setMobileOpenTurno] = useState<Turno | null>(null);
+  const [mobileHeaderActionsOpen, setMobileHeaderActionsOpen] = useState(false);
 
   const [empleados, setEmpleados] = useState<Empleado[]>([]);
   const [restricciones, setRestricciones] = useState<Restriccion[]>([]);
@@ -688,7 +689,11 @@ export default function AdminStaffPage() {
                 >
                   {loading ? "Cargando…" : "Recargar"}
                 </button>
-                <details className="relative">
+                <details
+                  className="relative"
+                  open={mobileHeaderActionsOpen}
+                  onToggle={(e) => setMobileHeaderActionsOpen((e.currentTarget as HTMLDetailsElement).open)}
+                >
                   <summary className="min-h-11 w-full list-none cursor-pointer rounded-2xl bg-slate-900 px-3 text-sm font-extrabold text-white shadow-sm hover:bg-black grid place-items-center">
                     Acciones
                   </summary>
@@ -697,7 +702,10 @@ export default function AdminStaffPage() {
                       type="button"
                       className="flex min-h-12 w-full items-center gap-2 px-4 text-left text-sm font-extrabold text-slate-900 hover:bg-slate-50 disabled:opacity-60"
                       disabled={!canEdit}
-                      onClick={() => openNuevoEmpleado()}
+                      onClick={() => {
+                        setMobileHeaderActionsOpen(false);
+                        openNuevoEmpleado();
+                      }}
                     >
                       + Empleado
                     </button>
@@ -706,6 +714,7 @@ export default function AdminStaffPage() {
                       className="flex min-h-12 w-full items-center gap-2 border-t border-slate-100 px-4 text-left text-sm font-extrabold text-slate-900 hover:bg-slate-50 disabled:opacity-60"
                       disabled={!canEdit}
                       onClick={() => {
+                        setMobileHeaderActionsOpen(false);
                         setPlantillaOpen(true);
                         if (!selectedEmpleadoId) setSelectedEmpleadoId(empleados[0]?.id ?? "");
                       }}
