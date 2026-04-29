@@ -152,7 +152,7 @@ export default function AdminStaffPage() {
   const semanaStart = useMemo(() => mondayOf(semanaAnchor), [semanaAnchor]);
   const weekDays = useMemo(() => Array.from({ length: 7 }).map((_, i) => addDays(semanaStart, i)), [semanaStart]);
   const [mobileDia, setMobileDia] = useState<number>(1);
-  const [mobileTurno, setMobileTurno] = useState<Turno | "todos">("todos");
+  const [mobileOpenTurno, setMobileOpenTurno] = useState<Turno | null>(null);
 
   const [empleados, setEmpleados] = useState<Empleado[]>([]);
   const [restricciones, setRestricciones] = useState<Restriccion[]>([]);
@@ -848,143 +848,148 @@ export default function AdminStaffPage() {
             };
 
             if (isMobile) {
-              // Staff en móvil: modo lectura en tarjetas por turno (evita tablas anchas y reduce posibilidad de crash).
-              if (!canEdit) {
-                const turnosToShow = mobileTurno === "todos" ? TURNOS : [mobileTurno];
-                const dayIdx = Math.max(0, Math.min(6, mobileDia - 1));
-                const diaLabel = `${DIA_LABEL.find((d) => d.n === mobileDia)?.label ?? `Día ${mobileDia}`} · ${fmtDia(weekDays[dayIdx] ?? weekDays[0])}`;
+              const TURNOS_HORARIO: Record<Turno, string> = {
+                Mañana: "Mañana",
+                Comida: "Comida",
+                Tarde: "Tarde",
+                Noche: "Noche"
+              };
 
-                const turnoCard = (t: Turno) => {
-                  return (
-                    <section key={t} className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+              const dayIdx = Math.max(0, Math.min(6, mobileDia - 1));
+              const diaLabel = `${DIA_LABEL.find((d) => d.n === mobileDia)?.label ?? `Día ${mobileDia}`} · ${fmtDia(weekDays[dayIdx] ?? weekDays[0])}`;
+              const estName = (activeEstablishmentName ?? "").trim() || "Piquillos Blinders";
+
+              const assignedRowsForTurno = (t: Turno): Array<{ empleado: Empleado; rol: Rol; asigId: string | null; conflicto: string | null }> => {
+                const out: Array<{ empleado: Empleado; rol: Rol; asigId: string | null; conflicto: string | null }> = [];
+                for (const r of ROLES) {
+                  const cel = celdasKeyed.get(`${mobileDia}|${t}|${r}`) ?? null;
+                  const assigned = cel ? (asigsByCelda.get(cel.id) ?? []) : [];
+                  for (const a of assigned) {
+                    const emp = empleadosById.get(a.empleado_id) ?? null;
+                    if (!emp) continue;
+                    out.push({ empleado: emp, rol: r, asigId: a.id ?? null, conflicto: conflictText({ empleadoId: emp.id, dia: mobileDia, turno: t }) });
+                  }
+                }
+                out.sort((a, b) => a.empleado.nombre.localeCompare(b.empleado.nombre, "es", { sensitivity: "base" }));
+                return out;
+              };
+
+              const TurnoAccordion = (t: Turno) => {
+                const rows = assignedRowsForTurno(t);
+                const open = mobileOpenTurno === t;
+                return (
+                  <details
+                    key={t}
+                    open={open}
+                    className="rounded-3xl border border-slate-200 bg-white shadow-sm"
+                    onToggle={(e) => {
+                      const isOpen = (e.currentTarget as HTMLDetailsElement).open;
+                      setMobileOpenTurno(isOpen ? t : null);
+                    }}
+                  >
+                    <summary className="cursor-pointer list-none px-4 py-4">
                       <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">{diaLabel}</p>
+                          <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">{diaLabel}</p>
                           <p className="mt-1 text-lg font-extrabold text-slate-900">{t}</p>
                         </div>
+                        <span className="shrink-0 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-extrabold text-slate-700">
+                          {rows.length} {rows.length === 1 ? "asignación" : "asignaciones"}
+                        </span>
                       </div>
+                    </summary>
 
-                      <div className="mt-4 grid gap-3">
-                        {ROLES.map((r) => {
-                          const cel = celdasKeyed.get(`${mobileDia}|${t}|${r}`) ?? null;
-                          const assigned = cel ? (asigsByCelda.get(cel.id) ?? []) : [];
-                          const assignedEmps = assigned
-                            .map((a) => empleadosById.get(a.empleado_id))
-                            .filter(Boolean) as Empleado[];
-                          const names = assignedEmps.map((e) => e?.nombre).filter(Boolean) as string[];
-                          return (
+                    <div className="border-t border-slate-100 px-4 py-4">
+                      {!canEdit ? (
+                        <div className="space-y-2">
+                          {rows.length ? (
+                            rows.map((it) => {
+                              const phoneDigits = digitsWaPhone(it.empleado.telefono);
+                              const msg = buildWaMessage({
+                                nombreExtra: it.empleado.nombre,
+                                establecimiento: estName,
+                                rol: it.rol,
+                                diaLabel,
+                                turno: t
+                              });
+                              const href = phoneDigits ? urlWhatsApp(phoneDigits, msg) : null;
+                              return (
+                                <div key={`${it.empleado.id}|${it.rol}`} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-3">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-extrabold text-slate-900">{it.empleado.nombre}</p>
+                                    <p className="mt-0.5 text-xs font-semibold text-slate-600">
+                                      {it.rol} · {TURNOS_HORARIO[t]}
+                                    </p>
+                                    {it.conflicto ? <p className="mt-1 text-xs font-semibold text-amber-800">{it.conflicto}</p> : null}
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                                      onClick={() => {
+                                        if (typeof window === "undefined") return;
+                                        window.location.href = href ?? `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`;
+                                      }}
+                                      aria-label="WhatsApp"
+                                      title="WhatsApp"
+                                    >
+                                      <WaIcon className="h-5 w-5 text-emerald-600" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                                      onClick={() => {
+                                        if (typeof window === "undefined") return;
+                                        const tel = (it.empleado.telefono ?? "").trim();
+                                        if (!tel) return;
+                                        window.location.href = `tel:${tel}`;
+                                      }}
+                                      aria-label="Llamar"
+                                      title="Llamar"
+                                    >
+                                      <Phone className="h-5 w-5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <p className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm font-semibold text-slate-700">Sin asignaciones.</p>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="grid gap-3">
+                          {ROLES.map((r) => (
                             <div key={r} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
                               <p className="text-sm font-extrabold text-slate-900">{r}</p>
-                              {names.length ? (
-                                <div className="mt-2 flex flex-wrap gap-2">
-                                  {names.map((n) => (
-                                    <span
-                                      key={n}
-                                      className="inline-flex min-h-9 items-center rounded-full border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
-                                    >
-                                      {n ?? "—"}
-                                    </span>
-                                  ))}
-                                </div>
-                              ) : (
-                                <p className="mt-2 text-sm font-semibold text-slate-600">Sin asignar.</p>
-                              )}
+                              <div className="mt-2">{renderCell(mobileDia, t, r)}</div>
                             </div>
-                          );
-                        })}
-                      </div>
-                    </section>
-                  );
-                };
-
-                return (
-                  <div className="space-y-3">
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <label className="grid gap-1">
-                        <span className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Día</span>
-                        <select
-                          className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900"
-                          value={String(mobileDia)}
-                          onChange={(e) => setMobileDia(Number((e.target as HTMLSelectElement).value) || 1)}
-                        >
-                          {DIA_LABEL.map((d, idx) => (
-                            <option key={d.n} value={String(d.n)}>
-                              {d.label} · {fmtDia(weekDays[idx] ?? semanaStart)}
-                            </option>
                           ))}
-                        </select>
-                      </label>
-
-                      <label className="grid gap-1">
-                        <span className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Turno</span>
-                        <select
-                          className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900"
-                          value={mobileTurno}
-                          onChange={(e) => setMobileTurno(((e.target as HTMLSelectElement).value as Turno | "todos") ?? "todos")}
-                        >
-                          <option value="todos">Todos</option>
-                          {TURNOS.map((t) => (
-                            <option key={t} value={t}>
-                              {t}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                        </div>
+                      )}
                     </div>
-
-                    <div className="space-y-3">{turnosToShow.map((t) => turnoCard(t))}</div>
-                  </div>
+                  </details>
                 );
-              }
+              };
 
               return (
                 <div className="space-y-3">
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <label className="grid gap-1">
-                      <span className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Día</span>
-                      <select
-                        className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900"
-                        value={String(mobileDia)}
-                        onChange={(e) => setMobileDia(Number((e.target as HTMLSelectElement).value) || 1)}
-                      >
-                        {DIA_LABEL.map((d, idx) => (
-                          <option key={d.n} value={String(d.n)}>
-                            {d.label} · {fmtDia(weekDays[idx] ?? semanaStart)}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                  <label className="grid gap-1">
+                    <span className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Día</span>
+                    <select
+                      className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900"
+                      value={String(mobileDia)}
+                      onChange={(e) => setMobileDia(Number((e.target as HTMLSelectElement).value) || 1)}
+                    >
+                      {DIA_LABEL.map((d, idx) => (
+                        <option key={d.n} value={String(d.n)}>
+                          {d.label} · {fmtDia(weekDays[idx] ?? semanaStart)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
 
-                    <label className="grid gap-1">
-                      <span className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Turno</span>
-                      <select
-                        className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900"
-                        value={mobileTurno}
-                        onChange={(e) => setMobileTurno(((e.target as HTMLSelectElement).value as Turno | "todos") ?? "todos")}
-                      >
-                        <option value="todos">Todos</option>
-                        {TURNOS.map((t) => (
-                          <option key={t} value={t}>
-                            {t}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-
-                  {(mobileTurno === "todos" ? TURNOS : [mobileTurno]).map((t) => (
-                    <section key={t} className="space-y-2">
-                      <p className="px-1 text-xs font-extrabold uppercase tracking-wide text-slate-600">{t}</p>
-                      <div className="grid gap-2">
-                        {ROLES.map((r) => (
-                          <div key={r} className="rounded-3xl border border-slate-200 bg-white p-3 shadow-sm">
-                            <p className="text-sm font-extrabold text-slate-900">{r}</p>
-                            <div className="mt-2">{renderCell(mobileDia, t, r)}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </section>
-                  ))}
+                  <div className="space-y-3">{TURNOS.map((t) => TurnoAccordion(t))}</div>
                 </div>
               );
             }
