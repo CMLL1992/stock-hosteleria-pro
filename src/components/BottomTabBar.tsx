@@ -36,6 +36,7 @@ export function BottomTabBar() {
   const { data } = useMyRole();
   const role = getEffectiveRole(data ?? null);
   const isAdmin = hasPermission(role, "admin");
+  const isStaff = role === "staff";
 
   function Icon({ name, active }: { name: Tab["icon"]; active: boolean }) {
     const cls = ["h-[22px] w-[22px] transition-colors duration-200", active ? "text-premium-blue" : "text-slate-500"].join(" ");
@@ -99,8 +100,8 @@ export function BottomTabBar() {
       return [
         { href: "/", label: "INICIO", icon: "home" },
         { href: "/stock", label: "STOCK", icon: "stock" },
-        { href: "/mas", label: "PERFIL", icon: "perfil" }
-      ];
+        ...(isStaff ? [] : [{ href: "/mas", label: "PERFIL", icon: "perfil" } as const])
+      ] as Tab[];
     }
     return [
       { href: "/", label: "INICIO", icon: "home" },
@@ -108,7 +109,7 @@ export function BottomTabBar() {
       { href: "/admin/pedidos", label: "PEDIDOS", icon: "pedidos" },
       { href: "/admin", label: "PANEL", icon: "panel" }
     ];
-  }, [isAdmin]);
+  }, [isAdmin, isStaff]);
 
   return (
     <nav

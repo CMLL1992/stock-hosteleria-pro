@@ -59,7 +59,7 @@ export default function AdminMovimientosPage() {
   const { data: me, isLoading: meLoading } = useMyRole();
   const { activeEstablishmentId } = useActiveEstablishment();
   const role = getEffectiveRole(me ?? null);
-  const canAccessMovimientos = hasPermission(role, "admin");
+  const canAccessMovimientos = hasPermission(role, "staff");
   const [rows, setRows] = useState<MovRow[]>([]);
   const [usuariosById, setUsuariosById] = useState<Map<string, UsuarioMini>>(new Map());
   const [err, setErr] = useState<string | null>(null);
