@@ -16,6 +16,7 @@ import { fetchEscandallosPrecioMapByProductIds, type EscandalloPrecioRow } from 
 import { logActivity } from "@/lib/activityLog";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import { Building2, ChevronDown } from "lucide-react";
+import { getAccessTokenOrThrow } from "@/lib/adminApi";
 // wa.me directo (mensaje propio) para reposición
 
 
@@ -222,10 +223,28 @@ export function DashboardClient() {
     enabled: !!establecimientoId,
     queryFn: async () => {
       try {
+        // Admin/Superadmin: usar API con service role para incluir global (NULL) incluso si RLS lo bloquea.
+        // Staff: cae al query directo (si hay RLS, devolvemos vacío sin romper).
+        if (canSeePrices) {
+          const token = await getAccessTokenOrThrow();
+          const res = await fetch(`/api/admin/envases-catalogo?establecimiento_id=${encodeURIComponent(establecimientoId as string)}`, {
+            headers: { authorization: `Bearer ${token}` }
+          });
+          const json = (await res.json()) as { items?: Array<{ id: string; coste: number }>; error?: string };
+          if (!res.ok) throw new Error(json.error || "No se pudo cargar envases_catalogo.");
+          const map = new Map<string, number>();
+          for (const r of json.items ?? []) {
+            const id = String(r.id ?? "").trim();
+            if (!id) continue;
+            const c = Number(r.coste ?? 0);
+            map.set(id, Number.isFinite(c) ? c : 0);
+          }
+          return map;
+        }
+
         const { data, error } = await supabase()
           .from("envases_catalogo")
           .select("id,coste")
-          // Envases del local + envases globales del sistema (establecimiento_id NULL)
           .or(`establecimiento_id.eq.${establecimientoId as string},establecimiento_id.is.null`);
         if (error) throw error;
         const map = new Map<string, number>();
@@ -679,9 +698,10 @@ export function DashboardClient() {
                                         ].join(" ")}
                                         inputMode="numeric"
                                         value={pedidoRapidoQty[p.id] ?? "0"}
-                                        onChange={(e) =>
-                                          setPedidoRapidoQty((d) => ({ ...d, [p.id]: sanitizeIntString(e.currentTarget.value) }))
-                                        }
+                                      onChange={(e) => {
+                                        const v = e.currentTarget.value;
+                                        setPedidoRapidoQty((d) => ({ ...d, [p.id]: sanitizeIntString(v) }));
+                                      }}
                                         onBlur={() =>
                                           setPedidoRapidoQty((d) => {
                                             const curr = String(d[p.id] ?? "").trim();

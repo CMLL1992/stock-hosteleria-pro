@@ -879,7 +879,10 @@ function parseCantidad(raw: string | null | undefined): number {
                                     inputMode="numeric"
                                     pattern="[0-9]*"
                                     value={String(q)}
-                                    onChange={(e) => setRecargaQty((d) => ({ ...d, [p.id]: sanitizeIntString(e.currentTarget.value) }))}
+                                    onChange={(e) => {
+                                      const v = e.currentTarget.value;
+                                      setRecargaQty((d) => ({ ...d, [p.id]: sanitizeIntString(v) }));
+                                    }}
                                     disabled={recargaBusy}
                                     aria-label={`Cantidad a neveras de ${p.articulo}`}
                                   />
@@ -915,7 +918,10 @@ function parseCantidad(raw: string | null | undefined): number {
                                     inputMode="numeric"
                                     pattern="[0-9]*"
                                     value={String(v)}
-                                    onChange={(e) => setRecargaVacios((d) => ({ ...d, [p.id]: sanitizeIntString(e.currentTarget.value) }))}
+                                    onChange={(e) => {
+                                      const vv = e.currentTarget.value;
+                                      setRecargaVacios((d) => ({ ...d, [p.id]: sanitizeIntString(vv) }));
+                                    }}
                                     disabled={recargaBusy}
                                     aria-label={`Vacíos al almacén de ${p.articulo}`}
                                   />
@@ -1032,7 +1038,10 @@ function parseCantidad(raw: string | null | undefined): number {
                     inputMode="decimal"
                     pattern="[0-9]*[.,]?[0-9]*"
                     value={modQty[p.id] ?? ""}
-                    onChange={(e) => setModQty((d) => ({ ...d, [p.id]: sanitizeDecimalString(e.currentTarget.value) }))}
+                    onChange={(e) => {
+                      const v = e.currentTarget.value;
+                      setModQty((d) => ({ ...d, [p.id]: sanitizeDecimalString(v) }));
+                    }}
                     disabled={modBusy}
                     aria-label={`Cantidad de ${p.articulo}`}
                   />
