@@ -631,36 +631,112 @@ export default function AdminStaffPage() {
   return (
     <main className="min-h-dvh w-full bg-slate-50">
       <div className="sticky top-0 z-30 border-b border-slate-200/70 bg-slate-50/95 px-2 pt-2 backdrop-blur sm:px-4 sm:pt-3">
-        <div className="flex items-center justify-between gap-3">
-          <button
-            type="button"
-            className="grid h-9 w-9 place-items-center rounded-2xl border border-slate-200 bg-white shadow-sm hover:bg-slate-50 sm:h-10 sm:w-10"
-            aria-label="Volver"
-            onClick={() => {
-              if (typeof window !== "undefined") window.history.back();
-            }}
-          >
-            <ArrowLeft className="h-5 w-5 text-slate-700" />
-          </button>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-black tracking-tight text-slate-900">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          {/* Cabecera */}
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <button
+              type="button"
+              className="grid min-h-11 min-w-11 place-items-center rounded-2xl border border-slate-200 bg-white shadow-sm hover:bg-slate-50 md:min-h-10 md:min-w-10"
+              aria-label="Volver"
+              onClick={() => {
+                if (typeof window !== "undefined") window.history.back();
+              }}
+            >
+              <ArrowLeft className="h-5 w-5 text-slate-700" />
+            </button>
+            <p className="min-w-0 truncate text-sm font-black tracking-tight text-slate-900">
               Staff · {(activeEstablishmentName ?? "").trim() || "Mi local"}
             </p>
-            <div className="mt-1 -mx-2 px-2 pb-1">
-              <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-2 sm:overflow-x-auto sm:whitespace-nowrap">
+          </div>
+
+          {/* Acción principal */}
+          <button
+            type="button"
+            className="min-h-11 rounded-2xl bg-slate-900 px-3 text-sm font-extrabold text-white shadow-sm hover:bg-black disabled:opacity-60 md:min-h-10 md:text-xs"
+            disabled={!canEdit}
+            onClick={() => openNuevoEmpleado()}
+            title={!canEdit ? "Solo Admin puede crear empleados" : "Añadir empleado"}
+            aria-label="Añadir empleado"
+          >
+            {isMobile ? <Plus className="h-5 w-5" /> : "+ Empleado"}
+          </button>
+
+          {/* Controles */}
+          {isMobile ? (
+            <div className="w-full space-y-2">
+              {/* Fechas (2ª fila) */}
+              <div className="grid w-full grid-cols-2 gap-2">
                 <input
                   type="date"
-                  className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm sm:min-h-9 sm:w-auto sm:px-3 sm:text-xs"
+                  className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm"
                   value={semanaAnchor}
                   onChange={(e) => setSemanaAnchor((e.target as HTMLInputElement).value)}
                   aria-label="Semana"
                 />
-                <div className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm sm:min-h-9 sm:w-auto sm:text-xs flex items-center">
+                <div className="flex min-h-11 w-full items-center rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm">
+                  Semana {fmtDia(semanaStart)}–{fmtDia(addDays(semanaStart, 6))}
+                </div>
+              </div>
+
+              {/* Acciones (3ª fila) */}
+              <div className="grid w-full grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-extrabold text-slate-900 shadow-sm hover:bg-slate-50 disabled:opacity-60"
+                  onClick={() => void loadAll()}
+                  disabled={loading}
+                >
+                  {loading ? "Cargando…" : "Recargar"}
+                </button>
+                <details className="relative">
+                  <summary className="min-h-11 w-full list-none cursor-pointer rounded-2xl bg-slate-900 px-3 text-sm font-extrabold text-white shadow-sm hover:bg-black grid place-items-center">
+                    Acciones
+                  </summary>
+                  <div className="absolute right-0 z-50 mt-2 w-[min(320px,92vw)] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl">
+                    <button
+                      type="button"
+                      className="flex min-h-12 w-full items-center gap-2 px-4 text-left text-sm font-extrabold text-slate-900 hover:bg-slate-50 disabled:opacity-60"
+                      disabled={!canEdit}
+                      onClick={() => openNuevoEmpleado()}
+                    >
+                      + Empleado
+                    </button>
+                    <button
+                      type="button"
+                      className="flex min-h-12 w-full items-center gap-2 border-t border-slate-100 px-4 text-left text-sm font-extrabold text-slate-900 hover:bg-slate-50 disabled:opacity-60"
+                      disabled={!canEdit}
+                      onClick={() => {
+                        setPlantillaOpen(true);
+                        if (!selectedEmpleadoId) setSelectedEmpleadoId(empleados[0]?.id ?? "");
+                      }}
+                      title={!canEdit ? "Solo Admin puede gestionar plantilla" : "Gestionar empleados y restricciones"}
+                    >
+                      Plantilla
+                    </button>
+                  </div>
+                </details>
+              </div>
+
+              {!canEdit ? (
+                <p className="text-[11px] font-semibold text-slate-500">Modo lectura: solo Admin puede editar plantilla o asignaciones.</p>
+              ) : null}
+            </div>
+          ) : (
+            <div className="mt-1 -mx-2 w-full px-2 pb-1 md:w-auto">
+              <div className="grid grid-cols-2 gap-2 md:flex md:items-center md:gap-2 md:overflow-x-auto md:whitespace-nowrap">
+                <input
+                  type="date"
+                  className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm md:min-h-9 md:w-auto md:px-3 md:text-xs"
+                  value={semanaAnchor}
+                  onChange={(e) => setSemanaAnchor((e.target as HTMLInputElement).value)}
+                  aria-label="Semana"
+                />
+                <div className="flex min-h-11 w-full items-center rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm md:min-h-9 md:w-auto md:text-xs">
                   Semana {fmtDia(semanaStart)}–{fmtDia(addDays(semanaStart, 6))}
                 </div>
                 <button
                   type="button"
-                  className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-extrabold text-slate-900 shadow-sm hover:bg-slate-50 sm:min-h-9 sm:w-auto sm:text-xs disabled:opacity-60"
+                  className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-extrabold text-slate-900 shadow-sm hover:bg-slate-50 md:min-h-9 md:w-auto md:text-xs disabled:opacity-60"
                   onClick={() => void loadAll()}
                   disabled={loading}
                 >
@@ -668,7 +744,7 @@ export default function AdminStaffPage() {
                 </button>
                 <button
                   type="button"
-                  className="min-h-11 w-full rounded-2xl bg-slate-900 px-3 text-sm font-extrabold text-white shadow-sm hover:bg-black sm:min-h-9 sm:w-auto sm:text-xs disabled:opacity-60"
+                  className="min-h-11 w-full rounded-2xl bg-slate-900 px-3 text-sm font-extrabold text-white shadow-sm hover:bg-black md:min-h-9 md:w-auto md:text-xs disabled:opacity-60"
                   disabled={!canEdit}
                   onClick={() => {
                     setPlantillaOpen(true);
@@ -678,18 +754,9 @@ export default function AdminStaffPage() {
                 >
                   Plantilla
                 </button>
-                <button
-                  type="button"
-                  className="col-span-2 min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-extrabold text-slate-900 shadow-sm hover:bg-slate-50 sm:min-h-9 sm:w-auto sm:text-xs disabled:opacity-60"
-                  disabled={!canEdit}
-                  onClick={() => openNuevoEmpleado()}
-                  title={!canEdit ? "Solo Admin puede crear empleados" : "Añadir empleado"}
-                >
-                  + Empleado
-                </button>
               </div>
             </div>
-          </div>
+          )}
         </div>
 
         {err ? <div className="mt-2 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-800">{err}</div> : null}
