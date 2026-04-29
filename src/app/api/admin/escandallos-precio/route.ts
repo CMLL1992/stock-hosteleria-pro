@@ -30,12 +30,19 @@ export async function POST(req: Request) {
     const { data, error } = await service
       .from("escandallos")
       .select("producto_id,precio_tarifa,descuento_valor,descuento_tipo,rappel_valor,establecimiento_id")
-      .eq("establecimiento_id", establecimientoId)
       .in("producto_id", ids)
       .limit(5000);
     if (error) return adminError(error.message, 400);
 
-    const items: Item[] = ((data ?? []) as unknown as Array<Record<string, unknown>>)
+    // Importante:
+    // - No filtramos estrictamente por `escandallos.establecimiento_id` porque puede estar desalineado respecto a `productos`.
+    // - Aun así, intentamos mantener el scope del establecimiento filtrando en memoria por (establecimientoId | NULL | vacío).
+    const scoped = ((data ?? []) as unknown as Array<Record<string, unknown>>).filter((r) => {
+      const eid = String(r.establecimiento_id ?? "").trim();
+      return !eid || eid === establecimientoId;
+    });
+
+    const items: Item[] = scoped
       .map((r) => {
         const pid = String(r.producto_id ?? "").trim();
         if (!pid) return null;
