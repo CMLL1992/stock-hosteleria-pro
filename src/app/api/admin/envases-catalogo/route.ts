@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { assertAdminOrThrow } from "@/lib/admin/assertAdmin";
+import { assertStaffOrThrow } from "@/lib/admin/assertStaff";
 import { adminError, adminServerError } from "@/lib/admin/apiResponse";
 
 type EnvaseRow = { id: string; coste: number };
 
 export async function GET(req: Request) {
   try {
-    const gate = await assertAdminOrThrow(req);
+    const gate = await assertStaffOrThrow(req);
     if (!gate.ok) return gate.response as unknown as NextResponse;
 
     const { service } = gate;

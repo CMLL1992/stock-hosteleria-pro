@@ -12,7 +12,7 @@ import { enqueueMovimiento, newClientUuid } from "@/lib/offlineQueue";
 import { getEffectiveRole, hasPermission } from "@/lib/permissions";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
-import { fetchEscandallosPrecioMapByProductIds, type EscandalloPrecioRow } from "@/lib/fetchEscandallosPrecioMap";
+import type { EscandalloPrecioRow } from "@/lib/fetchEscandallosPrecioMap";
 import { logActivity } from "@/lib/activityLog";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import { Building2, ChevronDown } from "lucide-react";
@@ -23,7 +23,6 @@ import { getAccessTokenOrThrow } from "@/lib/adminApi";
 export function DashboardClient() {
   const { activeEstablishmentId: establecimientoId, activeEstablishmentName, me } = useActiveEstablishment();
   const role = getEffectiveRole(me);
-  const canSeePrices = hasPermission(role, "admin");
   const canManageEnvases = hasPermission(role, "admin");
   const canOrder = hasPermission(role, "admin");
   const queryClient = useQueryClient();
@@ -103,10 +102,30 @@ export function DashboardClient() {
 
   const escandallosPrecioQuery = useQuery({
     queryKey: ["dashboard", "escandallos-precio", establecimientoId, productosQuery.data],
-    enabled: !!establecimientoId && canSeePrices && !!productosQuery.data?.length,
+    enabled: !!establecimientoId && !!productosQuery.data?.length,
     queryFn: async () => {
       const ids = (productosQuery.data ?? []).map((p) => p.id).filter(Boolean);
-      return await fetchEscandallosPrecioMapByProductIds(ids, establecimientoId);
+      // Staff/Admin: mismo origen de datos (service-role en servidor) para que el desglose económico sea idéntico.
+      const token = await getAccessTokenOrThrow();
+      const res = await fetch("/api/admin/escandallos-precio", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify({ establecimiento_id: establecimientoId, product_ids: ids })
+      });
+      const json = (await res.json()) as { items?: Array<EscandalloPrecioRow>; error?: string };
+      if (!res.ok) throw new Error(json.error || "No se pudo cargar escandallos.");
+      const map = new Map<string, EscandalloPrecioRow>();
+      for (const r of json.items ?? []) {
+        const pid = String((r as { producto_id?: unknown }).producto_id ?? "").trim();
+        if (!pid) continue;
+        map.set(pid, r);
+      }
+
+      if (role === "staff") {
+        // eslint-disable-next-line no-console
+        console.log("Datos Gráfica Staff:", { escandallos: map.size, productos: ids.length });
+      }
+      return map;
     },
     staleTime: 30_000,
     retry: 1
@@ -225,7 +244,7 @@ export function DashboardClient() {
       try {
         // Admin/Superadmin: usar API con service role para incluir global (NULL) incluso si RLS lo bloquea.
         // Staff: cae al query directo (si hay RLS, devolvemos vacío sin romper).
-        if (canSeePrices) {
+        if (hasPermission(role, "staff")) {
           const token = await getAccessTokenOrThrow();
           const res = await fetch(`/api/admin/envases-catalogo?establecimiento_id=${encodeURIComponent(establecimientoId as string)}`, {
             headers: { authorization: `Bearer ${token}` }
