@@ -6,6 +6,7 @@ import {
   Building2,
   ChevronRight,
   ClipboardList,
+  CalendarDays,
   Package,
   Shield,
   ShoppingBag,
@@ -59,6 +60,8 @@ function itemIcon(id: string) {
       return ClipboardList;
     case "bajo-minimos":
       return ClipboardList;
+    case "eventos":
+      return CalendarDays;
     default:
       return Package;
   }
@@ -140,6 +143,12 @@ const SECTIONS: AdminSection[] = [
     id: "operaciones",
     heading: "Operaciones y movimientos",
     items: [
+      {
+        id: "eventos",
+        href: "/admin/eventos",
+        title: "Eventos",
+        subtitle: "Calendario y registro de eventos."
+      },
       {
         id: "pedidos",
         href: "/admin/pedidos",

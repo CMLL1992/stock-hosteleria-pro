@@ -9,7 +9,7 @@ import { getEffectiveRole, hasPermission } from "@/lib/permissions";
 type Tab = {
   href: string;
   label: string;
-  icon: "home" | "stock" | "pedidos" | "panel" | "perfil";
+  icon: "home" | "stock" | "pedidos" | "eventos" | "panel" | "perfil";
 };
 
 function tabActive(pathname: string, href: string): boolean {
@@ -68,6 +68,21 @@ export function BottomTabBar() {
         </svg>
       );
     }
+    if (name === "eventos") {
+      return (
+        <svg viewBox="0 0 24 24" className={cls} aria-hidden>
+          <path
+            d="M7 3v3M17 3v3M4 8h16M6 6h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path d="M8 12h4M8 16h6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      );
+    }
     if (name === "perfil") {
       return (
         <svg viewBox="0 0 24 24" className={cls} aria-hidden>
@@ -107,6 +122,7 @@ export function BottomTabBar() {
       { href: "/", label: "INICIO", icon: "home" },
       { href: "/stock", label: "STOCK", icon: "stock" },
       { href: "/admin/pedidos", label: "PEDIDOS", icon: "pedidos" },
+      { href: "/admin/eventos", label: "EVENTOS", icon: "eventos" },
       { href: "/admin", label: "PANEL", icon: "panel" }
     ];
   }, [isAdmin, isStaff]);
