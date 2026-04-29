@@ -1233,8 +1233,14 @@ export default function AdminStaffPage() {
               <div
                 className="fixed bottom-0 left-0 z-10 w-full rounded-t-3xl border border-slate-200 bg-white shadow-2xl"
                 style={{ maxHeight: "80vh", pointerEvents: "auto" }}
-                onPointerDownCapture={(e) => e.stopPropagation()}
-                onClickCapture={(e) => e.stopPropagation()}
+                onClickCapture={(e) => {
+                  try {
+                    // eslint-disable-next-line no-console
+                    console.log("DOM Element Clicked:", e.target);
+                  } catch {
+                    // ignore
+                  }
+                }}
               >
                 <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
                   <p className="text-sm font-extrabold text-slate-900">Plantilla</p>
