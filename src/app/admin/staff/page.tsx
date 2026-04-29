@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ArrowLeft, Pencil, Phone, Plus, Trash2, UserPlus, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
@@ -137,6 +138,7 @@ export default function AdminStaffPage() {
   const [ok, setOk] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [missingSchema, setMissingSchema] = useState(false);
+  const [isClient, setIsClient] = useState(false);
 
   const [isMobile, setIsMobile] = useState(false);
   const [isNarrow, setIsNarrow] = useState(false);
@@ -147,6 +149,10 @@ export default function AdminStaffPage() {
     apply();
     mq.addEventListener?.("change", apply);
     return () => mq.removeEventListener?.("change", apply);
+  }, []);
+
+  useEffect(() => {
+    setIsClient(true);
   }, []);
 
   useEffect(() => {
@@ -196,6 +202,21 @@ export default function AdminStaffPage() {
       empleadoEditorRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
     }, 80);
   }, [plantillaOpen, empleadoEditing?.id]);
+
+  // DEBUG temporal: ver qué elemento recibe el click cuando el modal está abierto.
+  useEffect(() => {
+    if (!plantillaOpen) return;
+    const handleGlobalClick = (e: MouseEvent) => {
+      try {
+        // eslint-disable-next-line no-console
+        console.log("Clic en:", e.target);
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener("click", handleGlobalClick, { capture: true });
+    return () => window.removeEventListener("click", handleGlobalClick, { capture: true } as unknown as boolean);
+  }, [plantillaOpen]);
 
   const empleadosById = useMemo(() => {
     const m = new Map<string, Empleado>();
@@ -1197,215 +1218,265 @@ export default function AdminStaffPage() {
         </div>
       ) : null}
 
-      {/* Modal plantilla (CRUD empleados y restricciones) */}
-      {plantillaOpen ? (
-        <div className="fixed inset-0 z-[1200]">
-          <button
-            type="button"
-            className="fixed inset-0 z-0 bg-black/30"
-            aria-label="Cerrar"
-            onClick={() => setPlantillaOpen(false)}
-          />
-          <div
-            className="fixed bottom-0 left-0 z-10 w-full rounded-t-3xl border border-slate-200 bg-white shadow-2xl"
-            style={{ maxHeight: "80vh" }}
-            onPointerDownCapture={(e) => e.stopPropagation()}
-            onClickCapture={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
-              <p className="text-sm font-extrabold text-slate-900">Plantilla</p>
+      {/* Modal plantilla (CRUD empleados y restricciones) - portal al <body> */}
+      {plantillaOpen && isClient
+        ? createPortal(
+            <div className="fixed inset-0 z-[1200]" style={{ pointerEvents: "auto" }}>
               <button
                 type="button"
-                className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-extrabold text-slate-900 hover:bg-slate-50"
+                className="fixed inset-0 z-0 bg-black/30"
+                style={{ pointerEvents: "auto" }}
+                aria-label="Cerrar"
                 onClick={() => setPlantillaOpen(false)}
+              />
+
+              <div
+                className="fixed bottom-0 left-0 z-10 w-full rounded-t-3xl border border-slate-200 bg-white shadow-2xl"
+                style={{ maxHeight: "80vh", pointerEvents: "auto" }}
+                onPointerDownCapture={(e) => e.stopPropagation()}
+                onClickCapture={(e) => e.stopPropagation()}
               >
-                <X className="h-4 w-4" /> Cerrar
-              </button>
-            </div>
-
-            <div className="max-h-[80vh] overflow-auto px-4 py-4 pb-10">
-              {err ? <div className="mb-3 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-800">{err}</div> : null}
-              {ok ? <div className="mb-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{ok}</div> : null}
-              {/* Empleados */}
-              <div className="rounded-3xl border border-slate-200 bg-white p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Empleados</p>
+                <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+                  <p className="text-sm font-extrabold text-slate-900">Plantilla</p>
                   <button
                     type="button"
-                    className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-3 py-2 text-xs font-extrabold text-white hover:bg-black disabled:opacity-60"
-                    disabled={!canEdit}
-                    onClick={() => openNuevoEmpleado()}
+                    className="relative z-[9999] inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-extrabold text-slate-900 hover:bg-slate-50"
+                    onClick={() => setPlantillaOpen(false)}
                   >
-                    <Plus className="h-4 w-4" /> Nuevo
+                    <X className="h-4 w-4" /> Cerrar
                   </button>
                 </div>
 
-                <div className="mt-3 grid gap-2">
-                  {empleados.map((e) => (
-                    <div key={e.id} className="flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white p-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-extrabold text-slate-900">{e.nombre}</p>
-                        <p className="mt-0.5 text-xs font-semibold text-slate-600">
-                          {e.rol} · {e.tipo} · {(e.telefono ?? "").trim() || "Sin teléfono"} {e.activo ? "" : "· Inactivo"}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-60"
-                          disabled={!canEdit}
-                          onClick={() => openEditarEmpleado(e)}
-                          aria-label="Editar"
-                          title="Editar"
-                        >
-                          <Pencil className="h-5 w-5" />
-                        </button>
-                        <button
-                          type="button"
-                          className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-60"
-                          disabled={!canEdit}
-                          onClick={() => void deleteEmpleado(e.id)}
-                          aria-label="Eliminar"
-                          title="Eliminar"
-                        >
-                          <Trash2 className="h-5 w-5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <div className="max-h-[80vh] overflow-auto px-4 py-4 pb-10">
+                  {err ? <div className="mb-3 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-800">{err}</div> : null}
+                  {ok ? <div className="mb-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{ok}</div> : null}
 
-                {/* Editor empleado */}
-                <div ref={empleadoEditorRef} className="mt-4 rounded-3xl border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">{empleadoEditing ? "Editar empleado" : "Nuevo empleado"}</p>
-                  <div className="mt-3 grid gap-3 md:grid-cols-2">
-                    <div className="grid gap-2">
-                      <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Nombre</label>
-                      <input className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900" value={empleadoDraft.nombre} onChange={(e) => setEmpleadoDraft((d) => ({ ...d, nombre: (e.target as HTMLInputElement).value }))} />
+                  {/* Empleados */}
+                  <div className="rounded-3xl border border-slate-200 bg-white p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Empleados</p>
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-3 py-2 text-xs font-extrabold text-white hover:bg-black disabled:opacity-60"
+                        disabled={!canEdit}
+                        onClick={() => openNuevoEmpleado()}
+                      >
+                        <Plus className="h-4 w-4" /> Nuevo
+                      </button>
                     </div>
-                    <div className="grid gap-2">
-                      <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Teléfono</label>
-                      <input className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900" value={empleadoDraft.telefono} onChange={(e) => setEmpleadoDraft((d) => ({ ...d, telefono: (e.target as HTMLInputElement).value }))} inputMode="tel" />
-                    </div>
-                    <div className="grid gap-2">
-                      <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Rol</label>
-                      <select className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900" value={empleadoDraft.rol} onChange={(e) => setEmpleadoDraft((d) => ({ ...d, rol: (e.target as HTMLSelectElement).value as Rol }))}>
-                        {ROLES.map((r) => (
-                          <option key={r} value={r}>
-                            {r}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="grid gap-2">
-                      <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Tipo</label>
-                      <select className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900" value={empleadoDraft.tipo} onChange={(e) => setEmpleadoDraft((d) => ({ ...d, tipo: (e.target as HTMLSelectElement).value as "Fijo" | "Extra" }))}>
-                        <option value="Fijo">Fijo</option>
-                        <option value="Extra">Extra</option>
-                      </select>
-                    </div>
-                    <div className="md:col-span-2 grid gap-2">
-                      <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Notas rendimiento</label>
-                      <textarea className="min-h-20 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900" value={empleadoDraft.notas_rendimiento} onChange={(e) => setEmpleadoDraft((d) => ({ ...d, notas_rendimiento: (e.target as HTMLTextAreaElement).value }))} />
-                    </div>
-                    <label className="md:col-span-2 inline-flex items-center gap-2 text-sm font-semibold text-slate-800">
-                      <input type="checkbox" checked={empleadoDraft.activo} onChange={(e) => setEmpleadoDraft((d) => ({ ...d, activo: (e.target as HTMLInputElement).checked }))} />
-                      Activo
-                    </label>
-                  </div>
-                  <button
-                    type="button"
-                    className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 text-sm font-extrabold text-white hover:bg-blue-700 disabled:opacity-60"
-                    disabled={!canEdit || savingEmpleado}
-                    onClick={() => void saveEmpleado()}
-                  >
-                    {savingEmpleado ? "Guardando…" : "Guardar empleado"}
-                  </button>
-                  {!canEdit ? <p className="mt-2 text-xs font-semibold text-slate-500">Solo Admin puede modificar plantilla.</p> : null}
-                </div>
-              </div>
 
-              {/* Restricciones */}
-              <div className="mt-4 rounded-3xl border border-slate-200 bg-white p-3">
-                <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Restricciones (no disponible)</p>
-                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  <div className="grid gap-2">
-                    <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Empleado</label>
-                    <select className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900" value={selectedEmpleadoId} onChange={(e) => setSelectedEmpleadoId((e.target as HTMLSelectElement).value)}>
-                      <option value="">Selecciona…</option>
+                    <div className="mt-3 grid gap-2">
                       {empleados.map((e) => (
-                        <option key={e.id} value={e.id}>
-                          {e.nombre}
-                        </option>
+                        <div key={e.id} className="flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white p-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-extrabold text-slate-900">{e.nombre}</p>
+                            <p className="mt-0.5 text-xs font-semibold text-slate-600">
+                              {e.rol} · {e.tipo} · {(e.telefono ?? "").trim() || "Sin teléfono"} {e.activo ? "" : "· Inactivo"}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-60"
+                              disabled={!canEdit}
+                              onClick={() => openEditarEmpleado(e)}
+                              aria-label="Editar"
+                              title="Editar"
+                            >
+                              <Pencil className="h-5 w-5" />
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-60"
+                              disabled={!canEdit}
+                              onClick={() => void deleteEmpleado(e.id)}
+                              aria-label="Eliminar"
+                              title="Eliminar"
+                            >
+                              <Trash2 className="h-5 w-5" />
+                            </button>
+                          </div>
+                        </div>
                       ))}
-                    </select>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="grid gap-2">
-                      <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Día</label>
-                      <select className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900" value={String(restrDraft.dia_semana)} onChange={(e) => setRestrDraft((d) => ({ ...d, dia_semana: Math.max(1, Math.min(7, Number((e.target as HTMLSelectElement).value) || 1)) }))}>
-                        {DIA_LABEL.map((d) => (
-                          <option key={d.n} value={String(d.n)}>
-                            {d.label}
-                          </option>
-                        ))}
-                      </select>
                     </div>
-                    <div className="grid gap-2">
-                      <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Turno</label>
-                      <select className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900" value={restrDraft.turno} onChange={(e) => setRestrDraft((d) => ({ ...d, turno: (e.target as HTMLSelectElement).value as Turno }))}>
-                        {TURNOS.map((t) => (
-                          <option key={t} value={t}>
-                            {t}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                  <div className="md:col-span-2 grid gap-2">
-                    <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Motivo</label>
-                    <input className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900" value={restrDraft.motivo} onChange={(e) => setRestrDraft((d) => ({ ...d, motivo: (e.target as HTMLInputElement).value }))} placeholder="Ej: No disponible" />
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 text-sm font-extrabold text-white hover:bg-black disabled:opacity-60"
-                  disabled={!canEdit || savingRestr || !selectedEmpleadoId}
-                  onClick={() => void addRestriccion()}
-                >
-                  {savingRestr ? "Guardando…" : "Añadir restricción"}
-                </button>
 
-                <div className="mt-3 space-y-2">
-                  {(restriccionesByEmpleado.get(selectedEmpleadoId) ?? []).map((r) => (
-                    <div key={r.id} className="flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white p-3">
-                      <div className="min-w-0">
-                        <p className="text-sm font-extrabold text-slate-900">
-                          {(DIA_LABEL.find((d) => d.n === Number(r.dia_semana))?.label ?? `Día ${r.dia_semana}`)} · {r.turno}
-                        </p>
-                        <p className="mt-0.5 text-xs font-semibold text-slate-600">{String(r.motivo ?? "").trim() || "—"}</p>
+                    {/* Editor empleado */}
+                    <div ref={empleadoEditorRef} className="mt-4 rounded-3xl border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">{empleadoEditing ? "Editar empleado" : "Nuevo empleado"}</p>
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        <div className="grid gap-2">
+                          <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Nombre</label>
+                          <input
+                            className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900"
+                            value={empleadoDraft.nombre}
+                            onChange={(e) => setEmpleadoDraft((d) => ({ ...d, nombre: (e.target as HTMLInputElement).value }))}
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Teléfono</label>
+                          <input
+                            className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900"
+                            value={empleadoDraft.telefono}
+                            onChange={(e) => setEmpleadoDraft((d) => ({ ...d, telefono: (e.target as HTMLInputElement).value }))}
+                            inputMode="tel"
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Rol</label>
+                          <select
+                            className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900"
+                            value={empleadoDraft.rol}
+                            onChange={(e) => setEmpleadoDraft((d) => ({ ...d, rol: (e.target as HTMLSelectElement).value as Rol }))}
+                          >
+                            {ROLES.map((r) => (
+                              <option key={r} value={r}>
+                                {r}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="grid gap-2">
+                          <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Tipo</label>
+                          <select
+                            className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900"
+                            value={empleadoDraft.tipo}
+                            onChange={(e) => setEmpleadoDraft((d) => ({ ...d, tipo: (e.target as HTMLSelectElement).value as "Fijo" | "Extra" }))}
+                          >
+                            <option value="Fijo">Fijo</option>
+                            <option value="Extra">Extra</option>
+                          </select>
+                        </div>
+                        <div className="md:col-span-2 grid gap-2">
+                          <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Notas rendimiento</label>
+                          <textarea
+                            className="min-h-20 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                            value={empleadoDraft.notas_rendimiento}
+                            onChange={(e) => setEmpleadoDraft((d) => ({ ...d, notas_rendimiento: (e.target as HTMLTextAreaElement).value }))}
+                          />
+                        </div>
+                        <label className="md:col-span-2 inline-flex items-center gap-2 text-sm font-semibold text-slate-800">
+                          <input
+                            type="checkbox"
+                            checked={empleadoDraft.activo}
+                            onChange={(e) => setEmpleadoDraft((d) => ({ ...d, activo: (e.target as HTMLInputElement).checked }))}
+                          />
+                          Activo
+                        </label>
                       </div>
                       <button
                         type="button"
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-60"
-                        disabled={!canEdit}
-                        onClick={() => void deleteRestriccion(r.id)}
-                        aria-label="Eliminar restricción"
-                        title="Eliminar"
+                        className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 text-sm font-extrabold text-white hover:bg-blue-700 disabled:opacity-60"
+                        disabled={!canEdit || savingEmpleado}
+                        onClick={() => void saveEmpleado()}
                       >
-                        <Trash2 className="h-5 w-5" />
+                        {savingEmpleado ? "Guardando…" : "Guardar empleado"}
                       </button>
+                      {!canEdit ? <p className="mt-2 text-xs font-semibold text-slate-500">Solo Admin puede modificar plantilla.</p> : null}
                     </div>
-                  ))}
-                  {selectedEmpleadoId && !(restriccionesByEmpleado.get(selectedEmpleadoId) ?? []).length ? (
-                    <p className="text-sm font-semibold text-slate-600">Sin restricciones para este empleado.</p>
-                  ) : null}
+                  </div>
+
+                  {/* Restricciones */}
+                  <div className="mt-4 rounded-3xl border border-slate-200 bg-white p-3">
+                    <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Restricciones (no disponible)</p>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      <div className="grid gap-2">
+                        <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Empleado</label>
+                        <select
+                          className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900"
+                          value={selectedEmpleadoId}
+                          onChange={(e) => setSelectedEmpleadoId((e.target as HTMLSelectElement).value)}
+                        >
+                          <option value="">Selecciona…</option>
+                          {empleados.map((e) => (
+                            <option key={e.id} value={e.id}>
+                              {e.nombre}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="grid gap-2">
+                          <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Día</label>
+                          <select
+                            className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900"
+                            value={String(restrDraft.dia_semana)}
+                            onChange={(e) =>
+                              setRestrDraft((d) => ({ ...d, dia_semana: Math.max(1, Math.min(7, Number((e.target as HTMLSelectElement).value) || 1)) }))
+                            }
+                          >
+                            {DIA_LABEL.map((d) => (
+                              <option key={d.n} value={String(d.n)}>
+                                {d.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="grid gap-2">
+                          <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Turno</label>
+                          <select
+                            className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900"
+                            value={restrDraft.turno}
+                            onChange={(e) => setRestrDraft((d) => ({ ...d, turno: (e.target as HTMLSelectElement).value as Turno }))}
+                          >
+                            {TURNOS.map((t) => (
+                              <option key={t} value={t}>
+                                {t}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="md:col-span-2 grid gap-2">
+                        <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Motivo</label>
+                        <input
+                          className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-900"
+                          value={restrDraft.motivo}
+                          onChange={(e) => setRestrDraft((d) => ({ ...d, motivo: (e.target as HTMLInputElement).value }))}
+                          placeholder="Ej: No disponible"
+                        />
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 text-sm font-extrabold text-white hover:bg-black disabled:opacity-60"
+                      disabled={!canEdit || savingRestr || !selectedEmpleadoId}
+                      onClick={() => void addRestriccion()}
+                    >
+                      {savingRestr ? "Guardando…" : "Añadir restricción"}
+                    </button>
+
+                    <div className="mt-3 space-y-2">
+                      {(restriccionesByEmpleado.get(selectedEmpleadoId) ?? []).map((r) => (
+                        <div key={r.id} className="flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white p-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-extrabold text-slate-900">
+                              {(DIA_LABEL.find((d) => d.n === Number(r.dia_semana))?.label ?? `Día ${r.dia_semana}`)} · {r.turno}
+                            </p>
+                            <p className="mt-0.5 text-xs font-semibold text-slate-600">{String(r.motivo ?? "").trim() || "—"}</p>
+                          </div>
+                          <button
+                            type="button"
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-60"
+                            disabled={!canEdit}
+                            onClick={() => void deleteRestriccion(r.id)}
+                            aria-label="Eliminar restricción"
+                            title="Eliminar"
+                          >
+                            <Trash2 className="h-5 w-5" />
+                          </button>
+                        </div>
+                      ))}
+                      {selectedEmpleadoId && !(restriccionesByEmpleado.get(selectedEmpleadoId) ?? []).length ? (
+                        <p className="text-sm font-semibold text-slate-600">Sin restricciones para este empleado.</p>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
+            </div>,
+            document.body
+          )
+        : null}
     </main>
   );
 }
