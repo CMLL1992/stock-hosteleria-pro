@@ -139,10 +139,20 @@ export default function AdminStaffPage() {
   const [missingSchema, setMissingSchema] = useState(false);
 
   const [isMobile, setIsMobile] = useState(false);
+  const [isNarrow, setIsNarrow] = useState(false);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const mq = window.matchMedia("(max-width: 768px)");
     const apply = () => setIsMobile(!!mq.matches);
+    apply();
+    mq.addEventListener?.("change", apply);
+    return () => mq.removeEventListener?.("change", apply);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 400px)");
+    const apply = () => setIsNarrow(!!mq.matches);
     apply();
     mq.addEventListener?.("change", apply);
     return () => mq.removeEventListener?.("change", apply);
@@ -153,7 +163,8 @@ export default function AdminStaffPage() {
   const weekDays = useMemo(() => Array.from({ length: 7 }).map((_, i) => addDays(semanaStart, i)), [semanaStart]);
   const [mobileDia, setMobileDia] = useState<number>(1);
   const [mobileOpenTurno, setMobileOpenTurno] = useState<Turno | null>(null);
-  const [mobileHeaderActionsOpen, setMobileHeaderActionsOpen] = useState(false);
+  // Nota: antes había un desplegable de acciones en la cabecera móvil.
+  // El nuevo layout usa 3 filas con botones directos para evitar capas/overlays que bloqueen clicks.
 
   const [empleados, setEmpleados] = useState<Empleado[]>([]);
   const [restricciones, setRestricciones] = useState<Restriccion[]>([]);
@@ -662,13 +673,28 @@ export default function AdminStaffPage() {
           {/* Acción principal */}
           <button
             type="button"
-            className="min-h-11 rounded-2xl bg-slate-900 px-3 text-sm font-extrabold text-white shadow-sm hover:bg-black disabled:opacity-60 md:min-h-10 md:text-xs"
+            className={[
+              "min-h-11 rounded-2xl bg-slate-900 text-sm font-extrabold text-white shadow-sm hover:bg-black disabled:opacity-60 md:min-h-10 md:text-xs",
+              isMobile ? "px-3" : "px-3",
+              isMobile && isNarrow ? "min-w-11 px-0 grid place-items-center" : ""
+            ].join(" ")}
             disabled={!canEdit}
             onClick={() => openNuevoEmpleado()}
             title={!canEdit ? "Solo Admin puede crear empleados" : "Añadir empleado"}
             aria-label="Añadir empleado"
           >
-            {isMobile ? <Plus className="h-5 w-5" /> : "+ Empleado"}
+            {isMobile ? (
+              isNarrow ? (
+                <Plus className="h-5 w-5" aria-hidden="true" />
+              ) : (
+                <span className="inline-flex items-center gap-2">
+                  <Plus className="h-5 w-5" aria-hidden="true" />
+                  <span>Empleado</span>
+                </span>
+              )
+            ) : (
+              "+ Empleado"
+            )}
           </button>
 
           {/* Controles */}
@@ -688,7 +714,7 @@ export default function AdminStaffPage() {
                 </div>
               </div>
 
-              {/* Acciones (3ª fila) */}
+              {/* Acciones (3ª fila): botones directos */}
               <div className="grid w-full grid-cols-2 gap-2">
                 <button
                   type="button"
@@ -698,41 +724,18 @@ export default function AdminStaffPage() {
                 >
                   {loading ? "Cargando…" : "Recargar"}
                 </button>
-                <details
-                  className="relative"
-                  open={mobileHeaderActionsOpen}
-                  onToggle={(e) => setMobileHeaderActionsOpen((e.currentTarget as HTMLDetailsElement).open)}
+                <button
+                  type="button"
+                  className="min-h-11 w-full rounded-2xl bg-slate-900 px-3 text-sm font-extrabold text-white shadow-sm hover:bg-black disabled:opacity-60"
+                  disabled={!canEdit}
+                  onClick={() => {
+                    setPlantillaOpen(true);
+                    if (!selectedEmpleadoId) setSelectedEmpleadoId(empleados[0]?.id ?? "");
+                  }}
+                  title={!canEdit ? "Solo Admin puede gestionar plantilla" : "Gestionar empleados y restricciones"}
                 >
-                  <summary className="min-h-11 w-full list-none cursor-pointer rounded-2xl bg-slate-900 px-3 text-sm font-extrabold text-white shadow-sm hover:bg-black grid place-items-center">
-                    Acciones
-                  </summary>
-                  <div className="absolute right-0 z-50 mt-2 w-[min(320px,92vw)] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl">
-                    <button
-                      type="button"
-                      className="flex min-h-12 w-full items-center gap-2 px-4 text-left text-sm font-extrabold text-slate-900 hover:bg-slate-50 disabled:opacity-60"
-                      disabled={!canEdit}
-                      onClick={() => {
-                        setMobileHeaderActionsOpen(false);
-                        openNuevoEmpleado();
-                      }}
-                    >
-                      + Empleado
-                    </button>
-                    <button
-                      type="button"
-                      className="flex min-h-12 w-full items-center gap-2 border-t border-slate-100 px-4 text-left text-sm font-extrabold text-slate-900 hover:bg-slate-50 disabled:opacity-60"
-                      disabled={!canEdit}
-                      onClick={() => {
-                        setMobileHeaderActionsOpen(false);
-                        setPlantillaOpen(true);
-                        if (!selectedEmpleadoId) setSelectedEmpleadoId(empleados[0]?.id ?? "");
-                      }}
-                      title={!canEdit ? "Solo Admin puede gestionar plantilla" : "Gestionar empleados y restricciones"}
-                    >
-                      Plantilla
-                    </button>
-                  </div>
-                </details>
+                  Plantilla
+                </button>
               </div>
 
               {!canEdit ? (
@@ -1196,10 +1199,15 @@ export default function AdminStaffPage() {
 
       {/* Modal plantilla (CRUD empleados y restricciones) */}
       {plantillaOpen ? (
-        <div className="absolute inset-0 z-[1200]">
-          <button type="button" className="absolute inset-0 bg-black/30" aria-label="Cerrar" onClick={() => setPlantillaOpen(false)} />
+        <div className="fixed inset-0 z-[1200]">
+          <button
+            type="button"
+            className="fixed inset-0 z-0 bg-black/30"
+            aria-label="Cerrar"
+            onClick={() => setPlantillaOpen(false)}
+          />
           <div
-            className="absolute bottom-0 left-0 w-full rounded-t-3xl border border-slate-200 bg-white shadow-2xl"
+            className="fixed bottom-0 left-0 z-10 w-full rounded-t-3xl border border-slate-200 bg-white shadow-2xl"
             style={{ maxHeight: "80vh" }}
             onPointerDownCapture={(e) => e.stopPropagation()}
             onClickCapture={(e) => e.stopPropagation()}
