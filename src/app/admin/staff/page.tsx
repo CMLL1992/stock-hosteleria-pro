@@ -141,7 +141,7 @@ export default function AdminStaffPage() {
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const mq = window.matchMedia("(max-width: 640px)");
+    const mq = window.matchMedia("(max-width: 768px)");
     const apply = () => setIsMobile(!!mq.matches);
     apply();
     mq.addEventListener?.("change", apply);
@@ -871,7 +871,7 @@ export default function AdminStaffPage() {
                           const assignedEmps = assigned
                             .map((a) => empleadosById.get(a.empleado_id))
                             .filter(Boolean) as Empleado[];
-                          const names = assignedEmps.map((e) => e.nombre).filter(Boolean);
+                          const names = assignedEmps.map((e) => e?.nombre).filter(Boolean) as string[];
                           return (
                             <div key={r} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
                               <p className="text-sm font-extrabold text-slate-900">{r}</p>
@@ -882,7 +882,7 @@ export default function AdminStaffPage() {
                                       key={n}
                                       className="inline-flex min-h-9 items-center rounded-full border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
                                     >
-                                      {n}
+                                      {n ?? "—"}
                                     </span>
                                   ))}
                                 </div>

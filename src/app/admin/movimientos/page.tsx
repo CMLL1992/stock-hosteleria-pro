@@ -10,6 +10,7 @@ import { getEffectiveRole, hasPermission } from "@/lib/permissions";
 import { resolveProductoTituloColumn, tituloColSql } from "@/lib/productosTituloColumn";
 import { supabaseErrToString } from "@/lib/supabaseErrToString";
 import { useCambiosGlobalesRealtime } from "@/lib/useCambiosGlobalesRealtime";
+import { Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 type ProdEmbed = { articulo?: string | null; nombre?: string | null };
 
@@ -26,6 +27,21 @@ type MovRow = {
 type UsuarioMini = { id: string; email: string | null; nombre_completo: string | null };
 
 type PeriodKey = "hoy" | "semana" | "mes";
+
+function dayKeyFromIso(ts: string): string {
+  const d = new Date(ts);
+  if (!Number.isFinite(d.getTime())) return "";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function fmtDayLabel(day: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  if (!m) return day;
+  return `${m[3]}/${m[2]}`;
+}
 
 function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
@@ -76,6 +92,46 @@ export default function AdminMovimientosPage() {
     // "Este mes": resto del mes actual, excluyendo la última semana (para segmentar sin solaparse)
     return { from: mesStart, to: semanaStart };
   }, [period]);
+
+  const chart = useMemo(() => {
+    // Recharts: siempre un Array puro y keys estables por serie.
+    if (!rows || rows.length === 0) return { seriesKeys: [] as string[], data: [] as Array<Record<string, unknown>> };
+
+    const perProductTotal = new Map<string, number>();
+    const dayProduct = new Map<string, Map<string, number>>();
+
+    for (const r of rows) {
+      const day = dayKeyFromIso(String(r?.timestamp ?? ""));
+      if (!day) continue;
+      const raw = r?.productos ?? null;
+      const prod = Array.isArray(raw) ? raw?.[0] ?? null : raw;
+      const name = String((prod as { articulo?: unknown; nombre?: unknown } | null)?.articulo ?? (prod as { nombre?: unknown } | null)?.nombre ?? "—").trim() || "—";
+      const qty = Math.abs(Number((r as { cantidad?: unknown }).cantidad ?? 0) || 0);
+      if (qty <= 0) continue;
+
+      perProductTotal.set(name, (perProductTotal.get(name) ?? 0) + qty);
+      const byProd = dayProduct.get(day) ?? new Map<string, number>();
+      byProd.set(name, (byProd.get(name) ?? 0) + qty);
+      dayProduct.set(day, byProd);
+    }
+
+    const topProducts = Array.from(perProductTotal.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name]) => name);
+
+    const days = Array.from(dayProduct.keys()).sort();
+    const data = days.map((day) => {
+      const rec: Record<string, unknown> = { day, label: fmtDayLabel(day) };
+      const m = dayProduct.get(day) ?? new Map<string, number>();
+      for (const p of topProducts) rec[p] = m.get(p) ?? 0;
+      return rec;
+    });
+
+    return { seriesKeys: topProducts, data };
+  }, [rows]);
+
+  const seriesColors = ["#1D4ED8", "#F97316", "#10B981", "#A855F7", "#64748B"];
 
   const load = useCallback(async () => {
     if (!activeEstablishmentId || !canAccessMovimientos) {
@@ -273,6 +329,41 @@ export default function AdminMovimientosPage() {
         {err ? (
           <p className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{err}</p>
         ) : null}
+
+        <section className="mt-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-sm font-semibold text-slate-900">Actividad por producto</p>
+          <p className="mt-1 text-xs text-slate-500">Series separadas (top 5 productos) · suma diaria de unidades movidas.</p>
+          {loading ? (
+            <div className="py-6 text-center text-sm text-slate-500">Cargando estadísticas...</div>
+          ) : chart.data.length === 0 || chart.seriesKeys.length === 0 ? (
+            <div className="py-6 text-center text-sm text-slate-500">Cargando estadísticas...</div>
+          ) : (
+            <div className="mt-3 h-[260px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chart.data} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
+                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} />
+                  <Tooltip
+                    contentStyle={{ borderRadius: "12px", border: "1px solid #e2e8f0", fontSize: "12px" }}
+                    formatter={(value, name) => [`${Number(value) || 0} uds`, String(name)]}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  {chart.seriesKeys.map((k, idx) => (
+                    <Line
+                      key={k}
+                      type="monotone"
+                      dataKey={k}
+                      stroke={seriesColors[idx % seriesColors.length]}
+                      strokeWidth={2}
+                      dot={false}
+                      isAnimationActive={false}
+                    />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </section>
 
         {!activeEstablishmentId ? (
           <p className="mt-4 text-sm text-slate-600">Selecciona un establecimiento para ver el histórico.</p>

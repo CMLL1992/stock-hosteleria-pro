@@ -85,7 +85,7 @@ export function ProductByUidClient({ uid }: { uid: string }) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [modo, setModo] = useState<"entrada" | "salida">("entrada");
-  const [cantidad, setCantidad] = useState<number>(0);
+  const [inputValue, setInputValue] = useState<string>("");
   const qtyRef = useRef<HTMLInputElement | null>(null);
   const [saved, setSaved] = useState(false);
 
@@ -124,7 +124,10 @@ export function ProductByUidClient({ uid }: { uid: string }) {
       .then((p) => {
         if (cancelled) return;
         setProducto(p);
-        if (p) setMovOpen(true);
+        if (p) {
+          setMovOpen(true);
+          setInputValue("");
+        }
         else setMovOpen(false);
       })
       .catch((e) => {
@@ -327,28 +330,29 @@ export function ProductByUidClient({ uid }: { uid: string }) {
             </label>
             <input
               className="min-h-12 w-full rounded-2xl border border-gray-100 bg-gray-50 px-4 text-base"
-              inputMode="numeric"
               type="text"
-              pattern="[0-9]*"
-              value={cantidad === 0 ? "" : String(cantidad)}
+              inputMode="decimal"
+              pattern="[0-9]*[.,]?[0-9]*"
+              value={inputValue}
               onChange={(e: ChangeEvent<HTMLInputElement>) => {
                 try {
-                  const raw = e.target.value;
-                  const cleaned = String(raw ?? "").trim().replace(",", ".");
+                  const raw = e.target.value ?? "";
                   // Requerido: debug en puntos clave
                   // eslint-disable-next-line no-console
-                  console.log("DEBUG STOCK:", cleaned);
-                  if (cleaned === "") {
-                    setCantidad(0);
-                    return;
-                  }
-                  const n = parseFloat(cleaned);
-                  setCantidad(Number.isFinite(n) ? n : 0);
+                  console.log("DEBUG STOCK:", raw);
+                  setInputValue(String(raw));
                 } catch (err) {
                   // eslint-disable-next-line no-console
                   console.error(err);
                   setErr("No se pudo leer la cantidad. Inténtalo de nuevo.");
                 }
+              }}
+              onBlur={() => {
+                // Convertimos solo al salir del input (robusto mientras el usuario borra/escribe).
+                const cleaned = String(inputValue ?? "").trim().replace(",", ".");
+                const n = Number(cleaned) || 0;
+                // Normalizamos el campo: vacío si es 0, numérico si >0
+                setInputValue(n > 0 && Number.isFinite(n) ? String(n) : "");
               }}
               onFocus={(e) => e.currentTarget.select()}
               ref={qtyRef}
@@ -359,12 +363,14 @@ export function ProductByUidClient({ uid }: { uid: string }) {
             <Button
               onClick={async () => {
                 try {
-                  const n = Number(cantidad);
+                  const cleaned = String(inputValue ?? "").trim().replace(",", ".");
+                  const n = Number(cleaned) || 0;
                   if (!Number.isFinite(n) || n === 0) return;
                   setErr(null);
                   setSaved(false);
                   if (modo === "entrada") {
                     await registrar("entrada", Math.abs(n));
+                    setInputValue("");
                     setSaved(true);
                     window.setTimeout(() => setSaved(false), 1200);
                     return;
@@ -372,6 +378,7 @@ export function ProductByUidClient({ uid }: { uid: string }) {
                   if (modo === "salida") {
                     // Importante: 'salida_barra' ya NO genera envases vacíos automáticamente.
                     await registrar("salida_barra", Math.abs(n));
+                    setInputValue("");
                     setSaved(true);
                     window.setTimeout(() => setSaved(false), 1200);
                     return;
