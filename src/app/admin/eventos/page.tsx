@@ -163,9 +163,6 @@ export default function AdminEventosPage() {
   const [opsDirty, setOpsDirty] = useState(false);
   const [opsSaving, setOpsSaving] = useState(false);
 
-  // Mobile UX: alternar entre lista y detalle sin scroll infinito.
-  const [mobileView, setMobileView] = useState<"agenda" | "operativa">("agenda");
-
   const setDraftField = (field: "nombre" | "fecha" | "descripcion", value: string) => {
     setDraft((prev) => ({ ...prev, [field]: value ?? "" }));
   };
@@ -448,7 +445,11 @@ export default function AdminEventosPage() {
         devuelto_vacios_qty: toInt(l.devuelto_vacios_qty)
       }));
       if (cleanLineas.length) {
-        const upL = await supabase().from("evento_lineas").upsert(cleanLineas, { onConflict: "evento_id,producto_id" });
+        // Nota: en muchos esquemas multi-tenant el unique está en (establecimiento_id, evento_id, producto_id).
+        // Incluir establecimiento_id evita errores 42703 si el constraint difiere del esperado.
+        const upL = await supabase()
+          .from("evento_lineas")
+          .upsert(cleanLineas, { onConflict: "establecimiento_id,evento_id,producto_id" });
         if (upL.error) throw upL.error;
       }
 
@@ -503,11 +504,6 @@ export default function AdminEventosPage() {
     void loadOperativa(selected);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, activeEstablishmentId, canView]);
-
-  useEffect(() => {
-    // En móvil, si seleccionan un evento, saltar automáticamente a la vista operativa.
-    if (selectedId) setMobileView("operativa");
-  }, [selectedId]);
 
   const proveedorSelected = useMemo(() => {
     if (!opsProveedorId) return null;
@@ -762,36 +758,8 @@ export default function AdminEventosPage() {
 
         {err ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-900">{err}</div> : null}
 
-        {/* Selector mobile: Agenda / Operativa */}
-        <div className="lg:hidden">
-          <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
-            <button
-              type="button"
-              className={[
-                "min-h-11 rounded-2xl px-3 text-sm font-extrabold transition",
-                mobileView === "agenda" ? "bg-premium-blue text-white" : "bg-slate-50 text-slate-800"
-              ].join(" ")}
-              onClick={() => setMobileView("agenda")}
-            >
-              Agenda
-            </button>
-            <button
-              type="button"
-              className={[
-                "min-h-11 rounded-2xl px-3 text-sm font-extrabold transition",
-                mobileView === "operativa" ? "bg-premium-orange text-white" : "bg-slate-50 text-slate-800"
-              ].join(" ")}
-              onClick={() => setMobileView("operativa")}
-              disabled={!selectedId}
-              title={!selectedId ? "Selecciona un evento primero" : "Operativa"}
-            >
-              Operativa
-            </button>
-          </div>
-        </div>
-
         <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
-          <section className={["space-y-3", mobileView === "operativa" ? "hidden lg:block" : ""].join(" ")}>
+          <section className="space-y-3">
             <div className="premium-card">
               <p className="text-sm font-black text-slate-800">Agenda</p>
               {sorted.length === 0 ? (
@@ -864,7 +832,7 @@ export default function AdminEventosPage() {
             </div>
           </section>
 
-          <section className={["space-y-4", mobileView === "agenda" ? "hidden lg:block" : ""].join(" ")}>
+          <section className="space-y-4">
             {!selected ? (
               <div className="premium-card">
                 <p className="text-sm font-semibold text-slate-900">Selecciona un evento</p>
@@ -1009,7 +977,10 @@ export default function AdminEventosPage() {
                           .slice()
                           .sort((a, b) => String(a.articulo ?? "").localeCompare(String(b.articulo ?? ""), "es", { sensitivity: "base" }))
                           .map((l) => (
-                            <div key={l.producto_id} className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                            <div
+                              key={l.producto_id}
+                              className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
+                            >
                               <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
                                   <p className="truncate text-sm font-black text-slate-900">{l.articulo}</p>
@@ -1025,6 +996,7 @@ export default function AdminEventosPage() {
                                 </button>
                               </div>
 
+                              {/* Mobile-friendly: card inputs apilados (no “tabla” ancha) */}
                               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                                 <label className="grid gap-1">
                                   <span className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Pedido (stock evento)</span>
