@@ -579,7 +579,38 @@ export default function AdminEventosPage() {
     };
   }
 
-  function addProductoToEvento(p: DashboardProducto) {
+  async function fetchPrecioProductoOnDemand(productoId: string): Promise<number> {
+    // Query minimal y tolerante: `precio_compra` si existe; si no, `precio_tarifa`.
+    // Nunca debe bloquear la UI.
+    try {
+      const compra = await supabase()
+        .from("productos")
+        .select("precio_compra")
+        .eq("establecimiento_id", estId)
+        .eq("id", productoId)
+        .single();
+      if (!compra.error) {
+        const v = Number((compra.data as unknown as Record<string, unknown>)?.precio_compra ?? 0);
+        return Number.isFinite(v) ? Math.max(0, Math.round(v * 100) / 100) : 0;
+      }
+      const msg = String((compra.error as { message?: unknown })?.message ?? "").toLowerCase();
+      const missing = msg.includes("column") || msg.includes("does not exist");
+      if (!missing) return 0;
+      const tarifa = await supabase()
+        .from("productos")
+        .select("precio_tarifa")
+        .eq("establecimiento_id", estId)
+        .eq("id", productoId)
+        .single();
+      if (tarifa.error) return 0;
+      const v = Number((tarifa.data as unknown as Record<string, unknown>)?.precio_tarifa ?? 0);
+      return Number.isFinite(v) ? Math.max(0, Math.round(v * 100) / 100) : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  async function addProductoToEvento(p: DashboardProducto) {
     if (!selected) return;
     const existing = lineas.find((l) => l.producto_id === p.id);
     const precioEnvaseAuto = Number.isFinite(Number(p.envase_coste)) ? Math.max(0, Number(p.envase_coste) || 0) : 0;
@@ -595,11 +626,29 @@ export default function AdminEventosPage() {
           return next;
         })
       );
+      // Si no tenemos precio en mapa, intentamos on-demand (sin pisar si ya lo tocaron).
+      if ((toEUR(existing.precio_producto) || 0) <= 0) {
+        const v = await fetchPrecioProductoOnDemand(p.id);
+        if (v > 0) {
+          setLineas((prev) =>
+            prev.map((l) => (l.producto_id === p.id && (toEUR(l.precio_producto) || 0) <= 0 ? { ...l, precio_producto: v } : l))
+          );
+          setOpsDirty(true);
+        }
+      }
       return;
     }
     const linea = ensureLinea(p);
     setLineas((prev) => [...prev, linea]);
     setOpsDirty(true);
+    // Si el autocompletado no encontró precio (map vacío), lo buscamos on-demand.
+    if ((toEUR(linea.precio_producto) || 0) <= 0) {
+      const v = await fetchPrecioProductoOnDemand(p.id);
+      if (v > 0) {
+        setLineas((prev) => prev.map((l) => (l.producto_id === p.id ? { ...l, precio_producto: v } : l)));
+        setOpsDirty(true);
+      }
+    }
   }
 
   function updateLinea(productoId: string, patch: Partial<EventoLineaRow>) {
@@ -967,12 +1016,13 @@ export default function AdminEventosPage() {
                           setPickProductoId(id);
                           const p = catalogo.find((x) => x.id === id);
                           if (!p) return;
-                          addProductoToEvento(p);
+                          void addProductoToEvento(p);
                           setPickProductoId("");
                         }}
+                        disabled={!opsProveedorId}
                       >
                         <option value="">
-                          {opsProveedorId ? "Selecciona un producto…" : "Selecciona un producto… (opcionalmente elige proveedor para filtrar)"}
+                          {opsProveedorId ? "Selecciona un producto…" : "Selecciona proveedor para ver productos…"}
                         </option>
                         {opsProveedorId && catalogoDropdown.length === 0 ? (
                           <option value="" disabled>
