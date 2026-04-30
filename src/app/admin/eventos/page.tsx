@@ -257,43 +257,30 @@ export default function AdminEventosPage() {
       setCatalogo(cat ?? []);
 
       // Precio producto / proveedor (si existe en DB): read-only (no afecta stock).
-      // Importante: en algunos tenants no existe `precio_compra` (u otras columnas).
-      // Nunca debe romper la operativa: si falla, solo desactivamos el autocompletado de precio.
+      // Importante: evitamos hacer selects a columnas que puedan no existir (p.ej. `precio_compra`)
+      // porque eso genera errores 400 visibles en consola y en algunos navegadores/PWA.
+      // Si falta columna de precio, degradamos a 0 (sin autocompletar).
       try {
         const priceMap = new Map<string, number>();
         const provMap = new Map<string, string | null>();
 
-        // Intentos en cascada: elegimos la primera columna de precio que exista.
-        const tries = [
-          "id,proveedor_id,precio_compra",
-          "id,proveedor_id,precio_compra_sin_iva",
-          "id,proveedor_id,precio_tarifa",
-          "id,proveedor_id"
-        ] as const;
-
-        let data: Array<Record<string, unknown>> = [];
-        for (const sel of tries) {
-          const res = await supabase().from("productos").select(sel).eq("establecimiento_id", activeEstablishmentId).limit(5000);
-          if (!res.error) {
-            data = (res.data as unknown as Array<Record<string, unknown>>) ?? [];
-            break;
-          }
-          const msg = String((res.error as { message?: unknown })?.message ?? "").toLowerCase();
-          const missing = msg.includes("column") || msg.includes("does not exist");
-          if (!missing) throw res.error;
-          // si falta la columna, probamos la siguiente
-        }
+        // En este proyecto el schema base incluye `precio_tarifa` (ver `supabase/schema.sql`).
+        // Si el tenant tiene otra columna de precio, la autocompletación se puede extender,
+        // pero sin hacer probes a columnas no existentes.
+        const res = await supabase()
+          .from("productos")
+          .select("id,proveedor_id,precio_tarifa")
+          .eq("establecimiento_id", activeEstablishmentId)
+          .limit(5000);
+        if (res.error) throw res.error;
+        const data = ((res.data ?? []) as unknown as Array<Record<string, unknown>>) ?? [];
 
         for (const r of data) {
           const id = String(r?.id ?? "").trim();
           if (!id) continue;
           const prov = r?.proveedor_id != null ? String(r.proveedor_id).trim() : "";
           provMap.set(id, prov ? prov : null);
-          const v =
-            (typeof r?.precio_compra === "number" ? r.precio_compra : Number(r?.precio_compra)) ||
-            (typeof r?.precio_compra_sin_iva === "number" ? r.precio_compra_sin_iva : Number(r?.precio_compra_sin_iva)) ||
-            (typeof r?.precio_tarifa === "number" ? r.precio_tarifa : Number(r?.precio_tarifa)) ||
-            0;
+          const v = typeof r?.precio_tarifa === "number" ? r.precio_tarifa : Number(r?.precio_tarifa);
           if (Number.isFinite(v)) priceMap.set(id, Math.max(0, Math.round(Number(v) * 100) / 100));
         }
 
