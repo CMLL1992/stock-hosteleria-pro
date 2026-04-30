@@ -122,7 +122,8 @@ export default function AdminEventosPage() {
   const { data: me, isLoading: loadingRole } = useMyRole();
   const role = getEffectiveRole(me ?? null);
 
-  const canView = hasPermission(role, "staff");
+  // Eventos: solo admin/superadmin (no staff).
+  const canView = hasPermission(role, "admin");
   const canEdit = hasPermission(role, "admin");
 
   const [loading, setLoading] = useState(false);
@@ -161,6 +162,9 @@ export default function AdminEventosPage() {
 
   const [opsDirty, setOpsDirty] = useState(false);
   const [opsSaving, setOpsSaving] = useState(false);
+
+  // Mobile UX: alternar entre lista y detalle sin scroll infinito.
+  const [mobileView, setMobileView] = useState<"agenda" | "operativa">("agenda");
 
   const setDraftField = (field: "nombre" | "fecha" | "descripcion", value: string) => {
     setDraft((prev) => ({ ...prev, [field]: value ?? "" }));
@@ -224,18 +228,13 @@ export default function AdminEventosPage() {
       setOpsNotaExtra(String(ev.nota_extra ?? "").trim());
       setOpsRecaudacionTotal(toEUR(ev.recaudacion_total ?? 0));
 
-      const [provRes, cat, pRes, lRes, xRes] = await Promise.all([
+      const [provRes, cat, lRes, xRes] = await Promise.all([
         supabase()
           .from("proveedores")
           .select("id,nombre,telefono_whatsapp")
           .eq("establecimiento_id", activeEstablishmentId)
           .order("nombre", { ascending: true }),
         fetchDashboardProductos(activeEstablishmentId),
-        supabase()
-          .from("productos")
-          .select("id,precio_compra,proveedor_id")
-          .eq("establecimiento_id", activeEstablishmentId)
-          .limit(5000),
         supabase()
           .from("evento_lineas")
           .select(
@@ -257,18 +256,53 @@ export default function AdminEventosPage() {
       setProveedores((provRes.data as ProveedorRow[]) ?? []);
       setCatalogo(cat ?? []);
 
-      if (pRes.error) throw pRes.error;
-      const priceMap = new Map<string, number>();
-      const provMap = new Map<string, string | null>();
-      for (const r of (pRes.data as Array<{ id: string; precio_compra: number | null; proveedor_id: string | null }> | null) ?? []) {
-        const id = String(r?.id ?? "").trim();
-        if (!id) continue;
-        const v = typeof r?.precio_compra === "number" && Number.isFinite(r.precio_compra) ? r.precio_compra : 0;
-        priceMap.set(id, Math.max(0, Math.round(v * 100) / 100));
-        provMap.set(id, r?.proveedor_id ? String(r.proveedor_id) : null);
+      // Precio producto / proveedor (si existe en DB): read-only (no afecta stock).
+      // Importante: en algunos tenants no existe `precio_compra` (u otras columnas).
+      // Nunca debe romper la operativa: si falla, solo desactivamos el autocompletado de precio.
+      try {
+        const priceMap = new Map<string, number>();
+        const provMap = new Map<string, string | null>();
+
+        // Intentos en cascada: elegimos la primera columna de precio que exista.
+        const tries = [
+          "id,proveedor_id,precio_compra",
+          "id,proveedor_id,precio_compra_sin_iva",
+          "id,proveedor_id,precio_tarifa",
+          "id,proveedor_id"
+        ] as const;
+
+        let data: Array<Record<string, unknown>> = [];
+        for (const sel of tries) {
+          const res = await supabase().from("productos").select(sel).eq("establecimiento_id", activeEstablishmentId).limit(5000);
+          if (!res.error) {
+            data = (res.data as unknown as Array<Record<string, unknown>>) ?? [];
+            break;
+          }
+          const msg = String((res.error as { message?: unknown })?.message ?? "").toLowerCase();
+          const missing = msg.includes("column") || msg.includes("does not exist");
+          if (!missing) throw res.error;
+          // si falta la columna, probamos la siguiente
+        }
+
+        for (const r of data) {
+          const id = String(r?.id ?? "").trim();
+          if (!id) continue;
+          const prov = r?.proveedor_id != null ? String(r.proveedor_id).trim() : "";
+          provMap.set(id, prov ? prov : null);
+          const v =
+            (typeof r?.precio_compra === "number" ? r.precio_compra : Number(r?.precio_compra)) ||
+            (typeof r?.precio_compra_sin_iva === "number" ? r.precio_compra_sin_iva : Number(r?.precio_compra_sin_iva)) ||
+            (typeof r?.precio_tarifa === "number" ? r.precio_tarifa : Number(r?.precio_tarifa)) ||
+            0;
+          if (Number.isFinite(v)) priceMap.set(id, Math.max(0, Math.round(Number(v) * 100) / 100));
+        }
+
+        setPrecioCompraById(priceMap);
+        setProveedorIdByProductoId(provMap);
+      } catch {
+        setPrecioCompraById(new Map());
+        setProveedorIdByProductoId(new Map());
       }
-      setPrecioCompraById(priceMap);
-      setProveedorIdByProductoId(provMap);
 
       if (lRes.error) throw lRes.error;
       const rows = ((lRes.data ?? []) as unknown as EventoLineaRow[]).map((r) => ({
@@ -483,6 +517,11 @@ export default function AdminEventosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, activeEstablishmentId, canView]);
 
+  useEffect(() => {
+    // En móvil, si seleccionan un evento, saltar automáticamente a la vista operativa.
+    if (selectedId) setMobileView("operativa");
+  }, [selectedId]);
+
   const proveedorSelected = useMemo(() => {
     if (!opsProveedorId) return null;
     return proveedores.find((p) => p.id === opsProveedorId) ?? null;
@@ -681,7 +720,9 @@ export default function AdminEventosPage() {
       <div className="min-h-dvh bg-slate-50">
         <MobileHeader title="Eventos" showBack backHref="/admin" />
         <main className="mx-auto max-w-3xl p-4 pb-28">
-          <div className="rounded-3xl border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm">Acceso denegado.</div>
+          <div className="rounded-3xl border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm">
+            Acceso denegado. (Solo Admin/Superadmin)
+          </div>
         </main>
       </div>
     );
@@ -734,8 +775,36 @@ export default function AdminEventosPage() {
 
         {err ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-900">{err}</div> : null}
 
+        {/* Selector mobile: Agenda / Operativa */}
+        <div className="lg:hidden">
+          <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+            <button
+              type="button"
+              className={[
+                "min-h-11 rounded-2xl px-3 text-sm font-extrabold transition",
+                mobileView === "agenda" ? "bg-premium-blue text-white" : "bg-slate-50 text-slate-800"
+              ].join(" ")}
+              onClick={() => setMobileView("agenda")}
+            >
+              Agenda
+            </button>
+            <button
+              type="button"
+              className={[
+                "min-h-11 rounded-2xl px-3 text-sm font-extrabold transition",
+                mobileView === "operativa" ? "bg-premium-orange text-white" : "bg-slate-50 text-slate-800"
+              ].join(" ")}
+              onClick={() => setMobileView("operativa")}
+              disabled={!selectedId}
+              title={!selectedId ? "Selecciona un evento primero" : "Operativa"}
+            >
+              Operativa
+            </button>
+          </div>
+        </div>
+
         <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
-          <section className="space-y-3">
+          <section className={["space-y-3", mobileView === "operativa" ? "hidden lg:block" : ""].join(" ")}>
             <div className="premium-card">
               <p className="text-sm font-black text-slate-800">Agenda</p>
               {sorted.length === 0 ? (
@@ -808,7 +877,7 @@ export default function AdminEventosPage() {
             </div>
           </section>
 
-          <section className="space-y-4">
+          <section className={["space-y-4", mobileView === "agenda" ? "hidden lg:block" : ""].join(" ")}>
             {!selected ? (
               <div className="premium-card">
                 <p className="text-sm font-semibold text-slate-900">Selecciona un evento</p>
