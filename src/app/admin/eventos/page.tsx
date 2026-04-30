@@ -187,7 +187,10 @@ export default function AdminEventosPage() {
         .order("fecha", { ascending: false })
         .limit(500);
       if (!resAdv.error) {
-        setEventos((resAdv.data ?? []) as unknown as EventoRow[]);
+        const rows = (resAdv.data ?? []) as unknown as EventoRow[];
+        setEventos(rows);
+        // Si no hay evento seleccionado, seleccionar el primero para mostrar operativa siempre.
+        if (!selectedId && rows.length) setSelectedId(rows[0].id);
       } else {
         const msg = String((resAdv.error as { message?: unknown })?.message ?? "").toLowerCase();
         const missingCol = msg.includes("column") && (msg.includes("proveedor_id") || msg.includes("nota_extra") || msg.includes("recaudacion_total"));
@@ -199,7 +202,9 @@ export default function AdminEventosPage() {
           .order("fecha", { ascending: false })
           .limit(500);
         if (res.error) throw res.error;
-        setEventos((res.data ?? []) as unknown as EventoRow[]);
+        const rows = (res.data ?? []) as unknown as EventoRow[];
+        setEventos(rows);
+        if (!selectedId && rows.length) setSelectedId(rows[0].id);
       }
     } catch (e) {
       setErr(userFacingOpsError(e));
@@ -307,6 +312,8 @@ export default function AdminEventosPage() {
   }
 
   function openEdit(ev: EventoRow) {
+    // Mantener el panel operativo visible aunque se edite desde la agenda.
+    setSelectedId(ev.id);
     setEditing(ev);
     setDraft({
       nombre: String(ev.nombre ?? "").trim(),
@@ -346,9 +353,12 @@ export default function AdminEventosPage() {
           .eq("id", editing.id)
           .eq("establecimiento_id", activeEstablishmentId);
         if (up.error) throw up.error;
+        setSelectedId(editing.id);
       } else {
         const ins = await supabase().from("eventos").insert(insertPayload).select("id").single();
         if (ins.error) throw ins.error;
+        const newId = String((ins.data as { id?: unknown } | null)?.id ?? "").trim();
+        if (newId) setSelectedId(newId);
       }
       setEditorOpen(false);
       setEditing(null);
@@ -906,10 +916,9 @@ export default function AdminEventosPage() {
                           addProductoToEvento(p);
                           setPickProductoId("");
                         }}
-                        disabled={!opsProveedorId}
                       >
                         <option value="">
-                          {opsProveedorId ? "Selecciona un producto…" : "Selecciona proveedor para ver productos…"}
+                          {opsProveedorId ? "Selecciona un producto…" : "Selecciona un producto… (opcionalmente elige proveedor para filtrar)"}
                         </option>
                         {opsProveedorId && catalogoDropdown.length === 0 ? (
                           <option value="" disabled>
