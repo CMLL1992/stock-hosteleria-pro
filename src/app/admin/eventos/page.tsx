@@ -172,6 +172,7 @@ export default function AdminEventosPage() {
 
   const [opsDirty, setOpsDirty] = useState(false);
   const [opsSaving, setOpsSaving] = useState(false);
+  const [waOpening, setWaOpening] = useState(false);
 
   const estId = String(activeEstablishmentId ?? "").trim();
 
@@ -247,14 +248,16 @@ export default function AdminEventosPage() {
         supabase()
           .from("evento_lineas")
           .select(
-            "id,establecimiento_id,evento_id,producto_id,articulo,unidad,stock_evento,recibido_qty,precio_producto,precio_envase,devuelto_producto_qty,devuelto_vacios_qty,created_at,updated_at"
+            // Mantener EXACTO con el SQL actual (evitar 400 por columnas no existentes).
+            "id,establecimiento_id,evento_id,producto_id,articulo,unidad,stock_evento,recibido_qty,precio_producto,precio_envase,devuelto_producto_qty,devuelto_vacios_qty,created_at"
           )
           .eq("establecimiento_id", estId)
           .eq("evento_id", ev.id)
           .limit(5000),
         supabase()
           .from("evento_extras")
-          .select("id,establecimiento_id,evento_id,concepto,tipo,importe,created_at,updated_at")
+          // Mantener EXACTO con el SQL actual (evitar 400 por columnas no existentes).
+          .select("id,establecimiento_id,evento_id,concepto,tipo,importe,created_at")
           .eq("establecimiento_id", estId)
           .eq("evento_id", ev.id)
           .order("created_at", { ascending: false })
@@ -651,6 +654,7 @@ export default function AdminEventosPage() {
   function confirmarPedidoYEnviarWhatsApp() {
     if (!selected) return;
     if (!waUrl) return;
+    setWaOpening(true);
     // Lo pedido pasa a "Recibido" si estaba en 0 (sin tocar stock real).
     setLineas((prev) =>
       prev.map((l) => {
@@ -662,6 +666,7 @@ export default function AdminEventosPage() {
     );
     setOpsDirty(true);
     window.open(waUrl, "_blank", "noopener,noreferrer");
+    window.setTimeout(() => setWaOpening(false), 1200);
   }
 
   const resumen = useMemo(() => {
@@ -737,9 +742,9 @@ export default function AdminEventosPage() {
   }
 
   return (
-    <div className="min-h-dvh bg-slate-50 overflow-x-hidden">
+    <div className="min-h-dvh max-w-full bg-slate-50 overflow-x-hidden">
       <MobileHeader title="Eventos" showBack backHref="/admin" />
-      <main className="mx-auto w-full max-w-6xl min-w-0 space-y-4 p-4 pb-28">
+      <main className="mx-auto w-full max-w-6xl min-w-0 max-w-full space-y-4 p-4 pb-28 overflow-x-hidden">
         <header className="premium-card flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Establecimiento</p>
@@ -770,7 +775,7 @@ export default function AdminEventosPage() {
 
         {err ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-900">{err}</div> : null}
 
-        <div className="grid w-full min-w-0 gap-4 lg:grid-cols-[360px_1fr]">
+        <div className="grid w-full min-w-0 max-w-full gap-4 lg:grid-cols-[360px_1fr]">
           <section className="w-full min-w-0 space-y-3">
             <div className="premium-card">
               <p className="text-sm font-black text-slate-800">Agenda</p>
@@ -922,12 +927,12 @@ export default function AdminEventosPage() {
                     <button
                       type="button"
                       className={[
-                        "premium-btn-primary inline-flex w-full justify-center",
+                        "premium-btn-primary inline-flex w-full max-w-full justify-center",
                         waUrl ? "" : "pointer-events-none opacity-50"
                       ].join(" ")}
                       onClick={() => confirmarPedidoYEnviarWhatsApp()}
                     >
-                      Enviar Pedido por WhatsApp
+                      {waOpening ? "Abriendo WhatsApp…" : "Enviar Pedido por WhatsApp"}
                     </button>
                   </div>
 
@@ -1211,7 +1216,10 @@ export default function AdminEventosPage() {
                       ) : (
                         <div className="mt-3 space-y-2">
                           {extras.map((x) => (
-                            <div key={x.id} className="grid gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:grid-cols-[120px_1fr_140px_40px]">
+                            <div
+                              key={x.id}
+                              className="grid min-w-0 gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:grid-cols-[110px_minmax(0,1fr)_110px_40px]"
+                            >
                               <select
                                 className="premium-input"
                                 value={x.tipo}
@@ -1226,7 +1234,7 @@ export default function AdminEventosPage() {
                                 <option value="ingreso">Ingreso</option>
                               </select>
                               <input
-                                className="premium-input"
+                                className="premium-input min-w-0"
                                 value={x.concepto}
                                 onChange={(e) => {
                                   const concepto = e.currentTarget.value;
@@ -1237,7 +1245,7 @@ export default function AdminEventosPage() {
                                 disabled={!canEdit}
                               />
                               <input
-                                className="premium-input text-center tabular-nums"
+                                className="premium-input min-w-0 text-center tabular-nums"
                                 inputMode="decimal"
                                 value={String(toEUR(x.importe) || "")}
                                 onChange={(e) => {
