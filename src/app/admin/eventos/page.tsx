@@ -276,23 +276,36 @@ export default function AdminEventosPage() {
         const priceMap = new Map<string, number>();
         const provMap = new Map<string, string | null>();
 
-        // En este proyecto el schema base incluye `precio_tarifa` (ver `supabase/schema.sql`).
-        // Si el tenant tiene otra columna de precio, la autocompletación se puede extender,
-        // pero sin hacer probes a columnas no existentes.
-        const res = await supabase()
+        // Preferimos `precio_compra` si existe (lo más fiel a coste real),
+        // y si no existe caemos a `precio_tarifa` para no bloquear la operativa.
+        let data: Array<Record<string, unknown>> = [];
+        const resCompra = await supabase()
           .from("productos")
-          .select("id,proveedor_id,precio_tarifa")
+          .select("id,proveedor_id,precio_compra")
           .eq("establecimiento_id", estId)
           .limit(5000);
-        if (res.error) throw res.error;
-        const data = ((res.data ?? []) as unknown as Array<Record<string, unknown>>) ?? [];
+        if (!resCompra.error) {
+          data = ((resCompra.data ?? []) as unknown as Array<Record<string, unknown>>) ?? [];
+        } else {
+          const msg = String((resCompra.error as { message?: unknown })?.message ?? "").toLowerCase();
+          const missing = msg.includes("column") || msg.includes("does not exist");
+          if (!missing) throw resCompra.error;
+          const resTarifa = await supabase()
+            .from("productos")
+            .select("id,proveedor_id,precio_tarifa")
+            .eq("establecimiento_id", estId)
+            .limit(5000);
+          if (resTarifa.error) throw resTarifa.error;
+          data = ((resTarifa.data ?? []) as unknown as Array<Record<string, unknown>>) ?? [];
+        }
 
         for (const r of data) {
           const id = String(r?.id ?? "").trim();
           if (!id) continue;
           const prov = r?.proveedor_id != null ? String(r.proveedor_id).trim() : "";
           provMap.set(id, prov ? prov : null);
-          const v = typeof r?.precio_tarifa === "number" ? r.precio_tarifa : Number(r?.precio_tarifa);
+          const raw = r?.precio_compra ?? r?.precio_tarifa;
+          const v = typeof raw === "number" ? raw : Number(raw);
           if (Number.isFinite(v)) priceMap.set(id, Math.max(0, Math.round(Number(v) * 100) / 100));
         }
 
