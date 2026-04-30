@@ -113,8 +113,18 @@ function formatEUR(n: number): string {
   return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(Number(n) || 0);
 }
 
-function newId(prefix: string) {
-  return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
+function uuidv4(): string {
+  const c = globalThis.crypto as Crypto | undefined;
+  if (c?.randomUUID) return c.randomUUID();
+  const bytes = new Uint8Array(16);
+  if (c?.getRandomValues) c.getRandomValues(bytes);
+  else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes).map((b) => b.toString(16).padStart(2, "0"));
+  return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex
+    .slice(8, 10)
+    .join("")}-${hex.slice(10, 16).join("")}`;
 }
 
 export default function AdminEventosPage() {
@@ -163,6 +173,8 @@ export default function AdminEventosPage() {
   const [opsDirty, setOpsDirty] = useState(false);
   const [opsSaving, setOpsSaving] = useState(false);
 
+  const estId = String(activeEstablishmentId ?? "").trim();
+
   const setDraftField = (field: "nombre" | "fecha" | "descripcion", value: string) => {
     setDraft((prev) => ({ ...prev, [field]: value ?? "" }));
   };
@@ -184,7 +196,7 @@ export default function AdminEventosPage() {
       const resAdv = await supabase()
         .from("eventos")
         .select(advancedSelect)
-        .eq("establecimiento_id", activeEstablishmentId)
+        .eq("establecimiento_id", estId)
         .order("fecha", { ascending: false })
         .limit(500);
       if (!resAdv.error) {
@@ -199,7 +211,7 @@ export default function AdminEventosPage() {
         const res = await supabase()
           .from("eventos")
           .select(baseSelect)
-          .eq("establecimiento_id", activeEstablishmentId)
+          .eq("establecimiento_id", estId)
           .order("fecha", { ascending: false })
           .limit(500);
         if (res.error) throw res.error;
@@ -229,7 +241,7 @@ export default function AdminEventosPage() {
         supabase()
           .from("proveedores")
           .select("id,nombre,telefono_whatsapp")
-          .eq("establecimiento_id", activeEstablishmentId)
+          .eq("establecimiento_id", estId)
           .order("nombre", { ascending: true }),
         fetchDashboardProductos(activeEstablishmentId),
         supabase()
@@ -237,13 +249,13 @@ export default function AdminEventosPage() {
           .select(
             "id,establecimiento_id,evento_id,producto_id,articulo,unidad,stock_evento,recibido_qty,precio_producto,precio_envase,devuelto_producto_qty,devuelto_vacios_qty,created_at,updated_at"
           )
-          .eq("establecimiento_id", activeEstablishmentId)
+          .eq("establecimiento_id", estId)
           .eq("evento_id", ev.id)
           .limit(5000),
         supabase()
           .from("evento_extras")
           .select("id,establecimiento_id,evento_id,concepto,tipo,importe,created_at,updated_at")
-          .eq("establecimiento_id", activeEstablishmentId)
+          .eq("establecimiento_id", estId)
           .eq("evento_id", ev.id)
           .order("created_at", { ascending: false })
           .limit(200)
@@ -267,7 +279,7 @@ export default function AdminEventosPage() {
         const res = await supabase()
           .from("productos")
           .select("id,proveedor_id,precio_tarifa")
-          .eq("establecimiento_id", activeEstablishmentId)
+          .eq("establecimiento_id", estId)
           .limit(5000);
         if (res.error) throw res.error;
         const data = ((res.data ?? []) as unknown as Array<Record<string, unknown>>) ?? [];
@@ -405,7 +417,7 @@ export default function AdminEventosPage() {
         .from("eventos")
         .update(evPatch)
         .eq("id", selected.id)
-        .eq("establecimiento_id", activeEstablishmentId);
+        .eq("establecimiento_id", estId);
       if (upEv.error) {
         const msg = String((upEv.error as { message?: unknown })?.message ?? "").toLowerCase();
         const missingCol =
@@ -432,7 +444,7 @@ export default function AdminEventosPage() {
 
       // 2) Upsert de líneas (por evento+producto).
       const cleanLineas = lineas.map((l) => ({
-        establecimiento_id: activeEstablishmentId,
+        establecimiento_id: estId,
         evento_id: selected.id,
         producto_id: l.producto_id,
         articulo: String(l.articulo ?? "").trim() || "—",
@@ -456,7 +468,7 @@ export default function AdminEventosPage() {
       // 3) Upsert de extras (por id).
       const cleanExtras = extras.map((x) => ({
         id: x.id,
-        establecimiento_id: activeEstablishmentId,
+        establecimiento_id: estId,
         evento_id: selected.id,
         concepto: String(x.concepto ?? ""),
         tipo: (x.tipo as "gasto" | "ingreso") ?? "gasto",
@@ -588,7 +600,7 @@ export default function AdminEventosPage() {
       const del = await supabase()
         .from("evento_lineas")
         .delete()
-        .eq("establecimiento_id", activeEstablishmentId)
+        .eq("establecimiento_id", estId)
         .eq("evento_id", selected.id)
         .eq("producto_id", productoId);
       if (del.error) throw del.error;
@@ -603,7 +615,7 @@ export default function AdminEventosPage() {
     setExtras((prev) => prev.filter((x) => x.id !== extraId));
     setOpsDirty(true);
     try {
-      const del = await supabase().from("evento_extras").delete().eq("establecimiento_id", activeEstablishmentId).eq("id", extraId);
+      const del = await supabase().from("evento_extras").delete().eq("establecimiento_id", estId).eq("id", extraId);
       if (del.error) throw del.error;
     } catch (e) {
       setOpsErr(userFacingOpsError(e));
@@ -725,9 +737,9 @@ export default function AdminEventosPage() {
   }
 
   return (
-    <div className="min-h-dvh bg-slate-50">
+    <div className="min-h-dvh bg-slate-50 overflow-x-hidden">
       <MobileHeader title="Eventos" showBack backHref="/admin" />
-      <main className="mx-auto w-full max-w-6xl space-y-4 p-4 pb-28">
+      <main className="mx-auto w-full max-w-6xl min-w-0 space-y-4 p-4 pb-28">
         <header className="premium-card flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Establecimiento</p>
@@ -758,8 +770,8 @@ export default function AdminEventosPage() {
 
         {err ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-900">{err}</div> : null}
 
-        <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
-          <section className="space-y-3">
+        <div className="grid w-full min-w-0 gap-4 lg:grid-cols-[360px_1fr]">
+          <section className="w-full min-w-0 space-y-3">
             <div className="premium-card">
               <p className="text-sm font-black text-slate-800">Agenda</p>
               {sorted.length === 0 ? (
@@ -774,7 +786,7 @@ export default function AdminEventosPage() {
                           type="button"
                           onClick={() => setSelectedId(ev.id)}
                           className={[
-                            "w-full rounded-2xl border px-4 py-3 text-left shadow-sm transition",
+                            "w-full min-w-0 rounded-2xl border px-4 py-3 text-left shadow-sm transition",
                             active
                               ? "border-premium-blue/40 bg-premium-blue/5 ring-2 ring-premium-blue/15"
                               : "border-slate-200 bg-white hover:bg-slate-50"
@@ -832,7 +844,7 @@ export default function AdminEventosPage() {
             </div>
           </section>
 
-          <section className="space-y-4">
+          <section className="w-full min-w-0 space-y-4">
             {!selected ? (
               <div className="premium-card">
                 <p className="text-sm font-semibold text-slate-900">Selecciona un evento</p>
@@ -1184,8 +1196,8 @@ export default function AdminEventosPage() {
                           className="premium-btn-secondary"
                           onClick={() => {
                             if (!activeEstablishmentId || !selected) return;
-                            const id = newId("extra");
-                            setExtras((prev) => [{ id, establecimiento_id: activeEstablishmentId, evento_id: selected.id, concepto: "", tipo: "gasto", importe: 0 }, ...prev]);
+                            const id = uuidv4();
+                            setExtras((prev) => [{ id, establecimiento_id: estId, evento_id: selected.id, concepto: "", tipo: "gasto", importe: 0 }, ...prev]);
                             setOpsDirty(true);
                           }}
                           disabled={!canEdit}
